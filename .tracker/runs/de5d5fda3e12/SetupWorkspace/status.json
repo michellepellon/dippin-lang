@@ -1,0 +1,7 @@
+{
+  "outcome": "success",
+  "context_updates": {
+    "tool_stderr": "",
+    "tool_stdout": "component\tpackage\tstatus\tdescription\nir\tir/\tcomplete\tCanonical IR types (Workflow, Node, Edge, Condition)\nparser-lexer\tparser/\tin_progress\tLine-based indentation-aware lexer\nparser-core\tparser/\tin_progress\tParser: .dip source to IR with error recovery\nparser-conditions\tparser/\tpending\tCondition expression parser (and/or/not/compare)\nvalidator\tvalidator/\tpending\tGraph structure validation (DIP001-DIP009)\nlinter\tvalidator/\tpending\tSemantic quality warnings (DIP101-DIP112)\nformatter\tformatter/\tpending\tCanonical formatter: IR to .dip source\ndot-exporter\texport/\tpending\tDOT exporter: IR to DOT string\nmigration\tmigrate/\tpending\tMigration tool: DOT to IR to .dip\ncli\tcmd/dippin/\tpending\tCLI subcommands: parse, validate, lint, fmt, export-dot, migrate\nworkspace-ready"
+  }
+}

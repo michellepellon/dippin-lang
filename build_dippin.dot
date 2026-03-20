@@ -1,0 +1,214 @@
+digraph BuildDippin {
+  graph [
+    goal="Build the Dippin toolchain (parser, validator, formatter, DOT exporter, migration tool) by reading the design spec and iteratively implementing components into the dippin-lang Go module. Ledger-driven: picks the next uncompleted component automatically and loops until all are done.",
+    rankdir=LR,
+    default_max_retry=3,
+    default_fidelity="summary:high",
+    max_restarts=7
+  ];
+
+  Start [shape=Mdiamond, label="Start"];
+  Exit [shape=Msquare, label="Exit"];
+
+  // ── Phase 0: Setup ──────────────────────────────────────────────
+
+  SetupWorkspace [
+    shape=parallelogram,
+    label="Setup Workspace & Ledger",
+    tool_command="set -eu\nmkdir -p .tracker/runs\nif [ ! -f go.mod ]; then\n  echo 'ERROR: must run from dippin-lang directory with go.mod'\n  exit 1\nfi\n# Initialize ledger if it doesn't exist\nif [ ! -f .tracker/ledger.tsv ]; then\n  printf 'component\\tpackage\\tstatus\\tdescription\\n' > .tracker/ledger.tsv\n  printf 'ir\\tir/\\tcomplete\\tCanonical IR types (Workflow, Node, Edge, Condition)\\n' >> .tracker/ledger.tsv\n  printf 'parser-lexer\\tparser/\\tpending\\tLine-based indentation-aware lexer\\n' >> .tracker/ledger.tsv\n  printf 'parser-core\\tparser/\\tpending\\tParser: .dip source to IR with error recovery\\n' >> .tracker/ledger.tsv\n  printf 'parser-conditions\\tparser/\\tpending\\tCondition expression parser (and/or/not/compare)\\n' >> .tracker/ledger.tsv\n  printf 'validator\\tvalidator/\\tpending\\tGraph structure validation (DIP001-DIP009)\\n' >> .tracker/ledger.tsv\n  printf 'linter\\tvalidator/\\tpending\\tSemantic quality warnings (DIP101-DIP112)\\n' >> .tracker/ledger.tsv\n  printf 'formatter\\tformatter/\\tpending\\tCanonical formatter: IR to .dip source\\n' >> .tracker/ledger.tsv\n  printf 'dot-exporter\\texport/\\tpending\\tDOT exporter: IR to DOT string\\n' >> .tracker/ledger.tsv\n  printf 'migration\\tmigrate/\\tpending\\tMigration tool: DOT to IR to .dip\\n' >> .tracker/ledger.tsv\n  printf 'cli\\tcmd/dippin/\\tpending\\tCLI subcommands: parse, validate, lint, fmt, export-dot, migrate\\n' >> .tracker/ledger.tsv\nfi\ncat .tracker/ledger.tsv\nprintf 'workspace-ready'"
+  ];
+
+  // ── Phase 1: Pick next task from ledger ─────────────────────────
+
+  PickNextComponent [
+    shape=parallelogram,
+    label="Pick Next Component",
+    tool_command="set -eu\n# Find first pending component\nNEXT=$(awk -F'\\t' '$3==\"pending\" { print $1; exit }' .tracker/ledger.tsv)\nif [ -z \"$NEXT\" ]; then\n  printf 'all_complete'\n  exit 0\nfi\n# Mark it in-progress\nawk -F'\\t' -v comp=\"$NEXT\" 'BEGIN{OFS=\"\\t\"} $1==comp{$3=\"in_progress\"} {print}' .tracker/ledger.tsv > .tracker/ledger.tmp && mv .tracker/ledger.tmp .tracker/ledger.tsv\n# Write context snapshot for planner to read from disk\nmkdir -p .tracker\necho \"=== Next component: $NEXT ===\" > .tracker/current_context.md\nawk -F'\\t' -v comp=\"$NEXT\" '$1==comp { printf \"component: %s\\npackage: %s\\ndescription: %s\\n\", $1, $2, $4 }' .tracker/ledger.tsv >> .tracker/current_context.md\necho '' >> .tracker/current_context.md\necho '=== Current codebase ===' >> .tracker/current_context.md\nfind . -name '*.go' -not -path './vendor/*' | sort >> .tracker/current_context.md\necho '' >> .tracker/current_context.md\necho '=== Test status ===' >> .tracker/current_context.md\ngo test ./... >> .tracker/current_context.md 2>&1 || true\necho '' >> .tracker/current_context.md\necho '=== Ledger ===' >> .tracker/current_context.md\ncat .tracker/ledger.tsv >> .tracker/current_context.md\nprintf 'has_next'"
+  ];
+
+  // Route: all done vs has work
+  CheckComplete [
+    shape=diamond,
+    label="All done?"
+  ];
+
+  // ── Phase 2: Plan ───────────────────────────────────────────────
+
+  PlanComponent [
+    shape=box,
+    label="Plan Component",
+    llm_provider="anthropic",
+    llm_model="claude-opus-4-6",
+    reasoning_effort="high",
+    prompt="You are building the Dippin toolchain. Read .tracker/current_context.md to see which component is in_progress and the current state of the codebase.\n\nRead the design spec at ../DIPPIN_DESIGN_PLAN.md — this is the authoritative specification.\n\nRead the current codebase to understand what already exists (especially ir/ types).\n\nProduce a focused implementation plan for THIS component only:\n1. List the exact files to create/modify\n2. List the types and functions to implement\n3. List 10+ test cases (happy path, error cases, edge cases)\n4. Reference the specific design spec sections that govern this component\n5. Note any dependencies on existing packages\n\nWrite the plan to .tracker/current_plan.md so implementation agents can read it.\n\nDo NOT implement yet — just plan. Be precise enough that an implementation agent can work from this plan without ambiguity."
+  ];
+
+  // ── Phase 3: Implement ──────────────────────────────────────────
+
+  ImplementParallel [shape=component, label="Implement (Parallel)"];
+
+  ImplementClaude [
+    shape=box,
+    label="Claude Implementation",
+    llm_provider="anthropic",
+    llm_model="claude-opus-4-6",
+    reasoning_effort="high",
+    fidelity="full",
+    prompt="Implement the planned component for the Dippin toolchain. Read .tracker/current_plan.md for exactly what to build and .tracker/current_context.md for the current codebase state.\n\nRead the design spec at ../DIPPIN_DESIGN_PLAN.md for exact specifications.\nRead existing code in ir/ to match types precisely.\n\nRules:\n- Write idiomatic Go. Standard library only (no external deps beyond what go.mod already has).\n- Every exported function gets a test. Test files go next to source.\n- Match the IR types in ir/ exactly. Do not modify ir/ unless the plan says to.\n- Table-driven tests with edge cases from the plan.\n- One responsibility per package.\n- Use diagnostic codes from the spec (DIP001-DIP112) where applicable.\n- Write real, complete code — no stubs, no TODOs, no placeholders.\n- Run 'go build ./...' and 'go test ./...' to verify before finishing."
+  ];
+
+  ImplementGPT [
+    shape=box,
+    label="GPT Implementation",
+    llm_provider="openai",
+    llm_model="gpt-5.4",
+    reasoning_effort="high",
+    fidelity="full",
+    prompt="Implement the planned component for the Dippin toolchain. Read .tracker/current_plan.md for exactly what to build and .tracker/current_context.md for the current codebase state.\n\nRead the design spec at ../DIPPIN_DESIGN_PLAN.md for exact specifications.\nRead existing code in ir/ to match types precisely.\n\nRules:\n- Write idiomatic Go. Standard library only (no external deps beyond what go.mod already has).\n- Every exported function gets a test. Test files go next to source.\n- Match the IR types in ir/ exactly. Do not modify ir/ unless the plan says to.\n- Table-driven tests with edge cases from the plan.\n- One responsibility per package.\n- Use diagnostic codes from the spec (DIP001-DIP112) where applicable.\n- Write real, complete code — no stubs, no TODOs, no placeholders.\n- Run 'go build ./...' and 'go test ./...' to verify before finishing."
+  ];
+
+  ImplementGemini [
+    shape=box,
+    label="Gemini Implementation",
+    llm_provider="gemini",
+    llm_model="gemini-3-flash-preview",
+    reasoning_effort="high",
+    fidelity="full",
+    prompt="Implement the planned component for the Dippin toolchain. Read .tracker/current_plan.md for exactly what to build and .tracker/current_context.md for the current codebase state.\n\nRead the design spec at ../DIPPIN_DESIGN_PLAN.md for exact specifications.\nRead existing code in ir/ to match types precisely.\n\nRules:\n- Write idiomatic Go. Standard library only (no external deps beyond what go.mod already has).\n- Every exported function gets a test. Test files go next to source.\n- Match the IR types in ir/ exactly. Do not modify ir/ unless the plan says to.\n- Table-driven tests with edge cases from the plan.\n- One responsibility per package.\n- Use diagnostic codes from the spec (DIP001-DIP112) where applicable.\n- Write real, complete code — no stubs, no TODOs, no placeholders.\n- Run 'go build ./...' and 'go test ./...' to verify before finishing."
+  ];
+
+  ImplementJoin [shape=tripleoctagon, label="Implement Join"];
+
+  // ── Phase 4: Validate ───────────────────────────────────────────
+
+  ValidateBuild [
+    shape=parallelogram,
+    label="Validate Build and Tests",
+    tool_command="set -eu\necho '=== go vet ==='\ngo vet ./... 2>&1\necho ''\necho '=== go build ==='\ngo build ./... 2>&1\necho ''\necho '=== go test -v ==='\ngo test -v -count=1 ./... 2>&1\nprintf 'validation-pass'"
+  ];
+
+  // ── Phase 5: Review ─────────────────────────────────────────────
+
+  ReviewParallel [shape=component, label="Reviews (Parallel)"];
+
+  ReviewClaude [
+    shape=box,
+    label="Claude Review",
+    llm_provider="anthropic",
+    llm_model="claude-opus-4-6",
+    reasoning_effort="high",
+    prompt="Review the implementation against the Dippin design spec (../DIPPIN_DESIGN_PLAN.md). Check:\n1. Does the code match the spec's type definitions, validation rules, and syntax?\n2. Are tests comprehensive — happy path, errors, and edge cases the spec calls out?\n3. Does the code integrate correctly with the existing ir/ package?\n4. Is the code idiomatic Go with proper error handling?\n5. Any deviations from the spec that need justification?\n\nReturn STATUS: success if solid. Return STATUS: fail with specific required fixes if not."
+  ];
+
+  ReviewGPT [
+    shape=box,
+    label="GPT Review",
+    llm_provider="openai",
+    llm_model="gpt-5.4",
+    reasoning_effort="high",
+    prompt="Review the implementation against the Dippin design spec (../DIPPIN_DESIGN_PLAN.md). Check:\n1. Correctness: does the code do what the spec says?\n2. Completeness: are all spec requirements for this component addressed?\n3. Test quality: do tests cover happy path, error cases, and edge cases?\n4. Integration: does it work with existing packages without modification?\n\nReturn STATUS: success if solid. Return STATUS: fail with specific required fixes if not."
+  ];
+
+  ReviewGemini [
+    shape=box,
+    label="Gemini Review",
+    llm_provider="gemini",
+    llm_model="gemini-3-flash-preview",
+    reasoning_effort="high",
+    prompt="Review the implementation against the Dippin design spec (../DIPPIN_DESIGN_PLAN.md). Check:\n1. Spec fidelity: does the code faithfully implement what the design doc specifies?\n2. Edge cases: are boundary conditions and error paths handled?\n3. Test coverage: do tests exercise the contract surfaces, not just happy paths?\n4. Robustness: will this code survive adversarial or malformed input?\n\nReturn STATUS: success if solid. Return STATUS: fail with specific required fixes if not."
+  ];
+
+  ReviewsJoin [shape=tripleoctagon, label="Reviews Join"];
+
+  ReviewAnalysis [
+    shape=box,
+    label="Review Synthesis",
+    llm_provider="anthropic",
+    llm_model="claude-opus-4-6",
+    reasoning_effort="high",
+    goal_gate=true,
+    retry_target="ImplementClaude",
+    prompt="Synthesize all three reviews into one verdict.\n\n- If reviewers agree the code is solid: return STATUS: success.\n- If fixes are needed and reviewers agree on what: return STATUS: retry with a clear fix list.\n- If reviewers fundamentally disagree or component is broken: return STATUS: fail to escalate.\n\nBe concrete about what needs fixing if retry."
+  ];
+
+  // ── Phase 6: Ship & Loop ────────────────────────────────────────
+
+  CommitWork [
+    shape=box,
+    label="Commit Component",
+    llm_provider="anthropic",
+    llm_model="claude-sonnet-4-6",
+    reasoning_effort="low",
+    prompt="All reviews passed. Commit the new component with a clean conventional commit message. The message should name the package and what it implements (e.g., 'feat(parser): implement lexer with indentation tracking'). Include test count in the message body."
+  ];
+
+  MarkComplete [
+    shape=parallelogram,
+    label="Mark Component Complete",
+    tool_command="set -eu\n# Find the in_progress component and mark it complete\nawk -F'\\t' 'BEGIN{OFS=\"\\t\"} $3==\"in_progress\"{$3=\"complete\"} {print}' .tracker/ledger.tsv > .tracker/ledger.tmp && mv .tracker/ledger.tmp .tracker/ledger.tsv\necho '=== Updated ledger ==='\ncat .tracker/ledger.tsv\nPENDING=$(awk -F'\\t' '$3==\"pending\"' .tracker/ledger.tsv | wc -l | tr -d ' ')\necho \"Remaining: $PENDING components\"\nprintf 'marked-complete'"
+  ];
+
+  FailureSummary [
+    shape=box,
+    label="Failure Summary",
+    llm_provider="anthropic",
+    llm_model="claude-sonnet-4-6",
+    reasoning_effort="high",
+    prompt="The component could not be built to satisfaction. Summarize what was attempted, what failed, and what the blockers are. Write this to .tracker/failure-report.md so the next run can pick up from here. Also mark the component back to 'pending' in the ledger."
+  ];
+
+  MarkFailed [
+    shape=parallelogram,
+    label="Reset Failed Component",
+    tool_command="set -eu\n# Reset in_progress back to pending\nawk -F'\\t' 'BEGIN{OFS=\"\\t\"} $3==\"in_progress\"{$3=\"pending\"} {print}' .tracker/ledger.tsv > .tracker/ledger.tmp && mv .tracker/ledger.tmp .tracker/ledger.tsv\ncat .tracker/ledger.tsv\nprintf 'reset-done'"
+  ];
+
+  // ── Edges ───────────────────────────────────────────────────────
+
+  // Setup
+  Start -> SetupWorkspace;
+  SetupWorkspace -> PickNextComponent;
+
+  // Task selection routing
+  PickNextComponent -> CheckComplete;
+  CheckComplete -> Exit [condition="context.tool_stdout=all_complete", label="all done"];
+  CheckComplete -> PlanComponent [condition="context.tool_stdout=has_next", label="has work"];
+
+  // Plan -> Implement
+  PlanComponent -> ImplementParallel;
+
+  // Parallel implementation
+  ImplementParallel -> ImplementClaude;
+  ImplementParallel -> ImplementGPT;
+  ImplementParallel -> ImplementGemini;
+  ImplementClaude -> ImplementJoin;
+  ImplementGPT -> ImplementJoin;
+  ImplementGemini -> ImplementJoin;
+
+  // Validation
+  ImplementJoin -> ValidateBuild;
+  ValidateBuild -> ReviewParallel [condition="outcome=success", label="validated"];
+  ValidateBuild -> ImplementClaude [condition="outcome=fail", label="fix_build"];
+
+  // Reviews
+  ReviewParallel -> ReviewClaude;
+  ReviewParallel -> ReviewGPT;
+  ReviewParallel -> ReviewGemini;
+  ReviewClaude -> ReviewsJoin;
+  ReviewGPT -> ReviewsJoin;
+  ReviewGemini -> ReviewsJoin;
+
+  // Synthesis and routing
+  ReviewsJoin -> ReviewAnalysis;
+  ReviewAnalysis -> CommitWork [condition="outcome=success", label="pass"];
+  ReviewAnalysis -> ImplementClaude [condition="outcome=retry", label="rework"];
+  ReviewAnalysis -> FailureSummary [condition="outcome=fail", label="escalate"];
+
+  // Ship and loop
+  CommitWork -> MarkComplete;
+  MarkComplete -> PickNextComponent [label="next component", loop_restart=true];
+
+  // Failure handling
+  FailureSummary -> MarkFailed;
+  MarkFailed -> Exit;
+}

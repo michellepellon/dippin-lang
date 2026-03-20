@@ -1,0 +1,6 @@
+{
+  "outcome": "retry",
+  "context_updates": {
+    "last_response": "context canceled"
+  }
+}

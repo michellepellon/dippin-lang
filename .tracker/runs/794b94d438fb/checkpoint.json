@@ -1,0 +1,28 @@
+{
+  "run_id": "794b94d438fb",
+  "current_node": "PlanComponent",
+  "completed_nodes": [
+    "Start",
+    "SetupWorkspace",
+    "PickNextComponent",
+    "CheckComplete"
+  ],
+  "retry_counts": {
+    "PlanComponent": 1
+  },
+  "context": {
+    "graph.default_fidelity": "summary:high",
+    "graph.default_max_retry": "3",
+    "graph.goal": "Build the Dippin toolchain (parser, validator, formatter, DOT exporter, migration tool) by reading the design spec and iteratively implementing components into the dippin-lang Go module. Ledger-driven: picks the next uncompleted component automatically and loops until all are done.",
+    "graph.max_restarts": "7",
+    "graph.rankdir": "LR",
+    "last_response": "context canceled",
+    "outcome": "retry",
+    "preferred_label": "",
+    "suggested_next_nodes": "",
+    "tool_stderr": "",
+    "tool_stdout": "has_next"
+  },
+  "timestamp": "2026-03-19T20:01:36.754363-05:00",
+  "restart_count": 0
+}
