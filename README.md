@@ -2,288 +2,401 @@
 
 A language and toolchain for authoring AI pipeline workflows.
 
-Dippin replaces Graphviz DOT as the authoring format for [Tracker](https://github.com/2389-research/tracker) pipelines. Prompts, shell scripts, model configuration, and branching logic get first-class syntax instead of being crammed into DOT string attributes.
+Dippin is a domain-specific language that replaces [Graphviz DOT](https://graphviz.org/doc/info/lang.html) as the authoring format for [Tracker](https://github.com/2389-research/tracker) pipelines. It gives prompts, shell scripts, model configuration, and branching logic first-class syntax — things that DOT forces into escaped string attributes.
+
+## Why Not Just DOT?
+
+DOT is a great graph language. Dippin doesn't replace DOT for visualization — it replaces DOT for *authoring*. The two coexist:
 
 ```
-workflow CodeReview
-  goal: "Review a pull request with multiple models"
-  start: Fetch
-  exit: Done
+Author in Dippin  ──→  Execute with Tracker
+                  ──→  Export to DOT for visualization (dippin export-dot)
+                  ──→  Render with Graphviz (dot -Tpng)
 
-  tool Fetch
-    timeout: 30s
-    command:
-      #!/bin/sh
-      gh pr diff $PR_NUMBER > /tmp/diff.txt
-      printf 'fetched'
-
-  parallel ReviewFan -> Claude, GPT, Gemini
-
-  agent Claude
-    model: claude-opus-4-6
-    provider: anthropic
-    prompt:
-      Review this pull request for correctness and security.
-      Be thorough but concise.
-
-  agent GPT
-    model: gpt-5.2
-    provider: openai
-    prompt:
-      Review this pull request for performance and maintainability.
-
-  agent Gemini
-    model: gemini-3-pro
-    provider: gemini
-    prompt:
-      Review this pull request for test coverage and edge cases.
-
-  fan_in ReviewJoin <- Claude, GPT, Gemini
-
-  agent Done
-    prompt: "Synthesize all reviews into a final report."
-
-  edges
-    Fetch -> ReviewFan
-    ReviewJoin -> Done
+Legacy DOT files  ──→  Migrate to Dippin (dippin migrate)
+                  ──→  Verify parity (dippin validate-migration)
 ```
 
-## Install
+**What DOT does well** — and Dippin preserves:
+- Graph-native syntax where nodes and edges are first-class
+- Graphviz rendering for instant visualization
+- A familiar, widely-tooled ecosystem
 
-```
+**What DOT does badly** — and Dippin fixes:
+
+| Problem | DOT | Dippin |
+|---------|-----|--------|
+| Multi-line prompts | `prompt="line1\nline2\nline3"` | Indented block, no escaping |
+| Shell scripts | `tool_command="#!/bin/sh\nset -eu\nif..."` | Real multiline, real syntax |
+| Model config | Untyped `llm_model="..."` attribute | Typed `model:` field with validation |
+| Branching | `condition="context.x!=y && context.a==b"` | `when ctx.x != "y" and ctx.a == "b"` |
+| Validation | Silent — typos in attrs are ignored | 21 diagnostic codes (DIP001–DIP112) |
+| Node types | Shape overloading (`box`=agent, `hexagon`=human) | Explicit `agent`, `tool`, `human` keywords |
+| Composition | No import/include system | `subgraph` with ref (v2) |
+
+**DOT is still the visualization target.** `dippin export-dot` generates DOT for Graphviz rendering. The migration tool (`dippin migrate`) converts existing DOT pipelines to Dippin with structural parity verification.
+
+## Quick Start
+
+### Prerequisites
+
+[Go 1.21+](https://go.dev/dl/) is required.
+
+### Install
+
+```sh
 go install github.com/2389/dippin/cmd/dippin@latest
 ```
 
 Or build from source:
 
-```
+```sh
 git clone https://github.com/2389-research/dippin-lang.git
 cd dippin-lang
-go build -o dippin ./cmd/dippin/
+go install ./cmd/dippin/
+```
+
+Verify:
+
+```sh
+dippin help
+```
+
+### Your First Workflow
+
+Create `hello.dip`:
+
+```
+workflow Hello
+  goal: "Ask the user a question and respond"
+  start: Ask
+  exit: Respond
+
+  human Ask
+    mode: freeform
+
+  agent Respond
+    model: claude-sonnet-4-6
+    provider: anthropic
+    prompt:
+      The user said something. Respond helpfully.
+
+  edges
+    Ask -> Respond
+```
+
+Validate it:
+
+```sh
+$ dippin validate hello.dip
+validation passed
+
+$ dippin lint hello.dip
+# Clean — no warnings
+
+$ dippin export-dot hello.dip | dot -Tpng -o hello.png
+# Generates a Graphviz visualization
+```
+
+### Migrate an Existing DOT Pipeline
+
+```sh
+# Convert DOT to Dippin
+dippin migrate --output pipeline.dip pipeline.dot
+
+# Verify structural equivalence
+dippin validate-migration pipeline.dot pipeline.dip
+
+# Check the result
+dippin lint pipeline.dip
 ```
 
 ## Commands
 
-```
-dippin parse <file>                           Parse and output IR as JSON
-dippin validate <file>                        Structural validation (DIP001-DIP009)
-dippin lint <file>                            Validation + semantic warnings (DIP101-DIP112)
-dippin fmt [--check] [--write] <file>         Format to canonical style
-dippin export-dot [--rankdir LR] <file>       Export to Graphviz DOT
-dippin migrate [--output <file>] <file.dot>   Convert legacy DOT to Dippin
-dippin validate-migration <old.dot> <new.dip> Verify migration parity
-dippin simulate [--scenario k=v] <file>       Dry-run the execution graph
-```
+| Command | Description |
+|---------|-------------|
+| `dippin parse <file>` | Parse and output IR as JSON |
+| `dippin validate <file>` | Structural validation (DIP001–DIP009) |
+| `dippin lint <file>` | Validation + semantic warnings (DIP101–DIP112) |
+| `dippin fmt [--check] [--write] <file>` | Format to canonical style |
+| `dippin export-dot [--rankdir LR] [--prompts] <file>` | Export to Graphviz DOT |
+| `dippin migrate [--output <file>] <file.dot>` | Convert DOT to Dippin |
+| `dippin validate-migration <old.dot> <new.dip>` | Verify migration parity |
+| `dippin simulate [--scenario k=v] [--all-paths] <file>` | Dry-run the execution graph |
 
-All commands return exit 0 (ok), 1 (errors found), or 2 (usage error).
-Use `--format json` on any command for machine-readable diagnostics.
+**Exit codes:** 0 = ok, 1 = errors found, 2 = usage error.
 
-## Syntax Reference
+**Machine-readable output:** Add `--format json` to any command for JSON diagnostics on stderr.
 
-### Workflow Header
+**CI usage:** `dippin fmt --check` exits 1 if the file isn't canonically formatted. `dippin lint` exits 0 even with warnings (only errors cause exit 1).
+
+## Language Reference
+
+The full grammar is specified in [`GRAMMAR.ebnf`](GRAMMAR.ebnf). Here's the practical reference.
+
+### Workflow Structure
+
+Every `.dip` file contains one workflow:
 
 ```
 workflow <Name>
-  goal: "Human-readable objective"
-  start: <StartNodeID>
+  goal: "What this pipeline does"
+  start: <EntryNodeID>
   exit: <ExitNodeID>
 
-  defaults
+  defaults             # Optional graph-level defaults
     model: claude-sonnet-4-6
     provider: anthropic
     max_retries: 3
     fidelity: summary:medium
+
+  # Node declarations (any order)
+  agent <ID>
+    ...
+  tool <ID>
+    ...
+  human <ID>
+    ...
+
+  # Edge declarations
+  edges
+    A -> B
+    B -> C when ctx.outcome == "success"
 ```
 
 ### Node Types
 
-**Agent** — LLM call:
+**`agent`** — calls an LLM:
 
 ```
   agent Analyze
+    label: "Deep Analysis"
     model: claude-opus-4-6
     provider: anthropic
     reasoning_effort: high
     fidelity: full:high
-    goal_gate: true
-    auto_status: true
+    goal_gate: true         # Pipeline fails if this node fails
+    auto_status: true       # Parse STATUS: success/fail from response
+    max_turns: 10
     prompt:
-      Multi-line prompt text.
-      No escaping needed — write naturally.
+      Multi-line prompt. No escaping.
+      Write markdown, code, anything.
+      Reference context: ${ctx.last_response}
 ```
 
-**Tool** — shell command:
+**`tool`** — runs a shell command:
 
 ```
   tool Build
+    label: "Build and Test"
     timeout: 60s
     command:
       #!/bin/sh
       set -eu
       go build ./...
-      go test ./...
+      go test ./... 2>&1
       printf 'done'
 ```
 
-**Human** — input gate:
+**`human`** — waits for user input:
 
 ```
   human Approve
-    mode: choice
+    label: "Human Approval"
+    mode: choice          # or "freeform"
     default: approve
 ```
 
-**Parallel / Fan-in** — concurrent execution:
+**`parallel` / `fan_in`** — concurrent execution:
 
 ```
   parallel ReviewFan -> ReviewA, ReviewB, ReviewC
   fan_in ReviewJoin <- ReviewA, ReviewB, ReviewC
 ```
 
-**Subgraph** — embedded sub-workflow:
+**`subgraph`** — embedded sub-workflow:
 
 ```
   subgraph Nested
     ref: other_workflow.dip
 ```
 
-### Edges
+### Edges and Conditions
 
 ```
   edges
-    A -> B
-    A -> C when ctx.outcome == "fail"
+    A -> B                                          # Unconditional
+    A -> C when ctx.outcome == "fail"               # Conditional
     A -> D when ctx.outcome == "success" and ctx.retries < 3
-    Retry -> Start restart: true
-    A -> B weight: 10
-    A -> B label: "happy path"
+    A -> B weight: 10                               # Priority weight
+    A -> B label: "happy path"                      # Display label
+    Retry -> Start restart: true                    # Loop restart
 ```
 
-Conditions support: `==`, `!=`, `<`, `>`, `<=`, `>=`, `and`, `or`, `not`, `contains`, `startswith`, `endswith`.
+**Condition operators:** `==`, `!=`, `<`, `>`, `<=`, `>=`, `and`, `or`, `not`, `contains`, `startswith`, `endswith`.
 
-### Node Fields
-
-| Field | Applies to | Description |
-|-------|-----------|-------------|
-| `label` | all | Human-readable display name |
-| `model` | agent | LLM model override |
-| `provider` | agent | LLM provider (anthropic, openai, gemini) |
-| `prompt` | agent | Prompt text (multiline OK) |
-| `system_prompt` | agent | System prompt (multiline OK) |
-| `reasoning_effort` | agent | low, medium, high |
-| `fidelity` | agent | summary:low, summary:medium, summary:high, full:high |
-| `goal_gate` | agent | Pipeline fails if this node fails |
-| `auto_status` | agent | Parse STATUS: from response |
-| `max_turns` | agent | Max LLM conversation turns |
-| `command` | tool | Shell command (multiline OK) |
-| `timeout` | tool | Execution timeout (e.g., 60s, 5m) |
-| `mode` | human | freeform or choice |
-| `default` | human | Default choice value |
-| `retry_policy` | all | standard, aggressive, patient, linear, none |
-| `max_retries` | all | Max retry attempts |
-| `retry_target` | all | Node to jump to on retry |
-| `fallback_target` | all | Fallback if retries exhausted |
-| `reads` | all | Context keys this node reads (advisory) |
-| `writes` | all | Context keys this node writes (advisory) |
-
-### Comments
-
-```
-  # This is a comment
-  agent Foo  # Inline comment
-```
+**Context variables** use dotted namespaces: `ctx.outcome`, `ctx.last_response`, `graph.goal`.
 
 ### Multiline Blocks
 
-Any field followed by a colon and a newline treats the indented block below as raw text. No escaping required — shell scripts, markdown, JSON, anything:
+Any field ending with `:` followed by a newline starts a raw text block. The indented content below is preserved verbatim — no tokenization, no escaping:
 
 ```
   agent Writer
     prompt:
-      # This is a markdown header inside the prompt
-      Write code that does:
+      # This markdown header is prompt content, not a Dippin comment
+      Write code like this:
       ```python
-      print("hello -> world")
+      print("hello -> world")  # arrows and colons are fine
       ```
 
   tool Runner
     command:
       #!/bin/bash
+      set -euo pipefail
       if [ -f go.mod ]; then
-        go test ./... 2>&1
+        go test ./... 2>&1 || { echo "failed"; exit 1; }
       fi
 ```
 
+Shell scripts with `if`/`fi`, here-docs, `case`/`esac`, process substitution, and any other construct work without modification.
+
+### Comments
+
+```
+  # Full-line comment
+  agent Foo  # Inline comment (must be preceded by whitespace)
+```
+
+Comments are not stripped inside multiline blocks — a `#` inside a prompt or command is literal content.
+
+### All Node Fields
+
+| Field | Node types | Description |
+|-------|-----------|-------------|
+| `label` | all | Display name |
+| `model` | agent | LLM model (overrides default) |
+| `provider` | agent | anthropic, openai, gemini |
+| `prompt` | agent | Prompt text (multiline) |
+| `system_prompt` | agent | System prompt (multiline) |
+| `reasoning_effort` | agent | low, medium, high |
+| `fidelity` | agent | summary:low, summary:medium, summary:high, full:high |
+| `goal_gate` | agent | true/false — pipeline fails if this node fails |
+| `auto_status` | agent | true/false — parse STATUS: from response |
+| `max_turns` | agent | Max LLM conversation turns |
+| `command` | tool | Shell command (multiline) |
+| `timeout` | tool | Duration (30s, 5m, 1h) |
+| `mode` | human | freeform or choice |
+| `default` | human | Default choice |
+| `ref` | subgraph | Workflow path |
+| `retry_policy` | all | standard, aggressive, patient, linear, none |
+| `max_retries` | all | Max retry count |
+| `retry_target` | all | Node to retry from |
+| `fallback_target` | all | Fallback if retries exhausted |
+| `reads` | all | Context keys read (advisory, comma-separated) |
+| `writes` | all | Context keys written (advisory, comma-separated) |
+
 ## Diagnostics
 
-### Validation Errors (DIP001–DIP009)
+Dippin diagnostics follow the Rust compiler convention: each has a code, severity, source location, explanation, and suggested fix.
 
-| Code | Description |
-|------|-------------|
-| DIP001 | Start node not declared or missing from nodes |
-| DIP002 | Exit node not declared or missing from nodes |
-| DIP003 | Edge references unknown node (with typo suggestions) |
-| DIP004 | Node unreachable from start |
-| DIP005 | Unconditional cycle detected (restart edges excluded) |
+```
+$ dippin validate broken.dip
+error[DIP003]: unknown node reference "InterpretX" in edge
+  --> broken.dip:45:5
+  = help: did you mean "Interpret"? (declared at line 12)
+```
+
+### Errors (DIP001–DIP009)
+
+| Code | What it catches |
+|------|----------------|
+| DIP001 | Missing or undeclared start node |
+| DIP002 | Missing or undeclared exit node |
+| DIP003 | Edge references unknown node (suggests typo fixes via edit distance) |
+| DIP004 | Unreachable node (not connected from start) |
+| DIP005 | Unconditional cycle (restart edges are excluded) |
 | DIP006 | Exit node has outgoing edges |
 | DIP007 | Parallel/fan_in target mismatch |
 | DIP008 | Duplicate node ID |
 | DIP009 | Duplicate edge |
 
-### Lint Warnings (DIP101–DIP112)
+### Warnings (DIP101–DIP112)
 
-| Code | Description |
-|------|-------------|
-| DIP101 | Node only reachable via conditional edges |
+| Code | What it catches |
+|------|----------------|
+| DIP101 | Node only reachable via conditional edges (fragile) |
 | DIP102 | Conditional edges with no unconditional fallback |
 | DIP103 | Overlapping edge conditions |
-| DIP104 | Unbounded retries (no max_retries set) |
-| DIP106 | Unknown variable namespace in ${...} |
+| DIP104 | Unbounded retries (no max_retries) |
+| DIP106 | Unknown variable namespace in `${...}` |
 | DIP107 | Node reads context key no upstream node writes |
-| DIP108 | Unknown model or provider |
-| DIP110 | Agent node with empty prompt |
-| DIP111 | Tool node with no timeout |
-| DIP112 | I/O flow analysis — reads without upstream writes |
+| DIP108 | Unknown model or provider name |
+| DIP110 | Agent with empty prompt |
+| DIP111 | Tool with no timeout |
+| DIP112 | I/O data flow — reads key not written upstream |
 
 ## Simulation
 
 Dry-run a workflow to see the execution path without calling LLMs or running commands:
 
-```
+```sh
 $ dippin simulate examples/ask_and_execute.dip
-{"event":"pipeline_start","workflow":"AskAndExecute","timestamp":"..."}
-{"event":"node_enter","node":"Start","kind":"agent","timestamp":"..."}
-{"event":"node_exit","node":"Start","status":"success","timestamp":"..."}
-{"event":"edge_traverse","from":"Start","to":"SetupWorkspace","timestamp":"..."}
+{"event":"pipeline_start","workflow":"AskAndExecute",...}
+{"event":"node_enter","node":"Start","kind":"agent",...}
+{"event":"node_exit","node":"Start","status":"success",...}
+{"event":"edge_traverse","from":"Start","to":"SetupWorkspace",...}
 ...
-{"event":"pipeline_end","status":"success","nodes_visited":12,"timestamp":"..."}
+{"event":"pipeline_end","status":"success","nodes_visited":12,...}
 ```
 
-Explore different paths by injecting context values:
+Explore failure paths:
 
+```sh
+$ dippin simulate workflow.dip --scenario outcome=fail
 ```
-$ dippin simulate examples/stress_graph_monster.dip --scenario outcome=fail
+
+Enumerate all possible paths through the graph:
+
+```sh
+$ dippin simulate workflow.dip --all-paths
 ```
+
+## Editor Support
+
+A VS Code extension is available in [`editors/vscode/`](editors/vscode/) providing:
+- Syntax highlighting for `.dip` files
+- Comment toggling (`Ctrl+/`)
+- Indentation-based folding
+- Auto-indent after `:`
+
+See the [extension README](editors/vscode/README.md) for installation.
 
 ## Examples
 
-The `examples/` directory contains 15 workflows:
+The [`examples/`](examples/) directory contains 15 workflows:
 
-**Migrated from Tracker** (`.dip` + original `.dot`):
-- `ask_and_execute` — multi-model implementation with human approval
-- `consensus_task` / `consensus_task_parity` — consensus-driven task execution
-- `human_gate_showcase` — human gate patterns
-- `megaplan` / `megaplan_quality` — multi-phase sprint planning
-- `semport` / `semport_thematic` — semantic porting workflows
-- `sprint_exec` — sprint execution pipeline
-- `vulnerability_analyzer` — security analysis pipeline
+**Production patterns** (migrated from Tracker, with original `.dot` files):
 
-**Stress tests** (parser and graph edge cases):
-- `stress_shell_hell` — here-docs, case/esac, process substitution, traps
-- `stress_prompt_chaos` — markdown, code blocks, Dippin-like syntax in prompts
-- `stress_graph_monster` — 20 nodes, 4 parallel groups, conditional routing, restarts
-- `stress_edge_cases` — every field, empty prompts, colons in values
-- `stress_adversarial` — Dippin grammar in prompts, unicode, deeply nested shells
+| Example | Pattern |
+|---------|---------|
+| `ask_and_execute` | Multi-model parallel implementation with human approval gate |
+| `consensus_task` | Three-model consensus with cross-review |
+| `human_gate_showcase` | Human gate patterns (freeform, choice, approval) |
+| `megaplan` | Multi-phase sprint planning with orientation, drafting, Q&A |
+| `semport` / `semport_thematic` | Semantic porting between codebases |
+| `sprint_exec` | Sprint execution with parallel implementation and review |
+| `vulnerability_analyzer` | Security analysis with static scanning |
+
+**Stress tests** (parser and validator edge cases):
+
+| Example | What it tests |
+|---------|--------------|
+| `stress_shell_hell` | Here-docs, `case`/`esac`, process substitution, traps, arrays |
+| `stress_prompt_chaos` | Markdown, code blocks, Dippin syntax inside prompts, JSON, regex |
+| `stress_graph_monster` | 20 nodes, 4 parallel groups, conditional routing, restart edges |
+| `stress_edge_cases` | Every field populated, empty prompts, colons in values |
+| `stress_adversarial` | Dippin grammar in prompts, Unicode (CJK/Arabic/emoji), nested here-docs |
 
 ## Architecture
 
@@ -297,19 +410,21 @@ The `examples/` directory contains 15 workflows:
 .dot file ─────→ Migrator ──→ IR ──→ .dip source
 ```
 
-All packages program against `ir.Workflow` as the central contract:
+Everything flows through `ir.Workflow` — the canonical intermediate representation. Packages never reach into each other's internals.
 
-| Package | Purpose |
-|---------|---------|
-| `ir/` | Core types: Workflow, Node, Edge, Condition AST, typed NodeConfig |
-| `parser/` | Indentation-aware lexer + recursive-descent parser |
-| `validator/` | Structural validation and semantic linting |
-| `formatter/` | Canonical pretty-printer (idempotent) |
-| `export/` | DOT export for Graphviz visualization |
-| `migrate/` | DOT-to-Dippin conversion + parity checker |
-| `simulate/` | Reference executor with event protocol |
-| `event/` | Canonical event types for execution protocols |
-| `cmd/dippin/` | CLI |
+| Package | What it does |
+|---------|-------------|
+| `ir/` | Core types: `Workflow`, `Node`, `Edge`, `Condition` AST, typed `NodeConfig` sealed interface |
+| `parser/` | Indentation-aware lexer + recursive-descent parser producing IR |
+| `validator/` | 9 structural checks + 12 semantic lint rules |
+| `formatter/` | Canonical pretty-printer (idempotent: `format(format(x)) == format(x)`) |
+| `export/` | DOT export with shape mapping, condition serialization, restart edge styling |
+| `migrate/` | DOT→IR→Dippin converter with namespace prefixing and structural parity checker |
+| `simulate/` | Reference graph executor emitting standardized JSONL events |
+| `event/` | Canonical event types for the execution protocol |
+| `cmd/dippin/` | CLI wiring |
+
+Zero external dependencies. Pure Go standard library.
 
 ## License
 

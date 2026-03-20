@@ -1,0 +1,229 @@
+(* Dippin Language Grammar — EBNF Notation *)
+(* This is the canonical syntax specification for .dip files. *)
+(* Reference implementation: parser/lexer.go, parser/parser.go *)
+
+(* ═══════════════════════════════════════════════════════════ *)
+(* Top-Level Structure                                        *)
+(* ═══════════════════════════════════════════════════════════ *)
+
+workflow_file   = workflow_decl ;
+
+workflow_decl   = "workflow" IDENTIFIER NEWLINE
+                  INDENT workflow_body OUTDENT ;
+
+workflow_body   = { workflow_field | defaults_section
+                  | node_decl | edges_section | NEWLINE } ;
+
+workflow_field  = "goal"  ":" field_value
+                | "start" ":" IDENTIFIER
+                | "exit"  ":" IDENTIFIER ;
+
+(* ═══════════════════════════════════════════════════════════ *)
+(* Defaults Section                                           *)
+(* ═══════════════════════════════════════════════════════════ *)
+
+defaults_section = "defaults" NEWLINE INDENT { defaults_field } OUTDENT ;
+
+defaults_field   = "model"          ":" field_value
+                 | "provider"       ":" field_value
+                 | "retry_policy"   ":" field_value
+                 | "max_retries"    ":" INTEGER
+                 | "fidelity"       ":" field_value
+                 | "max_restarts"   ":" INTEGER
+                 | "restart_target" ":" IDENTIFIER
+                 | "cache_tools"    ":" BOOLEAN
+                 | "compaction"     ":" field_value ;
+
+(* ═══════════════════════════════════════════════════════════ *)
+(* Node Declarations                                          *)
+(* ═══════════════════════════════════════════════════════════ *)
+
+node_decl       = agent_node | human_node | tool_node
+                | subgraph_node | parallel_node | fan_in_node ;
+
+(* --- Agent Node ------------------------------------------- *)
+
+agent_node      = "agent" IDENTIFIER NEWLINE
+                  INDENT { agent_field | common_field } OUTDENT ;
+
+agent_field     = "prompt"            ":" field_value
+                | "system_prompt"     ":" field_value
+                | "model"             ":" field_value
+                | "provider"          ":" field_value
+                | "max_turns"         ":" INTEGER
+                | "goal_gate"         ":" BOOLEAN
+                | "auto_status"       ":" BOOLEAN
+                | "reasoning_effort"  ":" field_value
+                | "fidelity"          ":" field_value ;
+
+(* --- Human Node ------------------------------------------- *)
+
+human_node      = "human" IDENTIFIER NEWLINE
+                  INDENT { human_field | common_field } OUTDENT ;
+
+human_field     = "mode"    ":" field_value       (* "freeform" | "choice" *)
+                | "default" ":" field_value ;
+
+(* --- Tool Node -------------------------------------------- *)
+
+tool_node       = "tool" IDENTIFIER NEWLINE
+                  INDENT { tool_field | common_field } OUTDENT ;
+
+tool_field      = "command" ":" field_value
+                | "timeout" ":" DURATION ;
+
+(* --- Subgraph Node ---------------------------------------- *)
+
+subgraph_node   = "subgraph" IDENTIFIER NEWLINE
+                  INDENT { subgraph_field | common_field } OUTDENT ;
+
+subgraph_field  = "ref"    ":" field_value
+                | "params" ":" NEWLINE INDENT { param_entry } OUTDENT ;
+
+param_entry     = IDENTIFIER ":" field_value ;
+
+(* --- Parallel / Fan-In (inline syntax) -------------------- *)
+
+parallel_node   = "parallel" IDENTIFIER "->" identifier_list NEWLINE ;
+
+fan_in_node     = "fan_in" IDENTIFIER "<-" identifier_list NEWLINE ;
+
+identifier_list = IDENTIFIER { "," IDENTIFIER } ;
+
+(* --- Common Fields (all node types) ----------------------- *)
+
+common_field    = "label"           ":" field_value
+                | "class"           ":" identifier_list
+                | "reads"           ":" identifier_list
+                | "writes"          ":" identifier_list
+                | "retry_policy"    ":" field_value
+                | "max_retries"     ":" INTEGER
+                | "retry_target"    ":" IDENTIFIER
+                | "fallback_target" ":" IDENTIFIER ;
+
+(* ═══════════════════════════════════════════════════════════ *)
+(* Edges Section                                              *)
+(* ═══════════════════════════════════════════════════════════ *)
+
+edges_section   = "edges" NEWLINE INDENT { edge_entry } OUTDENT ;
+
+edge_entry      = IDENTIFIER "->" IDENTIFIER { edge_attr } NEWLINE ;
+
+edge_attr       = "when" condition
+                | "label"   ":" field_value
+                | "weight"  ":" INTEGER
+                | "restart" ":" BOOLEAN ;
+
+(* ═══════════════════════════════════════════════════════════ *)
+(* Condition Expressions                                      *)
+(* ═══════════════════════════════════════════════════════════ *)
+
+condition       = or_expr ;
+
+or_expr         = and_expr { "or" and_expr } ;
+
+and_expr        = unary_expr { "and" unary_expr } ;
+
+unary_expr      = "not" unary_expr
+                | compare_expr ;
+
+compare_expr    = operand compare_op operand ;
+
+compare_op      = "==" | "!=" | "=" | "<" | ">" | "<=" | ">="
+                | "contains" | "startswith" | "endswith" | "in" ;
+
+operand         = variable | STRING | IDENTIFIER ;
+
+variable        = IDENTIFIER "." IDENTIFIER ;  (* e.g., ctx.outcome, graph.goal *)
+
+(* ═══════════════════════════════════════════════════════════ *)
+(* Field Values                                               *)
+(* ═══════════════════════════════════════════════════════════ *)
+
+(* A field value is either inline (same line) or a multiline  *)
+(* block (next line, indented deeper). Multiline blocks are   *)
+(* captured as raw text — no further tokenization occurs.     *)
+
+field_value     = inline_value | multiline_block ;
+
+inline_value    = STRING | raw_inline ;
+
+raw_inline      = ? all characters from colon to end of line,
+                    excluding trailing whitespace ? ;
+
+multiline_block = NEWLINE INDENT raw_content OUTDENT ;
+
+raw_content     = ? verbatim text lines at block indentation,
+                    including blank lines, until indentation
+                    returns to or below the field's level.
+                    The block's base indentation is stripped.
+                    No tokenization — shell scripts, markdown,
+                    JSON, code, anything is preserved as-is. ? ;
+
+(* ═══════════════════════════════════════════════════════════ *)
+(* Lexical Elements                                           *)
+(* ═══════════════════════════════════════════════════════════ *)
+
+IDENTIFIER      = letter { letter | digit | "_" | "-" | "." | "/" } ;
+
+STRING          = '"' { string_char } '"' ;
+
+string_char     = ? any character except '"' and '\' ?
+                | '\' ( '"' | '\' ) ;
+
+INTEGER         = digit { digit } ;
+
+BOOLEAN         = "true" | "false" ;
+
+DURATION        = INTEGER time_unit { INTEGER time_unit } ;
+
+time_unit       = "h" | "m" | "s" | "ms" ;
+
+COMMENT         = "#" { ? any character except newline ? } ;
+
+NEWLINE         = ? newline character ? ;
+
+INDENT          = ? increase in leading whitespace from previous line ? ;
+
+OUTDENT         = ? decrease in leading whitespace to previous indent level ? ;
+
+letter          = "A" | "B" | ... | "Z" | "a" | "b" | ... | "z" ;
+
+digit           = "0" | "1" | ... | "9" ;
+
+(* ═══════════════════════════════════════════════════════════ *)
+(* Whitespace and Comment Rules                               *)
+(* ═══════════════════════════════════════════════════════════ *)
+
+(* - Indentation is significant (like Python/YAML)            *)
+(* - Spaces are the standard indent character (2-space)       *)
+(* - Tabs are expanded to 8 spaces                            *)
+(* - Blank lines are ignored for indentation tracking         *)
+(* - Comment-only lines (# ...) are ignored for indentation   *)
+(* - Inline comments require preceding whitespace             *)
+(* - Comments inside multiline blocks are literal content     *)
+
+(* ═══════════════════════════════════════════════════════════ *)
+(* Canonical Field Ordering (enforced by formatter)           *)
+(* ═══════════════════════════════════════════════════════════ *)
+
+(* Workflow header: goal, start, exit                         *)
+(* Defaults: model, provider, retry_policy, max_retries,      *)
+(*   fidelity, max_restarts, restart_target, cache_tools,     *)
+(*   compaction                                               *)
+(* Agent: label, class, model, provider, reasoning_effort,    *)
+(*   fidelity, goal_gate, auto_status, max_turns,             *)
+(*   retry_policy, max_retries, retry_target,                 *)
+(*   fallback_target, reads, writes, prompt                   *)
+(* Human: label, mode, default, reads, writes                 *)
+(* Tool: label, timeout, reads, writes, command               *)
+(* Subgraph: label, ref, params                               *)
+(* Note: multiline fields (prompt, command) are always last   *)
+
+(* ═══════════════════════════════════════════════════════════ *)
+(* Reserved Keywords                                          *)
+(* ═══════════════════════════════════════════════════════════ *)
+
+(* workflow, agent, human, tool, subgraph, parallel, fan_in,  *)
+(* edges, defaults, when, and, or, not, contains, startswith, *)
+(* endswith, in, true, false, restart, label, weight          *)

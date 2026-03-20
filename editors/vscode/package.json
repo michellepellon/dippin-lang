@@ -1,0 +1,39 @@
+{
+  "name": "dippin-lang",
+  "displayName": "Dippin",
+  "description": "Language support for Dippin (.dip) AI pipeline workflow files",
+  "version": "0.1.0",
+  "publisher": "2389-research",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/2389-research/dippin-lang"
+  },
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "dippin",
+        "aliases": [
+          "Dippin",
+          "dip"
+        ],
+        "extensions": [
+          ".dip"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "dippin",
+        "scopeName": "source.dippin",
+        "path": "./syntaxes/dippin.tmLanguage.json"
+      }
+    ]
+  }
+}
