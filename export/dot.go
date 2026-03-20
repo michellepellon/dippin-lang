@@ -52,9 +52,15 @@ func ExportDOT(w *ir.Workflow, opts ExportOptions) string {
 	b.WriteString("  node [fontname=\"Helvetica\"];\n")
 	b.WriteString("  edge [fontname=\"Helvetica\"];\n")
 
+	// Build execution order map once if path is provided.
+	execOrder := make(map[string][]int)
+	for i, id := range opts.ExecutionPath {
+		execOrder[id] = append(execOrder[id], i+1)
+	}
+
 	// Emit nodes.
 	for _, n := range w.Nodes {
-		writeNodeDOT(&b, n, w, opts)
+		writeNodeDOT(&b, n, w, opts, execOrder)
 	}
 
 	b.WriteByte('\n')
@@ -92,14 +98,8 @@ func nodeShape(kind ir.NodeKind) string {
 }
 
 // writeNodeDOT emits a single DOT node statement.
-func writeNodeDOT(b *strings.Builder, n *ir.Node, w *ir.Workflow, opts ExportOptions) {
+func writeNodeDOT(b *strings.Builder, n *ir.Node, w *ir.Workflow, opts ExportOptions, order map[string][]int) {
 	attrs := make(map[string]string)
-
-	// Build execution order map if path is provided.
-	order := make(map[string][]int)
-	for i, id := range opts.ExecutionPath {
-		order[id] = append(order[id], i+1)
-	}
 
 	// Shape: start and exit override the kind-based shape.
 	if n.ID == w.Start {

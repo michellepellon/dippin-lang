@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync/atomic"
 
 	"github.com/2389/dippin/event"
 	"github.com/2389/dippin/ir"
@@ -798,14 +799,14 @@ func cloneEvents(events []event.Event) []event.Event {
 	return c
 }
 
-var runCounter int
+var runCounter atomic.Int64
 
 func generateRunID() string {
-	runCounter++
-	return fmt.Sprintf("sim-%04d", runCounter)
+	n := runCounter.Add(1)
+	return fmt.Sprintf("sim-%04d", n)
 }
 
 // ResetRunCounter resets the run ID counter. Used in tests for determinism.
 func ResetRunCounter() {
-	runCounter = 0
+	runCounter.Store(0)
 }

@@ -78,17 +78,16 @@ func (l *Lexer) PeekToken() Token {
 	return l.tokens[l.tokenIdx]
 }
 
-// lineIndent returns the indentation level of a line (number of leading spaces).
+// lineIndent returns the number of leading whitespace bytes in a line.
+// Tabs and spaces each count as one byte. This is used for indentation
+// tracking where the returned value is also used as a byte offset
+// into the string (e.g., line[lineIndent(line):] to get content).
 func lineIndent(line string) int {
-	indent := 0
-	for indent < len(line) && (line[indent] == ' ' || line[indent] == '\t') {
-		if line[indent] == '\t' {
-			indent += 8
-		} else {
-			indent++
-		}
+	i := 0
+	for i < len(line) && (line[i] == ' ' || line[i] == '\t') {
+		i++
 	}
-	return indent
+	return i
 }
 
 // isBlankOrComment returns true if a line is empty, whitespace-only, or a comment-only line.
@@ -259,19 +258,10 @@ func (l *Lexer) extractRawBlock(startIdx, endIdx, indent int) string {
 	for i := startIdx; i < endIdx && i < len(l.lines); i++ {
 		line := l.lines[i]
 		line = strings.TrimRight(line, "\r")
-		// Strip the indent prefix
-		stripped := 0
+		// Strip the indent prefix (byte count)
 		j := 0
-		for j < len(line) && stripped < indent {
-			if line[j] == ' ' {
-				stripped++
-				j++
-			} else if line[j] == '\t' {
-				stripped += 8
-				j++
-			} else {
-				break
-			}
+		for j < len(line) && j < indent && (line[j] == ' ' || line[j] == '\t') {
+			j++
 		}
 		result = append(result, line[j:])
 	}
