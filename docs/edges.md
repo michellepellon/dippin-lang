@@ -1,0 +1,253 @@
+# Edge Reference
+
+Edges define the connections between nodes in a Dippin workflow. They control the flow of execution — which node runs after which, under what conditions, and with what priority.
+
+---
+
+## Edge Syntax
+
+All edges are defined in the `edges` block at the bottom of a workflow:
+
+```dippin
+  edges
+    A -> B
+    B -> C when ctx.outcome = success
+    B -> D when ctx.outcome = fail label: "retry" restart: true
+```
+
+Each edge is a single line:
+
+```
+<FromID> -> <ToID> [when <condition>] [label: <text>] [weight: <int>] [restart: true]
+```
+
+---
+
+## Edge Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `From` | Node ID | Yes | Source node — where the edge originates |
+| `To` | Node ID | Yes | Target node — where the edge leads |
+| `when` | Condition | No | Boolean guard expression. Edge is only traversed if true at runtime. |
+| `label` | String | No | Human-readable text. Displayed on the edge in DOT exports. Also used for human gate choice matching. |
+| `weight` | Integer | No | Priority hint. Higher values win when multiple edges are candidates. |
+| `restart` | Boolean | No | When `true`, marks this as a back-edge that triggers a loop restart. |
+
+---
+
+## Edge Types
+
+### Unconditional Edges
+
+An edge with no `when` clause is always available:
+
+```dippin
+    Start -> Process
+    Process -> Done
+```
+
+### Conditional Edges
+
+Edges gated on runtime conditions:
+
+```dippin
+    Review -> Approve  when ctx.outcome = success
+    Review -> Reject   when ctx.outcome = fail
+```
+
+At runtime, the engine evaluates conditions and follows the first matching edge. If no conditional edge matches and there's an unconditional edge, that serves as the fallback.
+
+### Labeled Edges
+
+Labels serve dual purpose — display text and human gate routing:
+
+```dippin
+    # Display label in DOT visualization:
+    Validate -> Fix label: "needs work"
+
+    # Human gate choices (label determines which edge the choice follows):
+    Approve -> Ship    label: "yes"
+    Approve -> Revise  label: "no"
+```
+
+### Weighted Edges
+
+Weight provides a priority hint when multiple edges compete:
+
+```dippin
+    Router -> PathA weight: 10
+    Router -> PathB weight: 5
+    Router -> PathC weight: 1
+```
+
+Higher weight = higher priority. If conditions and labels don't resolve the choice, weight breaks the tie.
+
+### Restart Edges (Back-Edges)
+
+Restart edges create controlled loops:
+
+```dippin
+    Validate -> Implement when ctx.outcome = fail restart: true
+```
+
+When a restart edge is followed:
+
+1. The engine increments the global restart counter
+2. If the counter exceeds `max_restarts` (default 5), the pipeline fails
+3. The engine clears all nodes downstream of the target from the completed set
+4. Retry counts for cleared nodes are reset (fresh budgets)
+5. Context is **preserved** — all key-values survive across restarts
+6. Execution resumes from the restart target node
+
+Restart edges are **not** counted as cycles by DIP005 validation — they are the intentional mechanism for iteration.
+
+In DOT export, restart edges are styled with dashed lines.
+
+---
+
+## Routing Priority
+
+When a node completes, the engine selects the next edge using this cascade (first match wins):
+
+| Priority | Mechanism | Description |
+|----------|-----------|-------------|
+| 1 | **Condition match** | First edge whose `when` condition evaluates to true |
+| 2 | **Handler preference** | Edge whose label matches the node's `PreferredLabel` from its outcome |
+| 3 | **Handler suggestion** | Edge leading to a node in the handler's `SuggestedNextNodes` |
+| 4 | **Weight** | Highest `weight` value among remaining edges |
+| 5 | **Lexical** | Alphabetically first by target node ID |
+
+This means conditions always take precedence over labels, and labels over weights. The lexical fallback ensures deterministic behavior.
+
+---
+
+## Condition Expressions
+
+### Comparison Operators
+
+| Operator | Meaning | Example |
+|----------|---------|---------|
+| `=` | Exact string equality | `ctx.outcome = success` |
+| `!=` | String inequality | `ctx.outcome != fail` |
+| `contains` | Substring match | `ctx.response contains "approved"` |
+| `startswith` | Prefix match | `ctx.response startswith "ERROR"` |
+| `endswith` | Suffix match | `ctx.filename endswith ".go"` |
+| `in` | Value in comma-separated list | `ctx.status in "pass,fail,skip"` |
+
+### Logical Operators
+
+| Operator | Meaning | Precedence |
+|----------|---------|------------|
+| `not` | Logical negation | Highest |
+| `and` | Logical AND | Medium |
+| `or` | Logical OR | Lowest |
+
+Use parentheses to override precedence:
+
+```dippin
+    # Without parens: "not A and B" means "(not A) and B"
+    A -> B when not ctx.outcome = fail and ctx.score = high
+
+    # With parens: explicit grouping
+    A -> B when (ctx.x = 1 or ctx.y = 2) and ctx.z = 3
+```
+
+### Condition AST
+
+Internally, conditions are parsed into an AST (not evaluated as strings). The AST types are:
+
+- `CondCompare` — A single comparison (`variable op value`)
+- `CondAnd` — Logical AND of two sub-expressions
+- `CondOr` — Logical OR of two sub-expressions
+- `CondNot` — Logical negation of a sub-expression
+
+This means typos in variable names can be caught at lint time (DIP106) rather than silently evaluating to empty string.
+
+---
+
+## Context Variables in Conditions
+
+All variables use explicit namespaces. See [context.md](context.md) for the full reference.
+
+Common variables used in conditions:
+
+| Variable | Set By | Values |
+|----------|--------|--------|
+| `ctx.outcome` | Agent (auto_status), engine | `"success"`, `"fail"`, `"retry"` |
+| `ctx.tool_stdout` | Tool nodes | Command's stdout output |
+| `ctx.tool_stderr` | Tool nodes | Command's stderr output |
+| `ctx.human_response` | Human nodes | User's text input |
+| `ctx.last_response` | Agent nodes | LLM's response text |
+| `graph.goal` | Workflow header | The workflow's goal string |
+
+---
+
+## Routing Patterns
+
+### Binary branch
+
+```dippin
+  edges
+    Check -> Pass when ctx.outcome = success
+    Check -> Fail when ctx.outcome = fail
+```
+
+### Branch with fallback
+
+Always include an unconditional edge as a fallback (avoids DIP102 warning):
+
+```dippin
+  edges
+    Check -> Pass    when ctx.outcome = success
+    Check -> Retry   when ctx.outcome = retry
+    Check -> Fail    # unconditional fallback
+```
+
+### Retry loop
+
+```dippin
+  edges
+    Implement -> Review
+    Review -> Ship       when ctx.outcome = success
+    Review -> Implement  when ctx.outcome = fail restart: true
+```
+
+### Human choice gate
+
+```dippin
+  human Decide
+    mode: choice
+    default: "approve"
+
+  edges
+    Decide -> Approved label: "approve"
+    Decide -> Rejected label: "reject"
+    Decide -> Deferred label: "defer"
+```
+
+### Weighted fallback
+
+```dippin
+  edges
+    Router -> PreferredPath weight: 10
+    Router -> AlternatePath weight: 5
+    Router -> LastResort    weight: 1
+```
+
+---
+
+## Validation Rules for Edges
+
+| Code | Rule | Severity |
+|------|------|----------|
+| DIP003 | Edge endpoints must reference existing nodes | Error |
+| DIP005 | No unconditional cycles (restart edges are exempt) | Error |
+| DIP006 | Exit node must have zero outgoing edges | Error |
+| DIP009 | No duplicate edges (same from, to, and condition) | Error |
+| DIP101 | Node only reachable via conditional edges may be skipped | Warning |
+| DIP102 | Node with conditional outgoing edges has no unconditional fallback | Warning |
+| DIP103 | Multiple edges from same node test same variable=value | Warning |
+| DIP105 | No guaranteed path from start to exit | Warning |
+
+See [validation.md](validation.md) for full details on each code.
