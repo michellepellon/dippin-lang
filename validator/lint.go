@@ -505,13 +505,24 @@ func lintReadsWithoutUpstreamWrites(w *ir.Workflow) []Diagnostic {
 		return nil
 	}
 
-	// Build forward adjacency (non-restart edges).
+	adj := buildForwardAdjacency(w)
+	available := computeAvailableWrites(w, adj)
+	return checkUnprovidedReads(w, available)
+}
+
+// buildForwardAdjacency builds a forward adjacency map for non-restart edges,
+// including implicit edges from parallel and fan_in nodes.
+func buildForwardAdjacency(w *ir.Workflow) map[string][]string {
 	adj := make(map[string][]string)
+
+	// Add explicit edges (non-restart only)
 	for _, e := range w.Edges {
 		if !e.Restart {
 			adj[e.From] = append(adj[e.From], e.To)
 		}
 	}
+
+	// Add implicit edges from parallel/fan_in nodes
 	for _, n := range w.Nodes {
 		switch cfg := n.Config.(type) {
 		case ir.ParallelConfig:
@@ -523,16 +534,59 @@ func lintReadsWithoutUpstreamWrites(w *ir.Workflow) []Diagnostic {
 		}
 	}
 
-	// Topological order via BFS (Kahn's algorithm).
+	return adj
+}
+
+// computeAvailableWrites performs topological traversal and computes
+// which context keys are available at each node based on upstream writes.
+func computeAvailableWrites(w *ir.Workflow, adj map[string][]string) map[string]map[string]bool {
+	inDegree := computeInDegrees(w, adj)
+	queue := findRootNodes(w, inDegree)
+	available := initializeAvailable(w)
+
+	// BFS traversal in topological order
+	for len(queue) > 0 {
+		curr := queue[0]
+		queue = queue[1:]
+
+		// Add this node's writes to available set
+		if n := w.Node(curr); n != nil {
+			for _, key := range n.IO.Writes {
+				available[curr][key] = true
+			}
+		}
+
+		// Propagate to successors
+		for _, next := range adj[curr] {
+			propagateKeys(available, curr, next)
+			inDegree[next]--
+			if inDegree[next] == 0 {
+				queue = append(queue, next)
+			}
+		}
+	}
+
+	return available
+}
+
+// computeInDegrees calculates the in-degree for each node considering
+// both explicit edges and implicit parallel/fan_in edges.
+func computeInDegrees(w *ir.Workflow, adj map[string][]string) map[string]int {
 	inDegree := make(map[string]int)
+
+	// Initialize all nodes with in-degree 0
 	for _, n := range w.Nodes {
 		inDegree[n.ID] = 0
 	}
+
+	// Count incoming edges
 	for _, e := range w.Edges {
 		if !e.Restart {
 			inDegree[e.To]++
 		}
 	}
+
+	// Count parallel/fan_in incoming edges
 	for _, n := range w.Nodes {
 		switch cfg := n.Config.(type) {
 		case ir.ParallelConfig:
@@ -544,46 +598,40 @@ func lintReadsWithoutUpstreamWrites(w *ir.Workflow) []Diagnostic {
 		}
 	}
 
-	queue := []string{}
+	return inDegree
+}
+
+// findRootNodes returns all nodes with in-degree 0 (entry points for traversal).
+func findRootNodes(w *ir.Workflow, inDegree map[string]int) []string {
+	var roots []string
 	for _, n := range w.Nodes {
 		if inDegree[n.ID] == 0 {
-			queue = append(queue, n.ID)
+			roots = append(roots, n.ID)
 		}
 	}
+	return roots
+}
 
-	// For each node, compute the set of keys available from upstream writes.
+// initializeAvailable creates the availability map with empty sets for each node.
+func initializeAvailable(w *ir.Workflow) map[string]map[string]bool {
 	available := make(map[string]map[string]bool)
 	for _, n := range w.Nodes {
 		available[n.ID] = make(map[string]bool)
 	}
+	return available
+}
 
-	var order []string
-	for len(queue) > 0 {
-		curr := queue[0]
-		queue = queue[1:]
-		order = append(order, curr)
-
-		// Add this node's writes to what's available for downstream.
-		n := w.Node(curr)
-		if n != nil {
-			for _, key := range n.IO.Writes {
-				available[curr][key] = true
-			}
-		}
-
-		for _, next := range adj[curr] {
-			// Merge current node's available keys into the next node's available set.
-			for key := range available[curr] {
-				available[next][key] = true
-			}
-			inDegree[next]--
-			if inDegree[next] == 0 {
-				queue = append(queue, next)
-			}
-		}
+// propagateKeys copies all available keys from source to destination node.
+func propagateKeys(available map[string]map[string]bool, from, to string) {
+	for key := range available[from] {
+		available[to][key] = true
 	}
+}
 
+// checkUnprovidedReads generates diagnostics for reads that have no upstream write.
+func checkUnprovidedReads(w *ir.Workflow, available map[string]map[string]bool) []Diagnostic {
 	var diags []Diagnostic
+
 	for _, n := range w.Nodes {
 		for _, key := range n.IO.Reads {
 			if !available[n.ID][key] {
@@ -597,6 +645,7 @@ func lintReadsWithoutUpstreamWrites(w *ir.Workflow) []Diagnostic {
 			}
 		}
 	}
+
 	return diags
 }
 

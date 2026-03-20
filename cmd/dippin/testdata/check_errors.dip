@@ -1,0 +1,20 @@
+workflow Broken
+  goal: "Trigger both errors and warnings"
+  start: Ask
+  exit: Done
+
+  agent Ask
+    prompt:
+
+  tool Run
+    command:
+      echo hello
+
+  agent Done
+    prompt:
+      Finish up.
+
+  edges
+    Ask -> Run
+    Run -> Done
+    Ask -> Nope

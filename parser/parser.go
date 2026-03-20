@@ -224,6 +224,31 @@ func (p *Parser) readFieldValue(lineNum int) string {
 }
 
 func (p *Parser) applyNodeField(n *ir.Node, key, val string, loc ir.SourceLocation) {
+	// Try common fields first
+	if p.tryApplyCommonField(n, key, val, loc) {
+		return
+	}
+
+	// Dispatch to config-specific handlers
+	switch cfg := n.Config.(type) {
+	case ir.AgentConfig:
+		p.applyAgentField(&cfg, key, val, loc)
+		n.Config = cfg
+	case ir.HumanConfig:
+		p.applyHumanField(&cfg, key, val, loc)
+		n.Config = cfg
+	case ir.ToolConfig:
+		p.applyToolField(&cfg, key, val, loc)
+		n.Config = cfg
+	case ir.SubgraphConfig:
+		p.applySubgraphField(&cfg, key, val, loc)
+		n.Config = cfg
+	}
+}
+
+// tryApplyCommonField applies fields that are common to all node types.
+// Returns true if the field was handled, false otherwise.
+func (p *Parser) tryApplyCommonField(n *ir.Node, key, val string, loc ir.SourceLocation) bool {
 	switch key {
 	case "label":
 		n.Label = val
@@ -243,56 +268,64 @@ func (p *Parser) applyNodeField(n *ir.Node, key, val string, loc ir.SourceLocati
 		n.Retry.FallbackTarget = val
 	case "base_delay":
 		n.Retry.BaseDelay = p.parseDuration(val, key, loc)
+	default:
+		return false
 	}
+	return true
+}
 
-	switch cfg := n.Config.(type) {
-	case ir.AgentConfig:
-		switch key {
-		case "prompt":
-			cfg.Prompt = val
-		case "system_prompt":
-			cfg.SystemPrompt = val
-		case "model":
-			cfg.Model = val
-		case "provider":
-			cfg.Provider = val
-		case "max_turns":
-			cfg.MaxTurns = p.parseInt(val, key, loc)
-		case "goal_gate":
-			cfg.GoalGate = (val == "true")
-		case "auto_status":
-			cfg.AutoStatus = (val == "true")
-		case "reasoning_effort":
-			cfg.ReasoningEffort = val
-		case "fidelity":
-			cfg.Fidelity = val
-		}
-		n.Config = cfg
-	case ir.HumanConfig:
-		switch key {
-		case "mode":
-			cfg.Mode = val
-		case "default":
-			cfg.Default = val
-		}
-		n.Config = cfg
-	case ir.ToolConfig:
-		switch key {
-		case "command":
-			cfg.Command = val
-		case "timeout":
-			cfg.Timeout = p.parseDuration(val, key, loc)
-		}
-		n.Config = cfg
-	case ir.SubgraphConfig:
-		switch key {
-		case "ref":
-			cfg.Ref = val
-		case "params":
-			// Params is a block, but my parser is simple.
-			// Let's assume params are handled elsewhere or I'll fix this later.
-		}
-		n.Config = cfg
+// applyAgentField applies agent-specific configuration fields.
+func (p *Parser) applyAgentField(cfg *ir.AgentConfig, key, val string, loc ir.SourceLocation) {
+	switch key {
+	case "prompt":
+		cfg.Prompt = val
+	case "system_prompt":
+		cfg.SystemPrompt = val
+	case "model":
+		cfg.Model = val
+	case "provider":
+		cfg.Provider = val
+	case "max_turns":
+		cfg.MaxTurns = p.parseInt(val, key, loc)
+	case "goal_gate":
+		cfg.GoalGate = (val == "true")
+	case "auto_status":
+		cfg.AutoStatus = (val == "true")
+	case "reasoning_effort":
+		cfg.ReasoningEffort = val
+	case "fidelity":
+		cfg.Fidelity = val
+	}
+}
+
+// applyHumanField applies human-specific configuration fields.
+func (p *Parser) applyHumanField(cfg *ir.HumanConfig, key, val string, loc ir.SourceLocation) {
+	switch key {
+	case "mode":
+		cfg.Mode = val
+	case "default":
+		cfg.Default = val
+	}
+}
+
+// applyToolField applies tool-specific configuration fields.
+func (p *Parser) applyToolField(cfg *ir.ToolConfig, key, val string, loc ir.SourceLocation) {
+	switch key {
+	case "command":
+		cfg.Command = val
+	case "timeout":
+		cfg.Timeout = p.parseDuration(val, key, loc)
+	}
+}
+
+// applySubgraphField applies subgraph-specific configuration fields.
+func (p *Parser) applySubgraphField(cfg *ir.SubgraphConfig, key, val string, loc ir.SourceLocation) {
+	switch key {
+	case "ref":
+		cfg.Ref = val
+	case "params":
+		// Params is a block, but my parser is simple.
+		// Let's assume params are handled elsewhere or I'll fix this later.
 	}
 }
 

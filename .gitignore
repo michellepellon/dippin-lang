@@ -13,3 +13,4 @@ paths.jsonl
 
 # Tracker build artifacts
 .tracker/
+.ai/

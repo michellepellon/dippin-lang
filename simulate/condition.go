@@ -130,57 +130,94 @@ func tokenizeCondition(raw string) []string {
 	var tokens []string
 	raw = strings.TrimSpace(raw)
 	i := 0
+
 	for i < len(raw) {
-		// Skip whitespace.
-		for i < len(raw) && (raw[i] == ' ' || raw[i] == '\t') {
-			i++
-		}
+		i = skipCondWhitespace(raw, i)
 		if i >= len(raw) {
 			break
 		}
 
-		// Quoted string.
-		if raw[i] == '"' || raw[i] == '\'' {
-			quote := raw[i]
-			i++
-			start := i
-			for i < len(raw) && raw[i] != quote {
-				i++
-			}
-			tokens = append(tokens, raw[start:i])
-			if i < len(raw) {
-				i++ // skip closing quote
-			}
+		var token string
+		var consumed int
+
+		// Dispatch to recognizers
+		if token, consumed = tryTokenizeQuotedCond(raw, i); consumed > 0 {
+			tokens = append(tokens, token)
+			i += consumed
+			continue
+		}
+		if token, consumed = tryTokenizeOperatorCond(raw, i); consumed > 0 {
+			tokens = append(tokens, token)
+			i += consumed
+			continue
+		}
+		if token, consumed = tryTokenizeWordCond(raw, i); consumed > 0 {
+			tokens = append(tokens, token)
+			i += consumed
 			continue
 		}
 
-		// Check for multi-char operators (before single-char).
-		if i+1 < len(raw) {
-			two := raw[i : i+2]
-			if two == "==" || two == "!=" || two == "<=" || two == ">=" {
-				tokens = append(tokens, two)
-				i += 2
-				continue
-			}
-		}
-		// Single-char operators.
-		if raw[i] == '=' || raw[i] == '<' || raw[i] == '>' || raw[i] == '!' {
-			tokens = append(tokens, string(raw[i]))
-			i++
-			continue
-		}
-
-		// Regular token (identifier, keyword, value).
-		start := i
-		for i < len(raw) && raw[i] != ' ' && raw[i] != '\t' &&
-			raw[i] != '=' && raw[i] != '!' && raw[i] != '<' && raw[i] != '>' {
-			i++
-		}
-		if i > start {
-			tokens = append(tokens, raw[start:i])
-		}
+		i++ // skip unknown
 	}
 	return tokens
+}
+
+// skipCondWhitespace advances the index past any whitespace characters.
+func skipCondWhitespace(raw string, i int) int {
+	for i < len(raw) && (raw[i] == ' ' || raw[i] == '\t') {
+		i++
+	}
+	return i
+}
+
+// tryTokenizeQuotedCond handles quoted strings (single or double quotes).
+func tryTokenizeQuotedCond(raw string, i int) (token string, consumed int) {
+	if raw[i] != '"' && raw[i] != '\'' {
+		return "", 0
+	}
+
+	quote := raw[i]
+	i++
+	start := i
+	for i < len(raw) && raw[i] != quote {
+		i++
+	}
+	token = raw[start:i]
+	if i < len(raw) {
+		i++ // skip closing quote
+	}
+	return token, i - (start - 1)
+}
+
+// tryTokenizeOperatorCond handles comparison operators.
+func tryTokenizeOperatorCond(raw string, i int) (token string, consumed int) {
+	// Check for multi-char operators first
+	if i+1 < len(raw) {
+		two := raw[i : i+2]
+		if two == "==" || two == "!=" || two == "<=" || two == ">=" {
+			return two, 2
+		}
+	}
+
+	// Single-char operators
+	if raw[i] == '=' || raw[i] == '<' || raw[i] == '>' || raw[i] == '!' {
+		return string(raw[i]), 1
+	}
+
+	return "", 0
+}
+
+// tryTokenizeWordCond handles regular tokens (identifiers, keywords, values).
+func tryTokenizeWordCond(raw string, i int) (token string, consumed int) {
+	start := i
+	for i < len(raw) && raw[i] != ' ' && raw[i] != '\t' &&
+		raw[i] != '=' && raw[i] != '!' && raw[i] != '<' && raw[i] != '>' {
+		i++
+	}
+	if i > start {
+		return raw[start:i], i - start
+	}
+	return "", 0
 }
 
 // EnsureConditionsParsed walks all edges in a workflow and ensures that any

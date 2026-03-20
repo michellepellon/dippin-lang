@@ -344,63 +344,87 @@ func (p *parser) parseStatement() error {
 	nameKind := p.cur.kind
 	p.advance()
 
-	// graph/node/edge default attributes: graph [ ... ] or node [ ... ] or edge [ ... ]
-	if nameKind == tokID && (name == "graph" || name == "node" || name == "edge") && p.cur.kind == tokLBrack {
-		attrs, err := p.parseAttrList()
-		if err != nil {
-			return err
-		}
-		switch name {
-		case "graph":
-			for k, v := range attrs {
-				p.graph.GraphAttrs[k] = v
-			}
-		case "node":
-			for k, v := range attrs {
-				p.graph.NodeAttrs[k] = v
-			}
-		case "edge":
-			for k, v := range attrs {
-				p.graph.EdgeAttrs[k] = v
-			}
-		}
-		p.consumeOptionalSemicolon()
-		return nil
+	// Dispatch based on statement type
+	if nameKind == tokID && isDefaultsKeyword(name) && p.cur.kind == tokLBrack {
+		return p.parseDefaultsStatement(name)
 	}
 
-	// Edge statement: ID -> ID [ ... ] ;
 	if p.cur.kind == tokArrow {
-		p.advance()
-		to, err := p.readIDOrString()
+		return p.parseEdgeStatement(name)
+	}
+
+	return p.parseNodeStatement(name)
+}
+
+// isDefaultsKeyword returns true if the name is a defaults keyword.
+func isDefaultsKeyword(name string) bool {
+	return name == "graph" || name == "node" || name == "edge"
+}
+
+// parseDefaultsStatement handles graph/node/edge [ ... ] default attributes.
+func (p *parser) parseDefaultsStatement(keyword string) error {
+	attrs, err := p.parseAttrList()
+	if err != nil {
+		return err
+	}
+
+	switch keyword {
+	case "graph":
+		for k, v := range attrs {
+			p.graph.GraphAttrs[k] = v
+		}
+	case "node":
+		for k, v := range attrs {
+			p.graph.NodeAttrs[k] = v
+		}
+	case "edge":
+		for k, v := range attrs {
+			p.graph.EdgeAttrs[k] = v
+		}
+	}
+
+	p.consumeOptionalSemicolon()
+	return nil
+}
+
+// parseEdgeStatement handles ID -> ID [ ... ] edge statements.
+func (p *parser) parseEdgeStatement(fromNode string) error {
+	p.advance() // consume arrow
+
+	to, err := p.readIDOrString()
+	if err != nil {
+		return err
+	}
+
+	attrs := make(map[string]string)
+	if p.cur.kind == tokLBrack {
+		attrs, err = p.parseAttrList()
 		if err != nil {
 			return err
 		}
-		attrs := make(map[string]string)
-		if p.cur.kind == tokLBrack {
-			attrs, err = p.parseAttrList()
-			if err != nil {
-				return err
-			}
-		}
-		// Merge default edge attrs.
-		merged := make(map[string]string)
-		for k, v := range p.graph.EdgeAttrs {
-			merged[k] = v
-		}
-		for k, v := range attrs {
-			merged[k] = v
-		}
-		p.graph.Edges = append(p.graph.Edges, dotEdge{From: name, To: to, Attrs: merged})
-
-		// Ensure both nodes exist (implicit declaration).
-		p.ensureNode(name)
-		p.ensureNode(to)
-
-		p.consumeOptionalSemicolon()
-		return nil
 	}
 
-	// Node statement: ID [ ... ] ; or bare ID ;
+	// Merge default edge attrs.
+	merged := make(map[string]string)
+	for k, v := range p.graph.EdgeAttrs {
+		merged[k] = v
+	}
+	for k, v := range attrs {
+		merged[k] = v
+	}
+
+	p.graph.Edges = append(p.graph.Edges, dotEdge{From: fromNode, To: to, Attrs: merged})
+
+	// Ensure both nodes exist (implicit declaration).
+	p.ensureNode(fromNode)
+	p.ensureNode(to)
+
+	p.consumeOptionalSemicolon()
+	return nil
+}
+
+// parseNodeStatement handles ID [ ... ] or bare ID node statements.
+func (p *parser) parseNodeStatement(nodeID string) error {
 	attrs := make(map[string]string)
 	if p.cur.kind == tokLBrack {
 		var err error
@@ -409,6 +433,7 @@ func (p *parser) parseStatement() error {
 			return err
 		}
 	}
+
 	// Merge default node attrs.
 	merged := make(map[string]string)
 	for k, v := range p.graph.NodeAttrs {
@@ -417,8 +442,8 @@ func (p *parser) parseStatement() error {
 	for k, v := range attrs {
 		merged[k] = v
 	}
-	p.addOrUpdateNode(name, merged)
 
+	p.addOrUpdateNode(nodeID, merged)
 	p.consumeOptionalSemicolon()
 	return nil
 }

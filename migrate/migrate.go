@@ -206,12 +206,26 @@ func resolveKind(shape string, attrs map[string]string) ir.NodeKind {
 func buildAgentConfig(attrs map[string]string) ir.AgentConfig {
 	cfg := ir.AgentConfig{}
 
+	applyPromptAttrs(&cfg, attrs)
+	applyModelAttrs(&cfg, attrs)
+	applyBehaviorAttrs(&cfg, attrs)
+	applyPerformanceAttrs(&cfg, attrs)
+
+	return cfg
+}
+
+// applyPromptAttrs applies prompt-related attributes to agent config.
+func applyPromptAttrs(cfg *ir.AgentConfig, attrs map[string]string) {
 	if v, ok := attrs["prompt"]; ok {
 		cfg.Prompt = v
 	}
 	if v, ok := attrs["system_prompt"]; ok {
 		cfg.SystemPrompt = v
 	}
+}
+
+// applyModelAttrs applies model and provider attributes to agent config.
+func applyModelAttrs(cfg *ir.AgentConfig, attrs map[string]string) {
 	// Legacy: llm_model → model.
 	if v, ok := attrs["model"]; ok {
 		cfg.Model = v
@@ -232,6 +246,10 @@ func buildAgentConfig(attrs map[string]string) ir.AgentConfig {
 	if v, ok := attrs["fidelity"]; ok {
 		cfg.Fidelity = v
 	}
+}
+
+// applyBehaviorAttrs applies behavior-related attributes to agent config.
+func applyBehaviorAttrs(cfg *ir.AgentConfig, attrs map[string]string) {
 	if v, ok := attrs["goal_gate"]; ok && isTruthy(v) {
 		cfg.GoalGate = true
 	}
@@ -243,6 +261,10 @@ func buildAgentConfig(attrs map[string]string) ir.AgentConfig {
 			cfg.MaxTurns = n
 		}
 	}
+}
+
+// applyPerformanceAttrs applies performance-related attributes to agent config.
+func applyPerformanceAttrs(cfg *ir.AgentConfig, attrs map[string]string) {
 	if v, ok := attrs["cmd_timeout"]; ok {
 		if d, err := time.ParseDuration(v); err == nil {
 			cfg.CmdTimeout = d
@@ -254,8 +276,6 @@ func buildAgentConfig(attrs map[string]string) ir.AgentConfig {
 	if v, ok := attrs["compaction"]; ok {
 		cfg.Compaction = v
 	}
-
-	return cfg
 }
 
 func buildHumanConfig(attrs map[string]string) ir.HumanConfig {

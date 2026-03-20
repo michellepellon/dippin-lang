@@ -1,0 +1,266 @@
+workflow ComplexityCleanup
+  goal: "Analyse every Go function in the project for cyclomatic and cognitive complexity, enforce a ceiling of 5 for cyclomatic complexity, reduce cognitive complexity, and refactor offenders while keeping tests green"
+  start: InstallTools
+  exit: Done
+
+  defaults
+    provider: anthropic
+    model: claude-sonnet-4-6
+    fidelity: summary:high
+    retry_policy: standard
+    max_retries: 3
+    max_restarts: 3
+
+  # ── Phase 1: Setup & Measurement ───────────────────────────────
+
+  tool InstallTools
+    label: "Install complexity analysers"
+    timeout: 2m
+    command:
+      set -eu
+      go install github.com/fzipp/gocyclo/cmd/gocyclo@latest
+      go install github.com/uudashr/gocognit/cmd/gocognit@latest
+      printf 'tools_ready'
+
+  tool MeasureCyclomatic
+    label: "Measure cyclomatic complexity"
+    timeout: 1m
+    writes: cyclo_raw
+    command:
+      set -eu
+      mkdir -p .ai/complexity
+      # Report every function with cyclomatic complexity > 5
+      gocyclo -over 5 -avg . > .ai/complexity/cyclo_over.txt 2>&1 || true
+      # Also capture the full picture for context
+      gocyclo -avg -top 30 . > .ai/complexity/cyclo_top30.txt 2>&1 || true
+      count=$(wc -l < .ai/complexity/cyclo_over.txt | tr -d ' ')
+      printf '%s functions over threshold\n' "$count"
+      cat .ai/complexity/cyclo_over.txt
+
+  tool MeasureCognitive
+    label: "Measure cognitive complexity"
+    timeout: 1m
+    writes: cognit_raw
+    command:
+      set -eu
+      mkdir -p .ai/complexity
+      # Report every function with cognitive complexity > 5
+      gocognit -over 5 -avg -top 30 . > .ai/complexity/cognit_over.txt 2>&1 || true
+      count=$(wc -l < .ai/complexity/cognit_over.txt | tr -d ' ')
+      printf '%s functions over threshold\n' "$count"
+      cat .ai/complexity/cognit_over.txt
+
+  # ── Phase 2: Parallel Measurement ──────────────────────────────
+
+  parallel MeasureFan -> MeasureCyclomatic, MeasureCognitive
+
+  fan_in MeasureJoin <- MeasureCyclomatic, MeasureCognitive
+
+  # ── Phase 3: Triage ────────────────────────────────────────────
+
+  agent Triage
+    label: "Triage and plan refactors"
+    model: claude-opus-4-6
+    reasoning_effort: high
+    reads: cyclo_raw, cognit_raw
+    writes: refactor_plan
+    prompt:
+      You are a senior Go engineer reviewing complexity metrics for the
+      dippin-lang project — a pure-Go toolchain (zero external deps) for
+      authoring AI pipeline workflows.
+
+      Packages: ir/, parser/, validator/, formatter/, export/, migrate/,
+      simulate/, event/, scaffold/, cmd/dippin/.
+
+      You have two reports:
+      - Cyclomatic complexity: functions scoring > 5
+      - Cognitive complexity: functions scoring > 5
+
+      For each offending function, produce a refactor plan:
+
+      1. **Identify the root cause** of the complexity. Common patterns:
+         - Long switch/type-switch statements → extract per-case helpers
+         - Nested conditionals → early returns / guard clauses
+         - Loop-with-branching → extract the loop body
+         - Multiple responsibilities → split into focused functions
+
+      2. **Propose a specific refactoring strategy**:
+         - Name the new helper functions you would extract
+         - Describe what each helper does
+         - Estimate the resulting complexity of each piece
+         - Note any shared state that makes extraction tricky
+
+      3. **Prioritise**: Order by (a) severity of the overshoot above
+         threshold 5, then (b) package importance (parser > validator >
+         ir > others).
+
+      4. **Flag risks**: Identify any function where reducing complexity
+         might hurt readability (e.g., a straightforward type switch
+         with many arms but no nesting). Recommend leaving those as-is
+         with a justification.
+
+      Rules:
+      - Target: cyclomatic complexity ≤ 5 for every function
+      - Cognitive complexity should decrease meaningfully
+      - Do NOT change public API signatures
+      - Do NOT change test files — only production code
+      - Preserve all existing behaviour
+
+  # ── Phase 4: Refactor ──────────────────────────────────────────
+
+  agent Refactor
+    label: "Apply refactorings"
+    model: claude-opus-4-6
+    reasoning_effort: high
+    goal_gate: true
+    retry_policy: patient
+    max_retries: 5
+    retry_target: Refactor
+    fallback_target: Done
+    reads: refactor_plan, cyclo_raw, cognit_raw
+    writes: refactor_changes
+    prompt:
+      You are a Go engineer executing the refactor plan for dippin-lang.
+
+      For each function in the plan (in priority order):
+
+      1. Read the current source file
+      2. Apply the planned refactoring:
+         - Extract helper functions as private (unexported)
+         - Use guard clauses and early returns to flatten nesting
+         - Keep extracted helpers in the same file, directly below the
+           original function
+         - Preserve all comments and godoc strings
+      3. After each file change, run `go build ./...` to verify compilation
+      4. Run `go test ./...` to verify no regressions
+
+      Rules:
+      - Each extracted function must have cyclomatic complexity ≤ 5
+      - Do NOT rename exported functions, types, or methods
+      - Do NOT change function signatures (params, return types)
+      - Do NOT modify test files (_test.go)
+      - Do NOT add new dependencies
+      - If a refactoring would make the code less clear, skip it and
+        explain why
+      - Commit nothing — just apply changes to the working tree
+
+      Output a change log: for each function, the before/after complexity
+      and what was extracted.
+
+  # ── Phase 5: Verify ────────────────────────────────────────────
+
+  tool RunTests
+    label: "Run full test suite"
+    timeout: 5m
+    writes: test_result
+    command:
+      set -eu
+      go test -count=1 -race ./... 2>&1
+
+  tool RemeasureCyclomatic
+    label: "Re-measure cyclomatic complexity"
+    timeout: 1m
+    writes: cyclo_after
+    command:
+      set -eu
+      gocyclo -over 5 -avg . > .ai/complexity/cyclo_after.txt 2>&1 || true
+      count=$(wc -l < .ai/complexity/cyclo_after.txt | tr -d ' ')
+      printf '%s functions still over threshold\n' "$count"
+      cat .ai/complexity/cyclo_after.txt
+
+  tool RemeasureCognitive
+    label: "Re-measure cognitive complexity"
+    timeout: 1m
+    writes: cognit_after
+    command:
+      set -eu
+      gocognit -over 5 -avg . > .ai/complexity/cognit_after.txt 2>&1 || true
+      count=$(wc -l < .ai/complexity/cognit_after.txt | tr -d ' ')
+      printf '%s functions still over threshold\n' "$count"
+      cat .ai/complexity/cognit_after.txt
+
+  parallel VerifyFan -> RunTests, RemeasureCyclomatic, RemeasureCognitive
+
+  fan_in VerifyJoin <- RunTests, RemeasureCyclomatic, RemeasureCognitive
+
+  # ── Phase 6: Quality Gate ──────────────────────────────────────
+
+  agent QualityGate
+    label: "Verify complexity targets met"
+    model: claude-opus-4-6
+    reasoning_effort: high
+    auto_status: true
+    goal_gate: true
+    retry_policy: aggressive
+    max_retries: 2
+    fallback_target: Done
+    reads: test_result, cyclo_after, cognit_after, refactor_changes
+    writes: gate_verdict
+    prompt:
+      You are the quality gate for the complexity cleanup.
+
+      Review:
+      1. **Tests**: Did the full test suite pass (including -race)?
+         If any test failed, STATUS: fail immediately.
+      2. **Cyclomatic complexity**: Are there still functions above 5?
+         - If yes: are they in the "acceptable exceptions" list from
+           the triage phase (e.g., large type switches with flat
+           structure)?
+         - If unexcused functions remain above 5, STATUS: fail.
+      3. **Cognitive complexity**: Did it decrease overall?
+         Compare before/after averages.
+      4. **Code quality**: Do the refactored functions read clearly?
+         Did any extraction make things worse?
+
+      If all checks pass: STATUS: success
+      If tests fail or unexcused complexity remains: STATUS: fail
+
+      Include a summary table:
+      | Metric | Before | After |
+      |--------|--------|-------|
+      | Functions with cyclomatic > 5 | ... | ... |
+      | Average cyclomatic complexity | ... | ... |
+      | Functions with cognitive > 5 | ... | ... |
+      | Average cognitive complexity | ... | ... |
+      | Test suite | ... | pass/fail |
+
+  # ── Phase 7: Report ────────────────────────────────────────────
+
+  agent Done
+    label: "Final report"
+    reads: gate_verdict, refactor_changes, cyclo_after, cognit_after
+    prompt:
+      Produce a concise summary of the complexity cleanup:
+
+      - How many functions were above cyclomatic complexity 5 before
+        vs after
+      - How many functions were above cognitive complexity 5 before
+        vs after
+      - List every function that was refactored and what changed
+      - List any functions left above threshold with justification
+      - Overall average complexity before and after
+      - Test suite status
+
+      Keep it under 500 words. This is the deliverable the human reads.
+
+  # ── Edges ──────────────────────────────────────────────────────
+
+  edges
+    InstallTools -> MeasureFan
+    MeasureFan -> MeasureCyclomatic
+    MeasureFan -> MeasureCognitive
+    MeasureCyclomatic -> MeasureJoin
+    MeasureCognitive -> MeasureJoin
+    MeasureJoin -> Triage
+    Triage -> Refactor
+    Refactor -> VerifyFan
+    VerifyFan -> RunTests
+    VerifyFan -> RemeasureCyclomatic
+    VerifyFan -> RemeasureCognitive
+    RunTests -> VerifyJoin
+    RemeasureCyclomatic -> VerifyJoin
+    RemeasureCognitive -> VerifyJoin
+    VerifyJoin -> QualityGate
+    QualityGate -> Done  when ctx.outcome == "success"
+    QualityGate -> Refactor  when ctx.outcome == "fail"  restart: true
+    QualityGate -> Done

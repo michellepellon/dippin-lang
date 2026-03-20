@@ -275,87 +275,180 @@ func (l *Lexer) extractRawBlock(startIdx, endIdx, indent int) string {
 func (l *Lexer) lexLine(line string, filename string) {
 	i := 0
 	colOffset := l.col + (l.indentStack[len(l.indentStack)-1])
+
 	for i < len(line) {
 		// Skip whitespace
-		for i < len(line) && unicode.IsSpace(rune(line[i])) {
-			i++
-		}
+		i = skipWhitespace(line, i)
 		if i >= len(line) {
 			break
 		}
 
-		start := i
-		ch := line[i]
 		loc := ir.SourceLocation{File: filename, Line: l.line, Column: colOffset + i}
 
-		switch {
-		case ch == ':':
-			l.tokens = append(l.tokens, Token{Type: TokenColon, Value: ":", Location: loc})
-			i++
-		case ch == ',':
-			l.tokens = append(l.tokens, Token{Type: TokenComma, Value: ",", Location: loc})
-			i++
-		case ch == '(':
-			l.tokens = append(l.tokens, Token{Type: TokenLParen, Value: "(", Location: loc})
-			i++
-		case ch == ')':
-			l.tokens = append(l.tokens, Token{Type: TokenRParen, Value: ")", Location: loc})
-			i++
-		case strings.HasPrefix(line[i:], "->"):
-			l.tokens = append(l.tokens, Token{Type: TokenArrow, Value: "->", Location: loc})
-			i += 2
-		case strings.HasPrefix(line[i:], "<-"):
-			l.tokens = append(l.tokens, Token{Type: TokenBackArrow, Value: "<-", Location: loc})
-			i += 2
-		case ch == '"':
-			// Quoted string
-			i++
-			content := ""
-			for i < len(line) && line[i] != '"' {
-				if line[i] == '\\' && i+1 < len(line) {
-					i++
-					content += string(line[i])
-				} else {
-					content += string(line[i])
-				}
-				i++
-			}
-			if i < len(line) && line[i] == '"' {
-				i++
-			}
-			l.tokens = append(l.tokens, Token{Type: TokenLiteral, Value: content, Location: loc})
-		case isAlphaNum(ch):
-			// Identifier or keyword or operator (and, or, not, contains)
-			for i < len(line) && (isAlphaNum(line[i]) || line[i] == '_' || line[i] == '-' || line[i] == '.' || line[i] == '/') {
-				i++
-			}
-			val := line[start:i]
-			l.tokens = append(l.tokens, Token{Type: TokenIdentifier, Value: val, Location: loc})
-		case ch == '=' || ch == '!' || ch == '<' || ch == '>':
-			if strings.HasPrefix(line[i:], "!=") {
-				l.tokens = append(l.tokens, Token{Type: TokenOperator, Value: "!=", Location: loc})
-				i += 2
-			} else if strings.HasPrefix(line[i:], "==") {
-				l.tokens = append(l.tokens, Token{Type: TokenOperator, Value: "==", Location: loc})
-				i += 2
-			} else if strings.HasPrefix(line[i:], "<=") {
-				l.tokens = append(l.tokens, Token{Type: TokenOperator, Value: "<=", Location: loc})
-				i += 2
-			} else if strings.HasPrefix(line[i:], ">=") {
-				l.tokens = append(l.tokens, Token{Type: TokenOperator, Value: ">=", Location: loc})
-				i += 2
-			} else if ch == '=' {
-				l.tokens = append(l.tokens, Token{Type: TokenOperator, Value: "=", Location: loc})
-				i++
-			} else {
-				l.tokens = append(l.tokens, Token{Type: TokenOperator, Value: string(ch), Location: loc})
-				i++
-			}
-		default:
-			// Just treat as identifier for now
-			i++
+		// Try each token type in order
+		if newI, ok := l.tryLexPunctuation(line, i, loc); ok {
+			i = newI
+			continue
+		}
+		if newI, ok := l.tryLexArrow(line, i, loc); ok {
+			i = newI
+			continue
+		}
+		if newI, ok := l.tryLexOperator(line, i, loc); ok {
+			i = newI
+			continue
+		}
+		if newI, ok := l.tryLexQuotedString(line, i, loc); ok {
+			i = newI
+			continue
+		}
+		if newI, ok := l.tryLexIdentifier(line, i, loc); ok {
+			i = newI
+			continue
+		}
+
+		// Unknown character, skip it
+		i++
+	}
+}
+
+// skipWhitespace advances the index past any whitespace characters.
+func skipWhitespace(line string, i int) int {
+	for i < len(line) && unicode.IsSpace(rune(line[i])) {
+		i++
+	}
+	return i
+}
+
+// tryLexPunctuation handles single-character punctuation: : , ( )
+func (l *Lexer) tryLexPunctuation(line string, i int, loc ir.SourceLocation) (int, bool) {
+	ch := line[i]
+
+	var tokType TokenType
+	switch ch {
+	case ':':
+		tokType = TokenColon
+	case ',':
+		tokType = TokenComma
+	case '(':
+		tokType = TokenLParen
+	case ')':
+		tokType = TokenRParen
+	default:
+		return i, false
+	}
+
+	l.tokens = append(l.tokens, Token{
+		Type:     tokType,
+		Value:    string(ch),
+		Location: loc,
+	})
+	return i + 1, true
+}
+
+// tryLexArrow handles two-character arrows: -> and <-
+func (l *Lexer) tryLexArrow(line string, i int, loc ir.SourceLocation) (int, bool) {
+	if strings.HasPrefix(line[i:], "->") {
+		l.tokens = append(l.tokens, Token{
+			Type:     TokenArrow,
+			Value:    "->",
+			Location: loc,
+		})
+		return i + 2, true
+	}
+
+	if strings.HasPrefix(line[i:], "<-") {
+		l.tokens = append(l.tokens, Token{
+			Type:     TokenBackArrow,
+			Value:    "<-",
+			Location: loc,
+		})
+		return i + 2, true
+	}
+
+	return i, false
+}
+
+// tryLexOperator handles comparison operators: ==, !=, <=, >=, =, <, >, !
+func (l *Lexer) tryLexOperator(line string, i int, loc ir.SourceLocation) (int, bool) {
+	ch := line[i]
+
+	// Not an operator character
+	if ch != '=' && ch != '!' && ch != '<' && ch != '>' {
+		return i, false
+	}
+
+	// Try two-character operators first
+	if i+1 < len(line) {
+		twoChar := line[i : i+2]
+		if twoChar == "==" || twoChar == "!=" || twoChar == "<=" || twoChar == ">=" {
+			l.tokens = append(l.tokens, Token{
+				Type:     TokenOperator,
+				Value:    twoChar,
+				Location: loc,
+			})
+			return i + 2, true
 		}
 	}
+
+	// Single-character operator
+	l.tokens = append(l.tokens, Token{
+		Type:     TokenOperator,
+		Value:    string(ch),
+		Location: loc,
+	})
+	return i + 1, true
+}
+
+// tryLexQuotedString handles double-quoted string literals with escape sequences.
+func (l *Lexer) tryLexQuotedString(line string, i int, loc ir.SourceLocation) (int, bool) {
+	if line[i] != '"' {
+		return i, false
+	}
+
+	i++ // skip opening quote
+	var content strings.Builder
+
+	for i < len(line) && line[i] != '"' {
+		if line[i] == '\\' && i+1 < len(line) {
+			// Escape sequence
+			i++
+			content.WriteByte(line[i])
+		} else {
+			content.WriteByte(line[i])
+		}
+		i++
+	}
+
+	if i < len(line) && line[i] == '"' {
+		i++ // skip closing quote
+	}
+
+	l.tokens = append(l.tokens, Token{
+		Type:     TokenLiteral,
+		Value:    content.String(),
+		Location: loc,
+	})
+	return i, true
+}
+
+// tryLexIdentifier handles alphanumeric identifiers including _, -, ., /
+func (l *Lexer) tryLexIdentifier(line string, i int, loc ir.SourceLocation) (int, bool) {
+	if !isAlphaNum(line[i]) {
+		return i, false
+	}
+
+	start := i
+	for i < len(line) && (isAlphaNum(line[i]) || line[i] == '_' || line[i] == '-' || line[i] == '.' || line[i] == '/') {
+		i++
+	}
+
+	l.tokens = append(l.tokens, Token{
+		Type:     TokenIdentifier,
+		Value:    line[start:i],
+		Location: loc,
+	})
+	return i, true
 }
 
 // RawValueText extracts the raw value text from a line, starting after the colon

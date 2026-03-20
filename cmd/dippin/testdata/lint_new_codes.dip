@@ -1,0 +1,22 @@
+workflow NewCodes
+  goal: "Trigger DIP113, DIP114, DIP115"
+  start: Gate
+  exit: Done
+
+  defaults
+    fidelity: sumary:high
+    retry_policy: yolo
+
+  agent Gate
+    goal_gate: true
+    fidelity: nope
+    retry_policy: bogus
+    prompt:
+      Do the thing.
+
+  agent Done
+    prompt:
+      Wrap up.
+
+  edges
+    Gate -> Done

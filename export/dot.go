@@ -99,6 +99,21 @@ func nodeShape(kind ir.NodeKind) string {
 
 // writeNodeDOT emits a single DOT node statement.
 func writeNodeDOT(b *strings.Builder, n *ir.Node, w *ir.Workflow, opts ExportOptions, order map[string][]int) {
+	attrs := buildBaseNodeAttrs(n, w, order)
+
+	if opts.HighlightGoalGates {
+		applyGoalGateHighlight(attrs, n)
+	}
+
+	if opts.IncludePrompts {
+		applyConfigAttrs(attrs, n.Config)
+	}
+
+	b.WriteString(fmt.Sprintf("  %s %s;\n", dotID(n.ID), formatDOTAttrs(attrs)))
+}
+
+// buildBaseNodeAttrs creates the base attributes for a node (shape, label, execution order).
+func buildBaseNodeAttrs(n *ir.Node, w *ir.Workflow, order map[string][]int) map[string]string {
 	attrs := make(map[string]string)
 
 	// Shape: start and exit override the kind-based shape.
@@ -128,57 +143,87 @@ func writeNodeDOT(b *strings.Builder, n *ir.Node, w *ir.Workflow, opts ExportOpt
 	}
 	attrs["label"] = label
 
-	// Goal gate highlighting.
-	if opts.HighlightGoalGates {
-		if ac, ok := n.Config.(ir.AgentConfig); ok && ac.GoalGate {
-			attrs["style"] = "filled"
-			attrs["fillcolor"] = "#ffcccc"
-		}
-	}
+	return attrs
+}
 
-	// Include prompts/commands as attributes for full-fidelity export.
-	if opts.IncludePrompts {
-		switch cfg := n.Config.(type) {
-		case ir.AgentConfig:
-			if cfg.Prompt != "" {
-				attrs["prompt"] = escapeNewlines(cfg.Prompt)
-			}
-			if cfg.Model != "" {
-				attrs["model"] = cfg.Model
-			}
-			if cfg.Provider != "" {
-				attrs["provider"] = cfg.Provider
-			}
-		case ir.ToolConfig:
-			if cfg.Command != "" {
-				attrs["tool_command"] = escapeNewlines(cfg.Command)
-			}
-			if cfg.Timeout != 0 {
-				attrs["timeout"] = formatDuration(cfg.Timeout)
-			}
-		case ir.HumanConfig:
-			if cfg.Mode != "" {
-				attrs["mode"] = cfg.Mode
-			}
-			if cfg.Default != "" {
-				attrs["default"] = cfg.Default
-			}
-		case ir.SubgraphConfig:
-			if cfg.Ref != "" {
-				attrs["ref"] = cfg.Ref
-			}
-		case ir.ParallelConfig:
-			if len(cfg.Targets) > 0 {
-				attrs["targets"] = strings.Join(cfg.Targets, ",")
-			}
-		case ir.FanInConfig:
-			if len(cfg.Sources) > 0 {
-				attrs["sources"] = strings.Join(cfg.Sources, ",")
-			}
-		}
+// applyGoalGateHighlight highlights goal gate nodes if enabled.
+func applyGoalGateHighlight(attrs map[string]string, n *ir.Node) {
+	if ac, ok := n.Config.(ir.AgentConfig); ok && ac.GoalGate {
+		attrs["style"] = "filled"
+		attrs["fillcolor"] = "#ffcccc"
 	}
+}
 
-	b.WriteString(fmt.Sprintf("  %s %s;\n", dotID(n.ID), formatDOTAttrs(attrs)))
+// applyConfigAttrs adds config-specific attributes to the node.
+func applyConfigAttrs(attrs map[string]string, cfg interface{}) {
+	switch c := cfg.(type) {
+	case ir.AgentConfig:
+		applyAgentAttrs(attrs, c)
+	case ir.ToolConfig:
+		applyToolAttrs(attrs, c)
+	case ir.HumanConfig:
+		applyHumanAttrs(attrs, c)
+	case ir.SubgraphConfig:
+		applySubgraphAttrs(attrs, c)
+	case ir.ParallelConfig:
+		applyParallelAttrs(attrs, c)
+	case ir.FanInConfig:
+		applyFanInAttrs(attrs, c)
+	}
+}
+
+// applyAgentAttrs adds agent-specific attributes.
+func applyAgentAttrs(attrs map[string]string, cfg ir.AgentConfig) {
+	if cfg.Prompt != "" {
+		attrs["prompt"] = escapeNewlines(cfg.Prompt)
+	}
+	if cfg.Model != "" {
+		attrs["model"] = cfg.Model
+	}
+	if cfg.Provider != "" {
+		attrs["provider"] = cfg.Provider
+	}
+}
+
+// applyToolAttrs adds tool-specific attributes.
+func applyToolAttrs(attrs map[string]string, cfg ir.ToolConfig) {
+	if cfg.Command != "" {
+		attrs["tool_command"] = escapeNewlines(cfg.Command)
+	}
+	if cfg.Timeout != 0 {
+		attrs["timeout"] = formatDuration(cfg.Timeout)
+	}
+}
+
+// applyHumanAttrs adds human-specific attributes.
+func applyHumanAttrs(attrs map[string]string, cfg ir.HumanConfig) {
+	if cfg.Mode != "" {
+		attrs["mode"] = cfg.Mode
+	}
+	if cfg.Default != "" {
+		attrs["default"] = cfg.Default
+	}
+}
+
+// applySubgraphAttrs adds subgraph-specific attributes.
+func applySubgraphAttrs(attrs map[string]string, cfg ir.SubgraphConfig) {
+	if cfg.Ref != "" {
+		attrs["ref"] = cfg.Ref
+	}
+}
+
+// applyParallelAttrs adds parallel-specific attributes.
+func applyParallelAttrs(attrs map[string]string, cfg ir.ParallelConfig) {
+	if len(cfg.Targets) > 0 {
+		attrs["targets"] = strings.Join(cfg.Targets, ",")
+	}
+}
+
+// applyFanInAttrs adds fan_in-specific attributes.
+func applyFanInAttrs(attrs map[string]string, cfg ir.FanInConfig) {
+	if len(cfg.Sources) > 0 {
+		attrs["sources"] = strings.Join(cfg.Sources, ",")
+	}
 }
 
 // writeEdgeDOT emits a single DOT edge statement.

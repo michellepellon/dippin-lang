@@ -169,12 +169,29 @@ func writeNode(wr *writer, n *ir.Node) {
 }
 
 func writeAgentFields(wr *writer, n *ir.Node, cfg ir.AgentConfig) {
+	writeCommonNodeFields(wr, n)
+	writeAgentModelFields(wr, cfg)
+	writeAgentBehaviorFields(wr, cfg)
+	writeRetryFields(wr, n)
+	writeIOFields(wr, n)
+
+	if cfg.Prompt != "" {
+		wr.multilineBlock("prompt", cfg.Prompt)
+	}
+}
+
+// writeCommonNodeFields writes label and class fields common to all node types.
+func writeCommonNodeFields(wr *writer, n *ir.Node) {
 	if n.Label != "" {
 		wr.line("label: %s", quoteValue(n.Label))
 	}
 	if len(n.Classes) > 0 {
 		wr.line("class: %s", strings.Join(n.Classes, ", "))
 	}
+}
+
+// writeAgentModelFields writes model-related fields for agent nodes.
+func writeAgentModelFields(wr *writer, cfg ir.AgentConfig) {
 	if cfg.Model != "" {
 		wr.line("model: %s", quoteValue(cfg.Model))
 	}
@@ -187,6 +204,10 @@ func writeAgentFields(wr *writer, n *ir.Node, cfg ir.AgentConfig) {
 	if cfg.Fidelity != "" {
 		wr.line("fidelity: %s", quoteValue(cfg.Fidelity))
 	}
+}
+
+// writeAgentBehaviorFields writes behavior-related fields for agent nodes.
+func writeAgentBehaviorFields(wr *writer, cfg ir.AgentConfig) {
 	if cfg.GoalGate {
 		wr.line("goal_gate: true")
 	}
@@ -196,6 +217,10 @@ func writeAgentFields(wr *writer, n *ir.Node, cfg ir.AgentConfig) {
 	if cfg.MaxTurns != 0 {
 		wr.line("max_turns: %d", cfg.MaxTurns)
 	}
+}
+
+// writeRetryFields writes retry-related fields common to all node types.
+func writeRetryFields(wr *writer, n *ir.Node) {
 	if n.Retry.Policy != "" {
 		wr.line("retry_policy: %s", quoteValue(n.Retry.Policy))
 	}
@@ -211,14 +236,15 @@ func writeAgentFields(wr *writer, n *ir.Node, cfg ir.AgentConfig) {
 	if n.Retry.FallbackTarget != "" {
 		wr.line("fallback_target: %s", n.Retry.FallbackTarget)
 	}
+}
+
+// writeIOFields writes reads and writes fields common to all node types.
+func writeIOFields(wr *writer, n *ir.Node) {
 	if len(n.IO.Reads) > 0 {
 		wr.line("reads: %s", strings.Join(n.IO.Reads, ", "))
 	}
 	if len(n.IO.Writes) > 0 {
 		wr.line("writes: %s", strings.Join(n.IO.Writes, ", "))
-	}
-	if cfg.Prompt != "" {
-		wr.multilineBlock("prompt", cfg.Prompt)
 	}
 }
 
