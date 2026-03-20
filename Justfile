@@ -59,8 +59,24 @@ lint-examples: build
         ./dippin lint "$f" 2>&1 || true; \
     done
 
-# Run the full pre-commit check suite (build, vet, fmt, test, validate examples)
-check: build vet fmt-check test-race validate-examples
+# Check cyclomatic complexity (max 5 per function, excluding tests)
+complexity:
+    @violations=$( gocyclo -over 5 . | grep -v _test.go ); \
+    if [ -n "$violations" ]; then \
+        echo "Cyclomatic complexity violations (max 5):"; \
+        echo "$violations"; \
+        exit 1; \
+    fi
+    @violations=$( gocognit -over 7 . | grep -v _test.go ); \
+    if [ -n "$violations" ]; then \
+        echo "Cognitive complexity violations (max 7):"; \
+        echo "$violations"; \
+        exit 1; \
+    fi
+    @echo "Complexity OK."
+
+# Run the full pre-commit check suite
+check: build vet fmt-check test-race complexity validate-examples
     @echo "All checks passed."
 
 # Generate test coverage report

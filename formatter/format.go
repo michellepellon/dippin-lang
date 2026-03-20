@@ -115,12 +115,24 @@ func writeWorkflowHeader(wr *writer, w *ir.Workflow) {
 func writeDefaults(wr *writer, d ir.WorkflowDefaults) {
 	wr.line("defaults")
 	wr.push()
+	writeDefaultsModelFields(wr, d)
+	writeDefaultsRestartFields(wr, d)
+	wr.pop()
+}
+
+// writeDefaultsModelFields writes model/provider/fidelity fields.
+func writeDefaultsModelFields(wr *writer, d ir.WorkflowDefaults) {
 	if d.Model != "" {
 		wr.line("model: %s", quoteValue(d.Model))
 	}
 	if d.Provider != "" {
 		wr.line("provider: %s", quoteValue(d.Provider))
 	}
+	writeDefaultsRetryPolicyFields(wr, d)
+}
+
+// writeDefaultsRetryPolicyFields writes retry_policy, max_retries, and fidelity fields.
+func writeDefaultsRetryPolicyFields(wr *writer, d ir.WorkflowDefaults) {
 	if d.RetryPolicy != "" {
 		wr.line("retry_policy: %s", quoteValue(d.RetryPolicy))
 	}
@@ -130,6 +142,10 @@ func writeDefaults(wr *writer, d ir.WorkflowDefaults) {
 	if d.Fidelity != "" {
 		wr.line("fidelity: %s", quoteValue(d.Fidelity))
 	}
+}
+
+// writeDefaultsRestartFields writes restart, cache, and compaction fields.
+func writeDefaultsRestartFields(wr *writer, d ir.WorkflowDefaults) {
 	if d.MaxRestarts != 0 {
 		wr.line("max_restarts: %d", d.MaxRestarts)
 	}
@@ -142,29 +158,42 @@ func writeDefaults(wr *writer, d ir.WorkflowDefaults) {
 	if d.Compaction != "" {
 		wr.line("compaction: %s", quoteValue(d.Compaction))
 	}
-	wr.pop()
 }
 
 func writeNode(wr *writer, n *ir.Node) {
+	if writeStructuralNode(wr, n) {
+		return
+	}
+	wr.line("%s %s", n.Kind, n.ID)
+	wr.push()
+	writeNodeConfigFields(wr, n)
+	wr.pop()
+}
+
+// writeStructuralNode writes parallel/fan_in nodes. Returns true if handled.
+func writeStructuralNode(wr *writer, n *ir.Node) bool {
 	switch cfg := n.Config.(type) {
 	case ir.ParallelConfig:
 		wr.line("parallel %s -> %s", n.ID, strings.Join(cfg.Targets, ", "))
+		return true
 	case ir.FanInConfig:
 		wr.line("fan_in %s <- %s", n.ID, strings.Join(cfg.Sources, ", "))
-	default:
-		wr.line("%s %s", n.Kind, n.ID)
-		wr.push()
-		switch cfg := n.Config.(type) {
-		case ir.AgentConfig:
-			writeAgentFields(wr, n, cfg)
-		case ir.HumanConfig:
-			writeHumanFields(wr, n, cfg)
-		case ir.ToolConfig:
-			writeToolFields(wr, n, cfg)
-		case ir.SubgraphConfig:
-			writeSubgraphFields(wr, n, cfg)
-		}
-		wr.pop()
+		return true
+	}
+	return false
+}
+
+// writeNodeConfigFields dispatches to the appropriate field writer based on config type.
+func writeNodeConfigFields(wr *writer, n *ir.Node) {
+	switch cfg := n.Config.(type) {
+	case ir.AgentConfig:
+		writeAgentFields(wr, n, cfg)
+	case ir.HumanConfig:
+		writeHumanFields(wr, n, cfg)
+	case ir.ToolConfig:
+		writeToolFields(wr, n, cfg)
+	case ir.SubgraphConfig:
+		writeSubgraphFields(wr, n, cfg)
 	}
 }
 
@@ -221,20 +250,30 @@ func writeAgentBehaviorFields(wr *writer, cfg ir.AgentConfig) {
 
 // writeRetryFields writes retry-related fields common to all node types.
 func writeRetryFields(wr *writer, n *ir.Node) {
-	if n.Retry.Policy != "" {
-		wr.line("retry_policy: %s", quoteValue(n.Retry.Policy))
+	writeRetryPolicyFields(wr, n.Retry)
+	writeRetryTargetFields(wr, n.Retry)
+}
+
+// writeRetryPolicyFields writes policy, max_retries, and base_delay fields.
+func writeRetryPolicyFields(wr *writer, r ir.RetryConfig) {
+	if r.Policy != "" {
+		wr.line("retry_policy: %s", quoteValue(r.Policy))
 	}
-	if n.Retry.MaxRetries != 0 {
-		wr.line("max_retries: %d", n.Retry.MaxRetries)
+	if r.MaxRetries != 0 {
+		wr.line("max_retries: %d", r.MaxRetries)
 	}
-	if n.Retry.BaseDelay != 0 {
-		wr.line("base_delay: %s", formatDuration(n.Retry.BaseDelay))
+	if r.BaseDelay != 0 {
+		wr.line("base_delay: %s", formatDuration(r.BaseDelay))
 	}
-	if n.Retry.RetryTarget != "" {
-		wr.line("retry_target: %s", n.Retry.RetryTarget)
+}
+
+// writeRetryTargetFields writes retry_target and fallback_target fields.
+func writeRetryTargetFields(wr *writer, r ir.RetryConfig) {
+	if r.RetryTarget != "" {
+		wr.line("retry_target: %s", r.RetryTarget)
 	}
-	if n.Retry.FallbackTarget != "" {
-		wr.line("fallback_target: %s", n.Retry.FallbackTarget)
+	if r.FallbackTarget != "" {
+		wr.line("fallback_target: %s", r.FallbackTarget)
 	}
 }
 
@@ -249,61 +288,51 @@ func writeIOFields(wr *writer, n *ir.Node) {
 }
 
 func writeHumanFields(wr *writer, n *ir.Node, cfg ir.HumanConfig) {
-	if n.Label != "" {
-		wr.line("label: %s", quoteValue(n.Label))
-	}
+	writeCommonNodeFields(wr, n)
 	if cfg.Mode != "" {
 		wr.line("mode: %s", quoteValue(cfg.Mode))
 	}
 	if cfg.Default != "" {
 		wr.line("default: %s", quoteValue(cfg.Default))
 	}
-	if len(n.IO.Reads) > 0 {
-		wr.line("reads: %s", strings.Join(n.IO.Reads, ", "))
-	}
-	if len(n.IO.Writes) > 0 {
-		wr.line("writes: %s", strings.Join(n.IO.Writes, ", "))
-	}
+	writeIOFields(wr, n)
 }
 
 func writeToolFields(wr *writer, n *ir.Node, cfg ir.ToolConfig) {
-	if n.Label != "" {
-		wr.line("label: %s", quoteValue(n.Label))
-	}
+	writeCommonNodeFields(wr, n)
 	if cfg.Timeout != 0 {
 		wr.line("timeout: %s", formatDuration(cfg.Timeout))
 	}
-	if len(n.IO.Reads) > 0 {
-		wr.line("reads: %s", strings.Join(n.IO.Reads, ", "))
-	}
-	if len(n.IO.Writes) > 0 {
-		wr.line("writes: %s", strings.Join(n.IO.Writes, ", "))
-	}
+	writeIOFields(wr, n)
 	if cfg.Command != "" {
 		wr.multilineBlock("command", cfg.Command)
 	}
 }
 
 func writeSubgraphFields(wr *writer, n *ir.Node, cfg ir.SubgraphConfig) {
-	if n.Label != "" {
-		wr.line("label: %s", quoteValue(n.Label))
-	}
+	writeCommonNodeFields(wr, n)
 	if cfg.Ref != "" {
 		wr.line("ref: %s", quoteValue(cfg.Ref))
 	}
-	if len(cfg.Params) > 0 {
-		wr.line("params:")
-		wr.push()
-		keys := make([]string, 0, len(cfg.Params))
-		for k := range cfg.Params {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			wr.line("%s: %s", k, quoteValue(cfg.Params[k]))
-		}
-		wr.pop()
+	writeSubgraphParams(wr, cfg.Params)
+}
+
+// writeSubgraphParams writes sorted params block if non-empty.
+func writeSubgraphParams(wr *writer, params map[string]string) {
+	if len(params) == 0 {
+		return
 	}
+	wr.line("params:")
+	wr.push()
+	keys := make([]string, 0, len(params))
+	for k := range params {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		wr.line("%s: %s", k, quoteValue(params[k]))
+	}
+	wr.pop()
 }
 
 func writeEdges(wr *writer, edges []*ir.Edge) {
@@ -318,14 +347,27 @@ func writeEdges(wr *writer, edges []*ir.Edge) {
 func writeEdge(wr *writer, e *ir.Edge) {
 	var parts []string
 	parts = append(parts, fmt.Sprintf("%s -> %s", e.From, e.To))
+	parts = appendEdgeCondition(parts, e)
+	parts = appendEdgeAttrs(parts, e)
+	wr.line("%s", strings.Join(parts, "  "))
+}
 
-	if e.Condition != nil {
-		if e.Condition.Parsed != nil {
-			parts = append(parts, fmt.Sprintf("when %s", formatCondition(e.Condition.Parsed)))
-		} else if e.Condition.Raw != "" {
-			parts = append(parts, fmt.Sprintf("when %s", e.Condition.Raw))
-		}
+// appendEdgeCondition appends the "when ..." part if a condition is present.
+func appendEdgeCondition(parts []string, e *ir.Edge) []string {
+	if e.Condition == nil {
+		return parts
 	}
+	if e.Condition.Parsed != nil {
+		return append(parts, fmt.Sprintf("when %s", formatCondition(e.Condition.Parsed)))
+	}
+	if e.Condition.Raw != "" {
+		return append(parts, fmt.Sprintf("when %s", e.Condition.Raw))
+	}
+	return parts
+}
+
+// appendEdgeAttrs appends label, weight, and restart parts.
+func appendEdgeAttrs(parts []string, e *ir.Edge) []string {
 	if e.Label != "" {
 		parts = append(parts, fmt.Sprintf("label: %s", quoteValue(e.Label)))
 	}
@@ -335,8 +377,7 @@ func writeEdge(wr *writer, e *ir.Edge) {
 	if e.Restart {
 		parts = append(parts, "restart: true")
 	}
-
-	wr.line("%s", strings.Join(parts, "  "))
+	return parts
 }
 
 // --- Condition formatting ---
@@ -356,31 +397,26 @@ func formatConditionExpr(expr ir.ConditionExpr, parentPrec int) string {
 	case ir.CondCompare:
 		return fmt.Sprintf("%s %s %s", e.Variable, e.Op, e.Value)
 	case ir.CondAnd:
-		s := fmt.Sprintf("%s and %s",
-			formatConditionExpr(e.Left, precAnd),
-			formatConditionExpr(e.Right, precAnd))
-		// Parenthesize if parent is a different compound operator (OR wrapping AND,
-		// NOT wrapping AND). parentPrec==0 means top-level, no parens needed.
-		if parentPrec != 0 && parentPrec != precAnd {
-			return "(" + s + ")"
-		}
-		return s
+		return fmtBinaryCondExpr(e.Left, e.Right, "and", precAnd, parentPrec)
 	case ir.CondOr:
-		s := fmt.Sprintf("%s or %s",
-			formatConditionExpr(e.Left, precOr),
-			formatConditionExpr(e.Right, precOr))
-		// Parenthesize if parent is a different compound operator (AND wrapping OR,
-		// NOT wrapping OR).
-		if parentPrec != 0 && parentPrec != precOr {
-			return "(" + s + ")"
-		}
-		return s
+		return fmtBinaryCondExpr(e.Left, e.Right, "or", precOr, parentPrec)
 	case ir.CondNot:
-		inner := formatConditionExpr(e.Inner, precNot)
-		return "not " + inner
+		return "not " + formatConditionExpr(e.Inner, precNot)
 	default:
 		return ""
 	}
+}
+
+// fmtBinaryCondExpr formats a binary condition (and/or) with optional parenthesization.
+func fmtBinaryCondExpr(left, right ir.ConditionExpr, op string, prec, parentPrec int) string {
+	s := fmt.Sprintf("%s %s %s",
+		formatConditionExpr(left, prec),
+		op,
+		formatConditionExpr(right, prec))
+	if parentPrec != 0 && parentPrec != prec {
+		return "(" + s + ")"
+	}
+	return s
 }
 
 func quoteValue(s string) string {
@@ -397,16 +433,29 @@ func quoteValue(s string) string {
 // Simple identifiers (alphanumeric, underscore, dash, dot, slash, colon) are unquoted.
 func needsQuoting(s string) bool {
 	for _, ch := range s {
-		switch {
-		case ch >= 'a' && ch <= 'z':
-		case ch >= 'A' && ch <= 'Z':
-		case ch >= '0' && ch <= '9':
-		case ch == '_', ch == '-', ch == '.', ch == '/', ch == ':':
-		default:
+		if !isUnquotedChar(ch) {
 			return true
 		}
 	}
 	return false
+}
+
+// unquotedPunctuation contains punctuation characters allowed in unquoted Dippin values.
+const unquotedPunctuation = "_-./:"
+
+// isUnquotedChar returns true if ch is allowed in an unquoted Dippin value.
+func isUnquotedChar(ch rune) bool {
+	return isUnquotedAlphanumeric(ch) || strings.ContainsRune(unquotedPunctuation, ch)
+}
+
+// isUnquotedAlphanumeric returns true if ch is an ASCII letter or digit.
+func isUnquotedAlphanumeric(ch rune) bool {
+	return isASCIILetter(ch) || (ch >= '0' && ch <= '9')
+}
+
+// isASCIILetter returns true if ch is an ASCII letter.
+func isASCIILetter(ch rune) bool {
+	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
 }
 
 // formatDuration renders a time.Duration as a compact human-readable string
@@ -415,7 +464,16 @@ func formatDuration(d time.Duration) string {
 	if d == 0 {
 		return "0s"
 	}
-	var parts []string
+	parts, d := fmtDurationParts(nil, d)
+	if len(parts) == 0 {
+		// Sub-second durations.
+		return d.String()
+	}
+	return strings.Join(parts, "")
+}
+
+// fmtDurationParts appends hours, minutes, and seconds components.
+func fmtDurationParts(parts []string, d time.Duration) ([]string, time.Duration) {
 	if h := int(d.Hours()); h > 0 {
 		parts = append(parts, fmt.Sprintf("%dh", h))
 		d -= time.Duration(h) * time.Hour
@@ -427,11 +485,7 @@ func formatDuration(d time.Duration) string {
 	if s := int(d.Seconds()); s > 0 {
 		parts = append(parts, fmt.Sprintf("%ds", s))
 	}
-	if len(parts) == 0 {
-		// Sub-second durations.
-		return d.String()
-	}
-	return strings.Join(parts, "")
+	return parts, d
 }
 
 func isDefaultsZero(d ir.WorkflowDefaults) bool {

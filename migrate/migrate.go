@@ -56,80 +56,90 @@ func convertDOTGraph(dg *dotGraph) (*ir.Workflow, error) {
 		Version: "1",
 	}
 
-	// Extract graph-level attributes.
 	extractGraphDefaults(dg.GraphAttrs, w)
+	w.Start, w.Exit = identifyStartExit(dg.Nodes)
 
-	// Build a set of edge-implicit nodes for quick lookup.
-	nodeIndex := make(map[string]int) // ID → index in dg.Nodes
-
-	for i, n := range dg.Nodes {
-		nodeIndex[n.ID] = i
+	if err := buildIRNodes(dg, w); err != nil {
+		return nil, err
+	}
+	if err := buildIREdges(dg, w); err != nil {
+		return nil, err
 	}
 
-	// First pass: identify start/exit nodes and build IR nodes.
-	startID := ""
-	exitID := ""
-	for _, dn := range dg.Nodes {
+	inferParallelFanIn(w)
+	return w, nil
+}
+
+// identifyStartExit finds start and exit node IDs from DOT shapes.
+func identifyStartExit(nodes []dotNode) (start, exit string) {
+	for _, dn := range nodes {
 		shape := dn.Attrs["shape"]
 		if shape == "Mdiamond" {
-			startID = dn.ID
+			start = dn.ID
 		}
 		if shape == "Msquare" {
-			exitID = dn.ID
+			exit = dn.ID
 		}
 	}
+	return start, exit
+}
 
-	// Build IR nodes in declaration order.
+// buildIRNodes converts all DOT nodes to IR nodes on the workflow.
+func buildIRNodes(dg *dotGraph, w *ir.Workflow) error {
 	for _, dn := range dg.Nodes {
 		node, err := convertNode(dn, dg.Edges)
 		if err != nil {
-			return nil, fmt.Errorf("migrate: node %q: %w", dn.ID, err)
+			return fmt.Errorf("migrate: node %q: %w", dn.ID, err)
 		}
 		w.Nodes = append(w.Nodes, node)
 	}
+	return nil
+}
 
-	// Set start/exit.
-	w.Start = startID
-	w.Exit = exitID
-
-	// Build IR edges.
+// buildIREdges converts all DOT edges to IR edges on the workflow.
+func buildIREdges(dg *dotGraph, w *ir.Workflow) error {
 	for _, de := range dg.Edges {
 		edge, err := convertEdge(de)
 		if err != nil {
-			return nil, fmt.Errorf("migrate: edge %s->%s: %w", de.From, de.To, err)
+			return fmt.Errorf("migrate: edge %s->%s: %w", de.From, de.To, err)
 		}
 		w.Edges = append(w.Edges, edge)
 	}
+	return nil
+}
 
-	// Post-pass: infer parallel targets and fan_in sources from edges.
-	inferParallelFanIn(w)
-
-	return w, nil
+// graphDefaultsHandlers maps DOT graph attribute keys to handler functions.
+var graphDefaultsHandlers = map[string]func(string, *ir.Workflow){
+	"goal":             func(v string, w *ir.Workflow) { w.Goal = v },
+	"rankdir":          func(_ string, _ *ir.Workflow) { /* presentation-only; ignored */ },
+	"default_fidelity": func(v string, w *ir.Workflow) { w.Defaults.Fidelity = v },
+	"fidelity":         func(v string, w *ir.Workflow) { w.Defaults.Fidelity = v },
+	"model":            func(v string, w *ir.Workflow) { w.Defaults.Model = v },
+	"provider":         func(v string, w *ir.Workflow) { w.Defaults.Provider = v },
 }
 
 // extractGraphDefaults populates workflow-level fields from DOT graph attributes.
 func extractGraphDefaults(attrs map[string]string, w *ir.Workflow) {
 	for k, v := range attrs {
-		switch k {
-		case "goal":
-			w.Goal = v
-		case "rankdir":
-			// Presentation-only; ignored.
-		case "default_max_retry", "max_retries":
-			if n, err := strconv.Atoi(v); err == nil {
-				w.Defaults.MaxRetries = n
-			}
-		case "max_restarts":
-			if n, err := strconv.Atoi(v); err == nil {
-				w.Defaults.MaxRestarts = n
-			}
-		case "default_fidelity", "fidelity":
-			w.Defaults.Fidelity = v
-		case "model":
-			w.Defaults.Model = v
-		case "provider":
-			w.Defaults.Provider = v
+		if handler, ok := graphDefaultsHandlers[k]; ok {
+			handler(v, w)
+			continue
 		}
+		applyIntDefault(k, v, w)
+	}
+}
+
+// applyIntDefault handles integer-valued graph defaults.
+func applyIntDefault(k, v string, w *ir.Workflow) {
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return
+	}
+	switch k {
+	case "default_max_retry", "max_retries":
+		w.Defaults.MaxRetries = n
+	case "max_restarts":
+		w.Defaults.MaxRestarts = n
 	}
 }
 
@@ -143,61 +153,67 @@ func convertNode(dn dotNode, edges []dotEdge) (*ir.Node, error) {
 		Kind: kind,
 	}
 
-	// Set label.
 	if label, ok := dn.Attrs["label"]; ok {
 		node.Label = label
 	}
 
-	// Build kind-specific config.
+	return applyNodeConfig(node, kind, dn.Attrs)
+}
+
+// applyNodeConfig sets kind-specific config on the node.
+func applyNodeConfig(node *ir.Node, kind ir.NodeKind, attrs map[string]string) (*ir.Node, error) {
 	switch kind {
 	case ir.NodeAgent:
-		cfg := buildAgentConfig(dn.Attrs)
-		node.Config = cfg
-		node.Retry = buildRetryConfig(dn.Attrs)
+		node.Config = buildAgentConfig(attrs)
+		node.Retry = buildRetryConfig(attrs)
 	case ir.NodeHuman:
-		node.Config = buildHumanConfig(dn.Attrs)
+		node.Config = buildHumanConfig(attrs)
 	case ir.NodeTool:
-		cfg, err := buildToolConfig(dn.Attrs)
+		cfg, err := buildToolConfig(attrs)
 		if err != nil {
 			return nil, err
 		}
 		node.Config = cfg
-	case ir.NodeParallel:
-		node.Config = buildParallelConfig(dn.Attrs)
-	case ir.NodeFanIn:
-		node.Config = buildFanInConfig(dn.Attrs)
-	case ir.NodeSubgraph:
-		node.Config = buildSubgraphConfig(dn.Attrs)
 	default:
-		node.Config = ir.AgentConfig{}
+		node.Config = buildOtherConfig(kind, attrs)
 	}
-
 	return node, nil
+}
+
+// buildOtherConfig builds config for parallel, fan_in, subgraph, or fallback.
+func buildOtherConfig(kind ir.NodeKind, attrs map[string]string) ir.NodeConfig {
+	switch kind {
+	case ir.NodeParallel:
+		return buildParallelConfig(attrs)
+	case ir.NodeFanIn:
+		return buildFanInConfig(attrs)
+	case ir.NodeSubgraph:
+		return buildSubgraphConfig(attrs)
+	default:
+		return ir.AgentConfig{}
+	}
 }
 
 // resolveKind determines the IR node kind from the DOT shape and attributes.
 // Implements the diamond disambiguation logic from §5.
 func resolveKind(shape string, attrs map[string]string) ir.NodeKind {
-	// Start/exit markers become agent nodes.
 	if shape == "Mdiamond" || shape == "Msquare" {
 		return ir.NodeAgent
 	}
-
-	// Diamond disambiguation: per §5.
 	if shape == "diamond" {
-		if _, hasTool := attrs["tool_command"]; hasTool {
-			return ir.NodeTool
-		}
-		// All other diamonds become agent nodes (routing or prompt-based).
-		return ir.NodeAgent
+		return resolveDiamondKind(attrs)
 	}
-
-	// Direct mapping.
 	if kind, ok := shapeToKind[shape]; ok {
 		return kind
 	}
+	return ir.NodeAgent
+}
 
-	// Default: agent.
+// resolveDiamondKind handles diamond shape disambiguation per §5.
+func resolveDiamondKind(attrs map[string]string) ir.NodeKind {
+	if _, hasTool := attrs["tool_command"]; hasTool {
+		return ir.NodeTool
+	}
 	return ir.NodeAgent
 }
 
@@ -205,12 +221,10 @@ func resolveKind(shape string, attrs map[string]string) ir.NodeKind {
 
 func buildAgentConfig(attrs map[string]string) ir.AgentConfig {
 	cfg := ir.AgentConfig{}
-
 	applyPromptAttrs(&cfg, attrs)
 	applyModelAttrs(&cfg, attrs)
 	applyBehaviorAttrs(&cfg, attrs)
 	applyPerformanceAttrs(&cfg, attrs)
-
 	return cfg
 }
 
@@ -226,25 +240,33 @@ func applyPromptAttrs(cfg *ir.AgentConfig, attrs map[string]string) {
 
 // applyModelAttrs applies model and provider attributes to agent config.
 func applyModelAttrs(cfg *ir.AgentConfig, attrs map[string]string) {
-	// Legacy: llm_model → model.
+	applyModelField(cfg, attrs)
+	applyProviderField(cfg, attrs)
+	if v, ok := attrs["reasoning_effort"]; ok {
+		cfg.ReasoningEffort = v
+	}
+	if v, ok := attrs["fidelity"]; ok {
+		cfg.Fidelity = v
+	}
+}
+
+// applyModelField sets the model field from model or llm_model attrs.
+func applyModelField(cfg *ir.AgentConfig, attrs map[string]string) {
 	if v, ok := attrs["model"]; ok {
 		cfg.Model = v
 	}
 	if v, ok := attrs["llm_model"]; ok {
 		cfg.Model = v
 	}
-	// Legacy: llm_provider → provider.
+}
+
+// applyProviderField sets the provider field from provider or llm_provider attrs.
+func applyProviderField(cfg *ir.AgentConfig, attrs map[string]string) {
 	if v, ok := attrs["provider"]; ok {
 		cfg.Provider = v
 	}
 	if v, ok := attrs["llm_provider"]; ok {
 		cfg.Provider = v
-	}
-	if v, ok := attrs["reasoning_effort"]; ok {
-		cfg.ReasoningEffort = v
-	}
-	if v, ok := attrs["fidelity"]; ok {
-		cfg.Fidelity = v
 	}
 }
 
@@ -256,6 +278,11 @@ func applyBehaviorAttrs(cfg *ir.AgentConfig, attrs map[string]string) {
 	if v, ok := attrs["auto_status"]; ok && isTruthy(v) {
 		cfg.AutoStatus = true
 	}
+	applyMaxTurns(cfg, attrs)
+}
+
+// applyMaxTurns parses and sets the max_turns field.
+func applyMaxTurns(cfg *ir.AgentConfig, attrs map[string]string) {
 	if v, ok := attrs["max_turns"]; ok {
 		if n, err := strconv.Atoi(v); err == nil {
 			cfg.MaxTurns = n
@@ -265,16 +292,21 @@ func applyBehaviorAttrs(cfg *ir.AgentConfig, attrs map[string]string) {
 
 // applyPerformanceAttrs applies performance-related attributes to agent config.
 func applyPerformanceAttrs(cfg *ir.AgentConfig, attrs map[string]string) {
-	if v, ok := attrs["cmd_timeout"]; ok {
-		if d, err := time.ParseDuration(v); err == nil {
-			cfg.CmdTimeout = d
-		}
-	}
+	applyCmdTimeout(cfg, attrs)
 	if v, ok := attrs["cache_tools"]; ok && isTruthy(v) {
 		cfg.CacheTools = true
 	}
 	if v, ok := attrs["compaction"]; ok {
 		cfg.Compaction = v
+	}
+}
+
+// applyCmdTimeout parses and sets the cmd_timeout duration.
+func applyCmdTimeout(cfg *ir.AgentConfig, attrs map[string]string) {
+	if v, ok := attrs["cmd_timeout"]; ok {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.CmdTimeout = d
+		}
 	}
 }
 
@@ -333,11 +365,7 @@ func buildRetryConfig(attrs map[string]string) ir.RetryConfig {
 	if v, ok := attrs["retry_policy"]; ok {
 		rc.Policy = v
 	}
-	if v, ok := attrs["max_retries"]; ok {
-		if n, err := strconv.Atoi(v); err == nil {
-			rc.MaxRetries = n
-		}
-	}
+	applyRetryMaxRetries(&rc, attrs)
 	if v, ok := attrs["retry_target"]; ok {
 		rc.RetryTarget = v
 	}
@@ -345,6 +373,15 @@ func buildRetryConfig(attrs map[string]string) ir.RetryConfig {
 		rc.FallbackTarget = v
 	}
 	return rc
+}
+
+// applyRetryMaxRetries parses and sets the max_retries field on RetryConfig.
+func applyRetryMaxRetries(rc *ir.RetryConfig, attrs map[string]string) {
+	if v, ok := attrs["max_retries"]; ok {
+		if n, err := strconv.Atoi(v); err == nil {
+			rc.MaxRetries = n
+		}
+	}
 }
 
 // --- Edge conversion ---
@@ -358,27 +395,45 @@ func convertEdge(de dotEdge) (*ir.Edge, error) {
 	if v, ok := de.Attrs["label"]; ok {
 		e.Label = v
 	}
-	if v, ok := de.Attrs["condition"]; ok {
-		cond, err := parseCondition(v)
-		if err != nil {
-			return nil, fmt.Errorf("condition %q: %w", v, err)
-		}
-		e.Condition = cond
+	if err := applyEdgeCondition(e, de.Attrs); err != nil {
+		return nil, err
 	}
-	if v, ok := de.Attrs["weight"]; ok {
+	applyEdgeWeight(e, de.Attrs)
+	applyEdgeRestart(e, de.Attrs)
+	return e, nil
+}
+
+// applyEdgeCondition parses and sets the condition on an edge.
+func applyEdgeCondition(e *ir.Edge, attrs map[string]string) error {
+	v, ok := attrs["condition"]
+	if !ok {
+		return nil
+	}
+	cond, err := parseCondition(v)
+	if err != nil {
+		return fmt.Errorf("condition %q: %w", v, err)
+	}
+	e.Condition = cond
+	return nil
+}
+
+// applyEdgeWeight parses and sets the weight on an edge.
+func applyEdgeWeight(e *ir.Edge, attrs map[string]string) {
+	if v, ok := attrs["weight"]; ok {
 		if n, err := strconv.Atoi(v); err == nil {
 			e.Weight = n
 		}
 	}
-	// Both restart and loop_restart (legacy) map to Edge.Restart.
-	if v, ok := de.Attrs["restart"]; ok && isTruthy(v) {
-		e.Restart = true
-	}
-	if v, ok := de.Attrs["loop_restart"]; ok && isTruthy(v) {
-		e.Restart = true
-	}
+}
 
-	return e, nil
+// applyEdgeRestart checks for restart/loop_restart attrs.
+func applyEdgeRestart(e *ir.Edge, attrs map[string]string) {
+	if v, ok := attrs["restart"]; ok && isTruthy(v) {
+		e.Restart = true
+	}
+	if v, ok := attrs["loop_restart"]; ok && isTruthy(v) {
+		e.Restart = true
+	}
 }
 
 // --- Condition parsing ---
@@ -400,14 +455,16 @@ func parseCondition(raw string) (*ir.Condition, error) {
 		return nil, err
 	}
 
-	// Format the parsed condition back to a canonical raw string.
 	canonRaw := formatCondExpr(expr)
-
 	return &ir.Condition{
 		Raw:    canonRaw,
 		Parsed: expr,
 	}, nil
 }
+
+// condExprParser is a function that attempts to parse a condition expression.
+// Returns (nil, nil) if this parser does not apply.
+type condExprParser func(string) (ir.ConditionExpr, error)
 
 // parseCondExpr parses a condition expression string into an AST.
 func parseCondExpr(s string) (ir.ConditionExpr, error) {
@@ -415,51 +472,70 @@ func parseCondExpr(s string) (ir.ConditionExpr, error) {
 	if s == "" {
 		return nil, fmt.Errorf("empty condition expression")
 	}
+	return tryCondParsers(s)
+}
 
-	// Try to split on || (OR — lowest precedence).
-	if parts, ok := splitLogicalOp(s, "||"); ok {
-		left, err := parseCondExpr(parts[0])
-		if err != nil {
-			return nil, err
+// tryCondParsers tries each condition parser in precedence order.
+func tryCondParsers(s string) (ir.ConditionExpr, error) {
+	parsers := []condExprParser{tryParseOr, tryParseAnd, tryParseNot}
+	for _, p := range parsers {
+		if expr, err := p(s); expr != nil || err != nil {
+			return expr, err
 		}
-		right, err := parseCondExpr(parts[1])
-		if err != nil {
-			return nil, err
-		}
-		return ir.CondOr{Left: left, Right: right}, nil
 	}
-
-	// Try to split on && (AND — higher precedence).
-	if parts, ok := splitLogicalOp(s, "&&"); ok {
-		left, err := parseCondExpr(parts[0])
-		if err != nil {
-			return nil, err
-		}
-		right, err := parseCondExpr(parts[1])
-		if err != nil {
-			return nil, err
-		}
-		return ir.CondAnd{Left: left, Right: right}, nil
-	}
-
-	// Handle NOT prefix.
-	if strings.HasPrefix(s, "not ") {
-		inner, err := parseCondExpr(s[4:])
-		if err != nil {
-			return nil, err
-		}
-		return ir.CondNot{Inner: inner}, nil
-	}
-	if strings.HasPrefix(s, "!") {
-		inner, err := parseCondExpr(s[1:])
-		if err != nil {
-			return nil, err
-		}
-		return ir.CondNot{Inner: inner}, nil
-	}
-
-	// Parse a single comparison: var op value.
 	return parseComparison(s)
+}
+
+// tryParseOr attempts to parse an OR expression.
+func tryParseOr(s string) (ir.ConditionExpr, error) {
+	parts, ok := splitLogicalOp(s, "||")
+	if !ok {
+		return nil, nil
+	}
+	left, err := parseCondExpr(parts[0])
+	if err != nil {
+		return nil, err
+	}
+	right, err := parseCondExpr(parts[1])
+	if err != nil {
+		return nil, err
+	}
+	return ir.CondOr{Left: left, Right: right}, nil
+}
+
+// tryParseAnd attempts to parse an AND expression.
+func tryParseAnd(s string) (ir.ConditionExpr, error) {
+	parts, ok := splitLogicalOp(s, "&&")
+	if !ok {
+		return nil, nil
+	}
+	left, err := parseCondExpr(parts[0])
+	if err != nil {
+		return nil, err
+	}
+	right, err := parseCondExpr(parts[1])
+	if err != nil {
+		return nil, err
+	}
+	return ir.CondAnd{Left: left, Right: right}, nil
+}
+
+// tryParseNot attempts to parse a NOT expression.
+func tryParseNot(s string) (ir.ConditionExpr, error) {
+	rest := ""
+	if strings.HasPrefix(s, "not ") {
+		rest = s[4:]
+	} else if strings.HasPrefix(s, "!") {
+		rest = s[1:]
+	}
+	if rest == "" {
+		return nil, nil
+	}
+	inner, err := parseCondExpr(rest)
+	if err != nil {
+		return nil, err
+	}
+	return ir.CondNot{Inner: inner}, nil
 }
 
 // splitLogicalOp splits a condition string on the given logical operator (&&, ||).
@@ -467,19 +543,31 @@ func parseCondExpr(s string) (ir.ConditionExpr, error) {
 func splitLogicalOp(s, op string) ([]string, bool) {
 	depth := 0
 	for i := 0; i <= len(s)-len(op); i++ {
-		ch := s[i]
-		if ch == '(' {
-			depth++
-		} else if ch == ')' {
-			depth--
-		}
+		depth = updateParenDepth(s[i], depth)
 		if depth == 0 && s[i:i+len(op)] == op {
-			left := strings.TrimSpace(s[:i])
-			right := strings.TrimSpace(s[i+len(op):])
-			if left != "" && right != "" {
-				return []string{left, right}, true
-			}
+			return trySplitAt(s, i, len(op))
 		}
+	}
+	return nil, false
+}
+
+// updateParenDepth adjusts the parenthesis nesting depth.
+func updateParenDepth(ch byte, depth int) int {
+	if ch == '(' {
+		return depth + 1
+	}
+	if ch == ')' {
+		return depth - 1
+	}
+	return depth
+}
+
+// trySplitAt splits a string at position i with operator length opLen.
+func trySplitAt(s string, i, opLen int) ([]string, bool) {
+	left := strings.TrimSpace(s[:i])
+	right := strings.TrimSpace(s[i+opLen:])
+	if left != "" && right != "" {
+		return []string{left, right}, true
 	}
 	return nil, false
 }
@@ -491,40 +579,33 @@ func parseComparison(s string) (ir.ConditionExpr, error) {
 
 	// Try != first (before =) to avoid matching the = in !=.
 	if idx := strings.Index(s, "!="); idx > 0 {
-		variable := strings.TrimSpace(s[:idx])
-		value := strings.TrimSpace(s[idx+2:])
-		return ir.CondCompare{
-			Variable: addNamespacePrefix(variable),
-			Op:       "!=",
-			Value:    value,
-		}, nil
+		return buildCompare(s, idx, 2, "!="), nil
 	}
 
 	// Try = (equality).
 	if idx := strings.Index(s, "="); idx > 0 {
-		variable := strings.TrimSpace(s[:idx])
-		value := strings.TrimSpace(s[idx+1:])
-		return ir.CondCompare{
-			Variable: addNamespacePrefix(variable),
-			Op:       "=",
-			Value:    value,
-		}, nil
+		return buildCompare(s, idx, 1, "="), nil
 	}
 
 	// Try word-based operators: contains, startswith, endswith, in.
 	for _, op := range []string{" contains ", " startswith ", " endswith ", " in "} {
 		if idx := strings.Index(s, op); idx > 0 {
-			variable := strings.TrimSpace(s[:idx])
-			value := strings.TrimSpace(s[idx+len(op):])
-			return ir.CondCompare{
-				Variable: addNamespacePrefix(variable),
-				Op:       strings.TrimSpace(op),
-				Value:    value,
-			}, nil
+			return buildCompare(s, idx, len(op), strings.TrimSpace(op)), nil
 		}
 	}
 
 	return nil, fmt.Errorf("cannot parse condition comparison: %q", s)
+}
+
+// buildCompare creates a CondCompare from a string, split position, and operator.
+func buildCompare(s string, idx, opLen int, op string) ir.CondCompare {
+	variable := strings.TrimSpace(s[:idx])
+	value := strings.TrimSpace(s[idx+opLen:])
+	return ir.CondCompare{
+		Variable: addNamespacePrefix(variable),
+		Op:       op,
+		Value:    value,
+	}
 }
 
 // addNamespacePrefix adds the ctx. namespace to bare condition variable names.
@@ -563,27 +644,26 @@ func formatCondExprPrec(expr ir.ConditionExpr, parentPrec int) string {
 	case ir.CondCompare:
 		return fmt.Sprintf("%s %s %s", e.Variable, e.Op, e.Value)
 	case ir.CondAnd:
-		s := fmt.Sprintf("%s and %s",
-			formatCondExprPrec(e.Left, condPrecAnd),
-			formatCondExprPrec(e.Right, condPrecAnd))
-		if parentPrec != 0 && parentPrec != condPrecAnd {
-			return "(" + s + ")"
-		}
-		return s
+		return formatBinaryOp(e.Left, e.Right, "and", condPrecAnd, parentPrec)
 	case ir.CondOr:
-		s := fmt.Sprintf("%s or %s",
-			formatCondExprPrec(e.Left, condPrecOr),
-			formatCondExprPrec(e.Right, condPrecOr))
-		if parentPrec != 0 && parentPrec != condPrecOr {
-			return "(" + s + ")"
-		}
-		return s
+		return formatBinaryOp(e.Left, e.Right, "or", condPrecOr, parentPrec)
 	case ir.CondNot:
-		inner := formatCondExprPrec(e.Inner, condPrecNot)
-		return "not " + inner
+		return "not " + formatCondExprPrec(e.Inner, condPrecNot)
 	default:
 		return ""
 	}
+}
+
+// formatBinaryOp formats a binary AND/OR expression with optional parens.
+func formatBinaryOp(left, right ir.ConditionExpr, keyword string, prec, parentPrec int) string {
+	s := fmt.Sprintf("%s %s %s",
+		formatCondExprPrec(left, prec),
+		keyword,
+		formatCondExprPrec(right, prec))
+	if parentPrec != 0 && parentPrec != prec {
+		return "(" + s + ")"
+	}
+	return s
 }
 
 // --- Parallel/Fan-in inference ---
@@ -594,25 +674,37 @@ func inferParallelFanIn(w *ir.Workflow) {
 	for _, n := range w.Nodes {
 		switch cfg := n.Config.(type) {
 		case ir.ParallelConfig:
-			if len(cfg.Targets) == 0 {
-				edges := w.EdgesFrom(n.ID)
-				targets := make([]string, 0, len(edges))
-				for _, e := range edges {
-					targets = append(targets, e.To)
-				}
-				n.Config = ir.ParallelConfig{Targets: targets}
-			}
+			inferParallelTargets(w, n, cfg)
 		case ir.FanInConfig:
-			if len(cfg.Sources) == 0 {
-				edges := w.EdgesTo(n.ID)
-				sources := make([]string, 0, len(edges))
-				for _, e := range edges {
-					sources = append(sources, e.From)
-				}
-				n.Config = ir.FanInConfig{Sources: sources}
-			}
+			inferFanInSources(w, n, cfg)
 		}
 	}
+}
+
+// inferParallelTargets sets targets from outgoing edges if not already set.
+func inferParallelTargets(w *ir.Workflow, n *ir.Node, cfg ir.ParallelConfig) {
+	if len(cfg.Targets) != 0 {
+		return
+	}
+	edges := w.EdgesFrom(n.ID)
+	targets := make([]string, 0, len(edges))
+	for _, e := range edges {
+		targets = append(targets, e.To)
+	}
+	n.Config = ir.ParallelConfig{Targets: targets}
+}
+
+// inferFanInSources sets sources from incoming edges if not already set.
+func inferFanInSources(w *ir.Workflow, n *ir.Node, cfg ir.FanInConfig) {
+	if len(cfg.Sources) != 0 {
+		return
+	}
+	edges := w.EdgesTo(n.ID)
+	sources := make([]string, 0, len(edges))
+	for _, e := range edges {
+		sources = append(sources, e.From)
+	}
+	n.Config = ir.FanInConfig{Sources: sources}
 }
 
 // --- Helpers ---

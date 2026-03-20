@@ -18,40 +18,65 @@ func (w *Workflow) EdgesFrom(id string) []*Edge {
 	var out []*Edge
 	seenTargets := make(map[string]bool)
 
+	out = w.explicitEdgesFrom(id, out, seenTargets)
+	out = w.parallelEdgesFrom(id, out, seenTargets)
+	out = w.fanInEdgesFrom(id, out, seenTargets)
+
+	return out
+}
+
+// explicitEdgesFrom collects edges from the Edges slice where From == id.
+func (w *Workflow) explicitEdgesFrom(id string, out []*Edge, seen map[string]bool) []*Edge {
 	for _, e := range w.Edges {
 		if e.From == id {
 			out = append(out, e)
 			if e.Condition == nil {
-				seenTargets[e.To] = true
+				seen[e.To] = true
 			}
 		}
 	}
+	return out
+}
 
-	// Include implicit edges from parallel fan-outs.
+// parallelEdgesFrom adds implicit fan-out edges from a parallel node.
+func (w *Workflow) parallelEdgesFrom(id string, out []*Edge, seen map[string]bool) []*Edge {
 	node := w.Node(id)
-	if node != nil {
-		if cfg, ok := node.Config.(ParallelConfig); ok {
-			for _, target := range cfg.Targets {
-				if !seenTargets[target] {
-					out = append(out, &Edge{From: id, To: target})
-					seenTargets[target] = true
-				}
-			}
+	if node == nil {
+		return out
+	}
+	cfg, ok := node.Config.(ParallelConfig)
+	if !ok {
+		return out
+	}
+	for _, target := range cfg.Targets {
+		if !seen[target] {
+			out = append(out, &Edge{From: id, To: target})
+			seen[target] = true
 		}
 	}
+	return out
+}
 
-	// A node may be a source for a fan-in join.
+// fanInEdgesFrom adds implicit edges from id to any fan-in node that lists id as a source.
+func (w *Workflow) fanInEdgesFrom(id string, out []*Edge, seen map[string]bool) []*Edge {
 	for _, n := range w.Nodes {
-		if cfg, ok := n.Config.(FanInConfig); ok {
-			for _, src := range cfg.Sources {
-				if src == id && !seenTargets[n.ID] {
-					out = append(out, &Edge{From: id, To: n.ID})
-					seenTargets[n.ID] = true
-				}
-			}
+		cfg, ok := n.Config.(FanInConfig)
+		if !ok {
+			continue
+		}
+		out = w.addFanInSourceEdges(id, n.ID, cfg.Sources, out, seen)
+	}
+	return out
+}
+
+// addFanInSourceEdges adds an edge from srcID to fanInID if srcID appears in sources and is not already seen.
+func (w *Workflow) addFanInSourceEdges(srcID, fanInID string, sources []string, out []*Edge, seen map[string]bool) []*Edge {
+	for _, src := range sources {
+		if src == srcID && !seen[fanInID] {
+			out = append(out, &Edge{From: srcID, To: fanInID})
+			seen[fanInID] = true
 		}
 	}
-
 	return out
 }
 
@@ -63,40 +88,67 @@ func (w *Workflow) EdgesTo(id string) []*Edge {
 	var out []*Edge
 	seenSources := make(map[string]bool)
 
+	out = w.explicitEdgesTo(id, out, seenSources)
+	out = w.parallelEdgesTo(id, out, seenSources)
+	out = w.fanInEdgesTo(id, out, seenSources)
+
+	return out
+}
+
+// explicitEdgesTo collects edges from the Edges slice where To == id.
+func (w *Workflow) explicitEdgesTo(id string, out []*Edge, seen map[string]bool) []*Edge {
 	for _, e := range w.Edges {
 		if e.To == id {
 			out = append(out, e)
 			if e.Condition == nil {
-				seenSources[e.From] = true
+				seen[e.From] = true
 			}
 		}
 	}
+	return out
+}
 
-	// Include implicit edges from parallel fan-outs.
+// parallelEdgesTo adds implicit edges from parallel nodes that target id.
+func (w *Workflow) parallelEdgesTo(id string, out []*Edge, seen map[string]bool) []*Edge {
 	for _, n := range w.Nodes {
-		if cfg, ok := n.Config.(ParallelConfig); ok {
-			for _, target := range cfg.Targets {
-				if target == id && !seenSources[n.ID] {
-					out = append(out, &Edge{From: n.ID, To: id})
-					seenSources[n.ID] = true
-				}
-			}
+		cfg, ok := n.Config.(ParallelConfig)
+		if !ok {
+			continue
+		}
+		if w.parallelTargetsNode(cfg.Targets, id) && !seen[n.ID] {
+			out = append(out, &Edge{From: n.ID, To: id})
+			seen[n.ID] = true
 		}
 	}
+	return out
+}
 
-	// Include implicit edges from fan-in joins.
+// parallelTargetsNode returns true if targets contains id.
+func (w *Workflow) parallelTargetsNode(targets []string, id string) bool {
+	for _, t := range targets {
+		if t == id {
+			return true
+		}
+	}
+	return false
+}
+
+// fanInEdgesTo adds implicit edges from fan-in sources to id, if id is a fan-in node.
+func (w *Workflow) fanInEdgesTo(id string, out []*Edge, seen map[string]bool) []*Edge {
 	node := w.Node(id)
-	if node != nil {
-		if cfg, ok := node.Config.(FanInConfig); ok {
-			for _, src := range cfg.Sources {
-				if !seenSources[src] {
-					out = append(out, &Edge{From: src, To: id})
-					seenSources[src] = true
-				}
-			}
+	if node == nil {
+		return out
+	}
+	cfg, ok := node.Config.(FanInConfig)
+	if !ok {
+		return out
+	}
+	for _, src := range cfg.Sources {
+		if !seen[src] {
+			out = append(out, &Edge{From: src, To: id})
+			seen[src] = true
 		}
 	}
-
 	return out
 }
 

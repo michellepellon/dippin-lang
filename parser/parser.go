@@ -27,24 +27,27 @@ func NewParser(input string, filename string) *Parser {
 }
 
 func (p *Parser) Parse() (*ir.Workflow, error) {
+	p.parseTopLevel()
+	if len(p.diagnostics) > 0 {
+		return p.workflow, fmt.Errorf("parsing errors: %s", strings.Join(p.diagnostics, "; "))
+	}
+	return p.workflow, nil
+}
+
+// parseTopLevel consumes top-level tokens looking for workflow declarations.
+func (p *Parser) parseTopLevel() {
 	for p.lexer.PeekToken().Type != TokenEOF {
 		t := p.lexer.PeekToken()
 		if t.Type == TokenNewline {
 			p.lexer.NextToken()
 			continue
 		}
-
 		if t.Type == TokenIdentifier && t.Value == "workflow" {
 			p.parseWorkflow()
 		} else {
-			// Try to recover by skipping to next line
 			p.lexer.NextToken()
 		}
 	}
-	if len(p.diagnostics) > 0 {
-		return p.workflow, fmt.Errorf("parsing errors: %s", strings.Join(p.diagnostics, "; "))
-	}
-	return p.workflow, nil
 }
 
 func (p *Parser) parseWorkflow() {
@@ -54,52 +57,95 @@ func (p *Parser) parseWorkflow() {
 	p.expect(TokenNewline)
 
 	p.expect(TokenIndent)
+	p.parseWorkflowBody()
+	p.expect(TokenOutdent)
+}
+
+// parseWorkflowBody parses the indented body of a workflow declaration.
+func (p *Parser) parseWorkflowBody() {
 	for p.lexer.PeekToken().Type != TokenOutdent && p.lexer.PeekToken().Type != TokenEOF {
 		t := p.lexer.PeekToken()
 		if t.Type == TokenNewline {
 			p.lexer.NextToken()
 			continue
 		}
-
 		if t.Type == TokenIdentifier {
-			switch t.Value {
-			case "goal":
-				p.lexer.NextToken()
-				p.expect(TokenColon)
-				p.workflow.Goal = p.readFieldValue(t.Location.Line)
-			case "start":
-				p.lexer.NextToken()
-				p.expect(TokenColon)
-				p.workflow.Start = p.readFieldValue(t.Location.Line)
-			case "exit":
-				p.lexer.NextToken()
-				p.expect(TokenColon)
-				p.workflow.Exit = p.readFieldValue(t.Location.Line)
-			case "defaults":
-				p.parseDefaults()
-			case "agent", "human", "tool", "subgraph":
-				p.parseNode(ir.NodeKind(t.Value))
-			case "parallel":
-				p.parseParallel()
-			case "fan_in":
-				p.parseFanIn()
-			case "edges":
-				p.parseEdges()
-			default:
-				p.diagnostics = append(p.diagnostics, fmt.Sprintf("unexpected top-level identifier: %s at %d:%d", t.Value, t.Location.Line, t.Location.Column))
-				p.lexer.NextToken()
-			}
+			p.dispatchWorkflowField(t)
 		} else {
 			p.lexer.NextToken()
 		}
 	}
-	p.expect(TokenOutdent)
+}
+
+// workflowNodeKinds maps identifiers to their node kinds for dispatch.
+var workflowNodeKinds = map[string]bool{
+	"agent": true, "human": true, "tool": true, "subgraph": true,
+}
+
+// workflowSimpleBlocks maps workflow block keywords to their parser methods.
+// Populated lazily to avoid init-order issues; see dispatchWorkflowBlock.
+
+// dispatchWorkflowField routes a workflow-level identifier to the right handler.
+func (p *Parser) dispatchWorkflowField(t Token) {
+	switch t.Value {
+	case "goal", "start", "exit":
+		p.parseWorkflowStringField(t)
+	case "defaults":
+		p.parseDefaults()
+	case "edges":
+		p.parseEdges()
+	default:
+		p.dispatchWorkflowBlock(t)
+	}
+}
+
+// dispatchWorkflowBlock handles parallel, fan_in, node kinds, and unknown identifiers.
+func (p *Parser) dispatchWorkflowBlock(t Token) {
+	switch t.Value {
+	case "parallel":
+		p.parseParallel()
+	case "fan_in":
+		p.parseFanIn()
+	default:
+		p.dispatchWorkflowDefault(t)
+	}
+}
+
+// dispatchWorkflowDefault handles node kinds and unknown identifiers.
+func (p *Parser) dispatchWorkflowDefault(t Token) {
+	if workflowNodeKinds[t.Value] {
+		p.parseNode(ir.NodeKind(t.Value))
+		return
+	}
+	p.diagnostics = append(p.diagnostics, fmt.Sprintf("unexpected top-level identifier: %s at %d:%d", t.Value, t.Location.Line, t.Location.Column))
+	p.lexer.NextToken()
+}
+
+// parseWorkflowStringField parses a simple "key: value" field on the workflow.
+func (p *Parser) parseWorkflowStringField(t Token) {
+	p.lexer.NextToken()
+	p.expect(TokenColon)
+	val := p.readFieldValue(t.Location.Line)
+	switch t.Value {
+	case "goal":
+		p.workflow.Goal = val
+	case "start":
+		p.workflow.Start = val
+	case "exit":
+		p.workflow.Exit = val
+	}
 }
 
 func (p *Parser) parseDefaults() {
 	p.lexer.NextToken() // defaults
 	p.expect(TokenNewline)
 	p.expect(TokenIndent)
+	p.parseDefaultsBody()
+	p.expect(TokenOutdent)
+}
+
+// parseDefaultsBody parses the indented body of a defaults block.
+func (p *Parser) parseDefaultsBody() {
 	for p.lexer.PeekToken().Type != TokenOutdent && p.lexer.PeekToken().Type != TokenEOF {
 		t := p.lexer.PeekToken()
 		if t.Type == TokenNewline {
@@ -107,35 +153,94 @@ func (p *Parser) parseDefaults() {
 			continue
 		}
 		if t.Type == TokenIdentifier {
-			key := t.Value
-			p.lexer.NextToken()
-			p.expect(TokenColon)
-			val := p.readFieldValue(t.Location.Line)
-			switch key {
-			case "model":
-				p.workflow.Defaults.Model = val
-			case "provider":
-				p.workflow.Defaults.Provider = val
-			case "retry_policy":
-				p.workflow.Defaults.RetryPolicy = val
-			case "max_retries":
-				p.workflow.Defaults.MaxRetries = p.parseInt(val, key, t.Location)
-			case "fidelity":
-				p.workflow.Defaults.Fidelity = val
-			case "max_restarts":
-				p.workflow.Defaults.MaxRestarts = p.parseInt(val, key, t.Location)
-			case "restart_target":
-				p.workflow.Defaults.RestartTarget = val
-			case "cache_tools":
-				p.workflow.Defaults.CacheTools = (val == "true")
-			case "compaction":
-				p.workflow.Defaults.Compaction = val
-			}
+			p.parseDefaultField(t)
 		} else {
 			p.lexer.NextToken()
 		}
 	}
-	p.expect(TokenOutdent)
+}
+
+// parseDefaultField reads a single default field (key: value) and applies it.
+func (p *Parser) parseDefaultField(t Token) {
+	key := t.Value
+	p.lexer.NextToken()
+	p.expect(TokenColon)
+	val := p.readFieldValue(t.Location.Line)
+	p.applyDefaultField(key, val, t.Location)
+}
+
+// applyDefaultField applies a single default field value to the workflow defaults.
+func (p *Parser) applyDefaultField(key, val string, loc ir.SourceLocation) {
+	if p.applyDefaultStringField(key, val) {
+		return
+	}
+	p.applyDefaultComplexField(key, val, loc)
+}
+
+// applyDefaultStringField handles simple string assignments for defaults.
+func (p *Parser) applyDefaultStringField(key, val string) bool {
+	if applyDefaultCoreField(&p.workflow.Defaults, key, val) {
+		return true
+	}
+	return applyDefaultExtraField(&p.workflow.Defaults, key, val)
+}
+
+// applyDefaultCoreField handles model, provider, retry_policy defaults.
+func applyDefaultCoreField(d *ir.WorkflowDefaults, key, val string) bool {
+	switch key {
+	case "model":
+		d.Model = val
+	case "provider":
+		d.Provider = val
+	case "retry_policy":
+		d.RetryPolicy = val
+	default:
+		return false
+	}
+	return true
+}
+
+// applyDefaultExtraField handles fidelity, restart_target, compaction defaults.
+func applyDefaultExtraField(d *ir.WorkflowDefaults, key, val string) bool {
+	switch key {
+	case "fidelity":
+		d.Fidelity = val
+	case "restart_target":
+		d.RestartTarget = val
+	case "compaction":
+		d.Compaction = val
+	default:
+		return false
+	}
+	return true
+}
+
+// applyDefaultComplexField handles fields needing parsing for defaults.
+func (p *Parser) applyDefaultComplexField(key, val string, loc ir.SourceLocation) {
+	switch key {
+	case "max_retries":
+		p.workflow.Defaults.MaxRetries = p.parseInt(val, key, loc)
+	case "max_restarts":
+		p.workflow.Defaults.MaxRestarts = p.parseInt(val, key, loc)
+	case "cache_tools":
+		p.workflow.Defaults.CacheTools = (val == "true")
+	}
+}
+
+// defaultNodeConfig returns the zero config for a given node kind.
+func defaultNodeConfig(kind ir.NodeKind) ir.NodeConfig {
+	switch kind {
+	case ir.NodeAgent:
+		return ir.AgentConfig{}
+	case ir.NodeHuman:
+		return ir.HumanConfig{}
+	case ir.NodeTool:
+		return ir.ToolConfig{}
+	case ir.NodeSubgraph:
+		return ir.SubgraphConfig{Params: make(map[string]string)}
+	default:
+		return ir.AgentConfig{}
+	}
 }
 
 func (p *Parser) parseNode(kind ir.NodeKind) {
@@ -145,22 +250,18 @@ func (p *Parser) parseNode(kind ir.NodeKind) {
 		ID:     id,
 		Kind:   kind,
 		Source: p.lexer.PeekToken().Location,
-	}
-
-	// Default config
-	switch kind {
-	case ir.NodeAgent:
-		node.Config = ir.AgentConfig{}
-	case ir.NodeHuman:
-		node.Config = ir.HumanConfig{}
-	case ir.NodeTool:
-		node.Config = ir.ToolConfig{}
-	case ir.NodeSubgraph:
-		node.Config = ir.SubgraphConfig{Params: make(map[string]string)}
+		Config: defaultNodeConfig(kind),
 	}
 
 	p.expect(TokenNewline)
 	p.expect(TokenIndent)
+	p.parseNodeBody(node)
+	p.expect(TokenOutdent)
+	p.workflow.Nodes = append(p.workflow.Nodes, node)
+}
+
+// parseNodeBody parses the indented fields within a node declaration.
+func (p *Parser) parseNodeBody(node *ir.Node) {
 	for p.lexer.PeekToken().Type != TokenOutdent && p.lexer.PeekToken().Type != TokenEOF {
 		t := p.lexer.PeekToken()
 		if t.Type == TokenNewline {
@@ -177,8 +278,6 @@ func (p *Parser) parseNode(kind ir.NodeKind) {
 			p.lexer.NextToken()
 		}
 	}
-	p.expect(TokenOutdent)
-	p.workflow.Nodes = append(p.workflow.Nodes, node)
 }
 
 // readFieldValue reads a field value, which may be:
@@ -186,50 +285,58 @@ func (p *Parser) parseNode(kind ir.NodeKind) {
 // - A single-line value on the same line as the key
 // - A newline followed by a raw block (key: \n <indented block>)
 func (p *Parser) readFieldValue(lineNum int) string {
-	// If next token is a raw block, return it directly
 	if p.lexer.PeekToken().Type == TokenRawBlock {
 		return p.lexer.NextToken().Value
 	}
-
-	// If next token is a newline, check for a raw block after it
 	if p.lexer.PeekToken().Type == TokenNewline {
-		// Save position to check ahead
-		p.lexer.NextToken() // consume newline
-		if p.lexer.PeekToken().Type == TokenRawBlock {
-			return p.lexer.NextToken().Value
-		}
-		// No raw block — this was a key: with empty value
-		return ""
+		return p.readBlockAfterNewline()
 	}
+	return p.readSingleLineValue(lineNum)
+}
 
-	// Single-line value: use raw extraction from the original input
-	// to preserve characters like colons that the lexer splits on.
+// readBlockAfterNewline consumes a newline and checks for a raw block after it.
+func (p *Parser) readBlockAfterNewline() string {
+	p.lexer.NextToken() // consume newline
+	if p.lexer.PeekToken().Type == TokenRawBlock {
+		return p.lexer.NextToken().Value
+	}
+	return ""
+}
+
+// readSingleLineValue reads a single-line value using raw extraction.
+func (p *Parser) readSingleLineValue(lineNum int) string {
 	raw := p.lexer.RawValueText(lineNum)
+	p.consumeUntilNewline()
+	return unquoteRaw(raw)
+}
 
-	// Consume tokens until newline so the parser advances past this line
+// consumeUntilNewline consumes tokens until a newline or EOF is reached.
+func (p *Parser) consumeUntilNewline() {
 	for p.lexer.PeekToken().Type != TokenNewline && p.lexer.PeekToken().Type != TokenEOF {
 		p.lexer.NextToken()
 	}
+}
 
-	// Unquote if the raw value is a quoted string
-	if len(raw) >= 2 && raw[0] == '"' && raw[len(raw)-1] == '"' {
-		unquoted := raw[1 : len(raw)-1]
-		// Handle basic escape sequences
-		unquoted = strings.ReplaceAll(unquoted, `\"`, `"`)
-		unquoted = strings.ReplaceAll(unquoted, `\\`, `\`)
-		return unquoted
+// unquoteRaw unquotes a double-quoted string, handling basic escape sequences.
+func unquoteRaw(raw string) string {
+	if len(raw) < 2 || raw[0] != '"' || raw[len(raw)-1] != '"' {
+		return raw
 	}
-
-	return raw
+	unquoted := raw[1 : len(raw)-1]
+	unquoted = strings.ReplaceAll(unquoted, `\"`, `"`)
+	unquoted = strings.ReplaceAll(unquoted, `\\`, `\`)
+	return unquoted
 }
 
 func (p *Parser) applyNodeField(n *ir.Node, key, val string, loc ir.SourceLocation) {
-	// Try common fields first
 	if p.tryApplyCommonField(n, key, val, loc) {
 		return
 	}
+	p.applyConfigField(n, key, val, loc)
+}
 
-	// Dispatch to config-specific handlers
+// applyConfigField dispatches to config-specific field handlers.
+func (p *Parser) applyConfigField(n *ir.Node, key, val string, loc ir.SourceLocation) {
 	switch cfg := n.Config.(type) {
 	case ir.AgentConfig:
 		p.applyAgentField(&cfg, key, val, loc)
@@ -249,6 +356,22 @@ func (p *Parser) applyNodeField(n *ir.Node, key, val string, loc ir.SourceLocati
 // tryApplyCommonField applies fields that are common to all node types.
 // Returns true if the field was handled, false otherwise.
 func (p *Parser) tryApplyCommonField(n *ir.Node, key, val string, loc ir.SourceLocation) bool {
+	if applyCommonStringField(n, key, val) {
+		return true
+	}
+	return p.applyCommonComplexField(n, key, val, loc)
+}
+
+// applyCommonStringField handles simple string/slice assignments for common fields.
+func applyCommonStringField(n *ir.Node, key, val string) bool {
+	if applyCommonPlainField(n, key, val) {
+		return true
+	}
+	return applyCommonRetryField(n, key, val)
+}
+
+// applyCommonPlainField handles label, class, reads, writes.
+func applyCommonPlainField(n *ir.Node, key, val string) bool {
 	switch key {
 	case "label":
 		n.Label = val
@@ -258,14 +381,32 @@ func (p *Parser) tryApplyCommonField(n *ir.Node, key, val string, loc ir.SourceL
 		n.IO.Reads = splitComma(val)
 	case "writes":
 		n.IO.Writes = splitComma(val)
+	default:
+		return false
+	}
+	return true
+}
+
+// applyCommonRetryField handles retry-related string fields.
+func applyCommonRetryField(n *ir.Node, key, val string) bool {
+	switch key {
 	case "retry_policy":
 		n.Retry.Policy = val
-	case "max_retries":
-		n.Retry.MaxRetries = p.parseInt(val, key, loc)
 	case "retry_target":
 		n.Retry.RetryTarget = val
 	case "fallback_target":
 		n.Retry.FallbackTarget = val
+	default:
+		return false
+	}
+	return true
+}
+
+// applyCommonComplexField handles fields that need parsing (int, duration).
+func (p *Parser) applyCommonComplexField(n *ir.Node, key, val string, loc ir.SourceLocation) bool {
+	switch key {
+	case "max_retries":
+		n.Retry.MaxRetries = p.parseInt(val, key, loc)
 	case "base_delay":
 		n.Retry.BaseDelay = p.parseDuration(val, key, loc)
 	default:
@@ -276,25 +417,59 @@ func (p *Parser) tryApplyCommonField(n *ir.Node, key, val string, loc ir.SourceL
 
 // applyAgentField applies agent-specific configuration fields.
 func (p *Parser) applyAgentField(cfg *ir.AgentConfig, key, val string, loc ir.SourceLocation) {
+	if applyAgentStringField(cfg, key, val) {
+		return
+	}
+	p.applyAgentComplexField(cfg, key, val, loc)
+}
+
+// applyAgentStringField handles simple string assignments for agent config.
+func applyAgentStringField(cfg *ir.AgentConfig, key, val string) bool {
+	if applyAgentPromptField(cfg, key, val) {
+		return true
+	}
+	return applyAgentModelField(cfg, key, val)
+}
+
+// applyAgentPromptField handles prompt-related agent fields.
+func applyAgentPromptField(cfg *ir.AgentConfig, key, val string) bool {
 	switch key {
 	case "prompt":
 		cfg.Prompt = val
 	case "system_prompt":
 		cfg.SystemPrompt = val
+	case "reasoning_effort":
+		cfg.ReasoningEffort = val
+	default:
+		return false
+	}
+	return true
+}
+
+// applyAgentModelField handles model-related agent fields.
+func applyAgentModelField(cfg *ir.AgentConfig, key, val string) bool {
+	switch key {
 	case "model":
 		cfg.Model = val
 	case "provider":
 		cfg.Provider = val
+	case "fidelity":
+		cfg.Fidelity = val
+	default:
+		return false
+	}
+	return true
+}
+
+// applyAgentComplexField handles fields needing parsing for agent config.
+func (p *Parser) applyAgentComplexField(cfg *ir.AgentConfig, key, val string, loc ir.SourceLocation) {
+	switch key {
 	case "max_turns":
 		cfg.MaxTurns = p.parseInt(val, key, loc)
 	case "goal_gate":
 		cfg.GoalGate = (val == "true")
 	case "auto_status":
 		cfg.AutoStatus = (val == "true")
-	case "reasoning_effort":
-		cfg.ReasoningEffort = val
-	case "fidelity":
-		cfg.Fidelity = val
 	}
 }
 
@@ -359,54 +534,84 @@ func (p *Parser) parseEdges() {
 	p.lexer.NextToken() // edges
 	p.expect(TokenNewline)
 	p.expect(TokenIndent)
+	p.parseEdgesBody()
+	p.expect(TokenOutdent)
+}
+
+// parseEdgesBody parses the indented body of an edges block.
+func (p *Parser) parseEdgesBody() {
 	for p.lexer.PeekToken().Type != TokenOutdent && p.lexer.PeekToken().Type != TokenEOF {
 		t := p.lexer.PeekToken()
 		if t.Type == TokenNewline {
 			p.lexer.NextToken()
 			continue
 		}
-		from := p.lexer.NextToken().Value
-		p.expect(TokenArrow)
-		to := p.lexer.NextToken().Value
-
-		edge := &ir.Edge{From: from, To: to}
-
-		// Parse edge attributes
-		for p.lexer.PeekToken().Type != TokenNewline && p.lexer.PeekToken().Type != TokenEOF {
-			attr := p.lexer.NextToken()
-			switch attr.Value {
-			case "when":
-				// Simplified condition parsing: read until next keyword or end of line
-				condRaw := ""
-				for p.lexer.PeekToken().Type != TokenNewline && p.lexer.PeekToken().Type != TokenEOF {
-					pk := p.lexer.PeekToken()
-					if pk.Value == "label" || pk.Value == "weight" || pk.Value == "restart" {
-						break
-					}
-					t := p.lexer.NextToken()
-					if t.Type == TokenLiteral {
-						condRaw += "\"" + t.Value + "\" "
-					} else {
-						condRaw += t.Value + " "
-					}
-				}
-				edge.Condition = &ir.Condition{Raw: strings.TrimSpace(condRaw)}
-			case "label":
-				p.expect(TokenColon)
-				edge.Label = p.lexer.NextToken().Value
-			case "weight":
-				p.expect(TokenColon)
-				wt := p.lexer.NextToken()
-				edge.Weight = p.parseInt(wt.Value, "weight", wt.Location)
-			case "restart":
-				p.expect(TokenColon)
-				edge.Restart = (p.lexer.NextToken().Value == "true")
-			}
-		}
-		p.workflow.Edges = append(p.workflow.Edges, edge)
-		p.expect(TokenNewline)
+		p.parseSingleEdge()
 	}
-	p.expect(TokenOutdent)
+}
+
+// parseSingleEdge parses a single edge declaration: "from -> to [attributes...]"
+func (p *Parser) parseSingleEdge() {
+	from := p.lexer.NextToken().Value
+	p.expect(TokenArrow)
+	to := p.lexer.NextToken().Value
+	edge := &ir.Edge{From: from, To: to}
+	p.parseEdgeAttributes(edge)
+	p.workflow.Edges = append(p.workflow.Edges, edge)
+	p.expect(TokenNewline)
+}
+
+// parseEdgeAttributes parses optional attributes (when, label, weight, restart) on an edge.
+func (p *Parser) parseEdgeAttributes(edge *ir.Edge) {
+	for p.lexer.PeekToken().Type != TokenNewline && p.lexer.PeekToken().Type != TokenEOF {
+		attr := p.lexer.NextToken()
+		p.applyEdgeAttribute(edge, attr.Value)
+	}
+}
+
+// edgeAttrKeywords contains the set of edge attribute keywords that terminate condition parsing.
+var edgeAttrKeywords = map[string]bool{
+	"label": true, "weight": true, "restart": true,
+}
+
+// applyEdgeAttribute applies a single edge attribute.
+func (p *Parser) applyEdgeAttribute(edge *ir.Edge, attrName string) {
+	switch attrName {
+	case "when":
+		edge.Condition = &ir.Condition{Raw: p.readConditionRaw()}
+	case "label":
+		p.expect(TokenColon)
+		edge.Label = p.lexer.NextToken().Value
+	case "weight":
+		p.expect(TokenColon)
+		wt := p.lexer.NextToken()
+		edge.Weight = p.parseInt(wt.Value, "weight", wt.Location)
+	case "restart":
+		p.expect(TokenColon)
+		edge.Restart = (p.lexer.NextToken().Value == "true")
+	}
+}
+
+// readConditionRaw reads tokens until a newline/EOF or a known edge attribute keyword.
+func (p *Parser) readConditionRaw() string {
+	var parts []string
+	for p.lexer.PeekToken().Type != TokenNewline && p.lexer.PeekToken().Type != TokenEOF {
+		pk := p.lexer.PeekToken()
+		if edgeAttrKeywords[pk.Value] {
+			break
+		}
+		t := p.lexer.NextToken()
+		parts = append(parts, formatConditionToken(t))
+	}
+	return strings.TrimSpace(strings.Join(parts, " "))
+}
+
+// formatConditionToken formats a single token for raw condition text.
+func formatConditionToken(t Token) string {
+	if t.Type == TokenLiteral {
+		return "\"" + t.Value + "\""
+	}
+	return t.Value
 }
 
 func (p *Parser) expect(t TokenType) {

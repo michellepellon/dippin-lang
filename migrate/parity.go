@@ -26,8 +26,16 @@ type Difference struct {
 //   - Same graph-level defaults
 func CheckParity(a, b *ir.Workflow) []Difference {
 	var diffs []Difference
+	diffs = append(diffs, compareStartExit(a, b)...)
+	diffs = append(diffs, compareNodes(a, b)...)
+	diffs = append(diffs, compareEdges(a, b)...)
+	diffs = append(diffs, compareDefaults(a.Defaults, b.Defaults)...)
+	return diffs
+}
 
-	// Start/exit.
+// compareStartExit checks the start and exit fields of two workflows.
+func compareStartExit(a, b *ir.Workflow) []Difference {
+	var diffs []Difference
 	if a.Start != b.Start {
 		diffs = append(diffs, Difference{
 			Kind:    "start_mismatch",
@@ -44,18 +52,32 @@ func CheckParity(a, b *ir.Workflow) []Difference {
 			PathB:   "workflow.exit",
 		})
 	}
+	return diffs
+}
 
-	// Build node maps.
-	aNodes := make(map[string]*ir.Node)
-	for _, n := range a.Nodes {
-		aNodes[n.ID] = n
-	}
-	bNodes := make(map[string]*ir.Node)
-	for _, n := range b.Nodes {
-		bNodes[n.ID] = n
-	}
+// compareNodes checks nodes between two workflows for missing, extra, and mismatched.
+func compareNodes(a, b *ir.Workflow) []Difference {
+	aNodes := buildNodeMap(a.Nodes)
+	bNodes := buildNodeMap(b.Nodes)
 
-	// Check for missing / extra nodes.
+	var diffs []Difference
+	diffs = append(diffs, diffNodesAvsB(aNodes, bNodes)...)
+	diffs = append(diffs, findExtraNodes(aNodes, bNodes)...)
+	return diffs
+}
+
+// buildNodeMap creates a map from node ID to node.
+func buildNodeMap(nodes []*ir.Node) map[string]*ir.Node {
+	m := make(map[string]*ir.Node, len(nodes))
+	for _, n := range nodes {
+		m[n.ID] = n
+	}
+	return m
+}
+
+// diffNodesAvsB finds missing nodes and config/kind mismatches from A's perspective.
+func diffNodesAvsB(aNodes, bNodes map[string]*ir.Node) []Difference {
+	var diffs []Difference
 	for id, na := range aNodes {
 		nb, ok := bNodes[id]
 		if !ok {
@@ -66,7 +88,6 @@ func CheckParity(a, b *ir.Workflow) []Difference {
 			})
 			continue
 		}
-		// Kind mismatch.
 		if na.Kind != nb.Kind {
 			diffs = append(diffs, Difference{
 				Kind:    "kind_mismatch",
@@ -75,10 +96,14 @@ func CheckParity(a, b *ir.Workflow) []Difference {
 				PathB:   "node:" + id,
 			})
 		}
-		// Config comparison (per kind).
 		diffs = append(diffs, compareConfigs(id, na, nb)...)
 	}
+	return diffs
+}
 
+// findExtraNodes finds nodes in B that are not in A.
+func findExtraNodes(aNodes, bNodes map[string]*ir.Node) []Difference {
+	var diffs []Difference
 	for id := range bNodes {
 		if _, ok := aNodes[id]; !ok {
 			diffs = append(diffs, Difference{
@@ -88,11 +113,15 @@ func CheckParity(a, b *ir.Workflow) []Difference {
 			})
 		}
 	}
+	return diffs
+}
 
-	// Check edges.
+// compareEdges checks edges between two workflows for missing and extra.
+func compareEdges(a, b *ir.Workflow) []Difference {
 	aEdges := edgeSet(a.Edges)
 	bEdges := edgeSet(b.Edges)
 
+	var diffs []Difference
 	for key := range aEdges {
 		if _, ok := bEdges[key]; !ok {
 			diffs = append(diffs, Difference{
@@ -111,10 +140,6 @@ func CheckParity(a, b *ir.Workflow) []Difference {
 			})
 		}
 	}
-
-	// Compare defaults.
-	diffs = append(diffs, compareDefaults(a.Defaults, b.Defaults)...)
-
 	return diffs
 }
 
@@ -135,167 +160,153 @@ func edgeSet(edges []*ir.Edge) map[string]*ir.Edge {
 	return m
 }
 
+// configMismatchDiff is a helper for config type mismatch differences.
+func configMismatchDiff(id, path string, aType string, bConfig interface{}) Difference {
+	return Difference{
+		Kind:    "config_mismatch",
+		Message: fmt.Sprintf("node %q config type mismatch: %s vs %T", id, aType, bConfig),
+		PathA:   path,
+		PathB:   path,
+	}
+}
+
+// fieldDiff creates a config_mismatch Difference for a specific field.
+func fieldDiff(id, field, msg string) Difference {
+	path := "node:" + id + "." + field
+	return Difference{
+		Kind:    "config_mismatch",
+		Message: msg,
+		PathA:   path,
+		PathB:   path,
+	}
+}
+
 // compareConfigs compares the configurations of two nodes with the same ID.
 func compareConfigs(id string, a, b *ir.Node) []Difference {
-	var diffs []Difference
 	path := "node:" + id
-
-	switch ac := a.Config.(type) {
-	case ir.AgentConfig:
-		bc, ok := b.Config.(ir.AgentConfig)
-		if !ok {
-			diffs = append(diffs, Difference{
-				Kind:    "config_mismatch",
-				Message: fmt.Sprintf("node %q config type mismatch: AgentConfig vs %T", id, b.Config),
-				PathA:   path,
-				PathB:   path,
-			})
-			return diffs
-		}
-		// Compare prompts with whitespace tolerance.
-		if !promptsEqual(ac.Prompt, bc.Prompt) {
-			diffs = append(diffs, Difference{
-				Kind:    "config_mismatch",
-				Message: fmt.Sprintf("node %q prompt differs", id),
-				PathA:   path + ".prompt",
-				PathB:   path + ".prompt",
-			})
-		}
-		if ac.Model != bc.Model {
-			diffs = append(diffs, Difference{
-				Kind:    "config_mismatch",
-				Message: fmt.Sprintf("node %q model: %q vs %q", id, ac.Model, bc.Model),
-				PathA:   path + ".model",
-				PathB:   path + ".model",
-			})
-		}
-		if ac.Provider != bc.Provider {
-			diffs = append(diffs, Difference{
-				Kind:    "config_mismatch",
-				Message: fmt.Sprintf("node %q provider: %q vs %q", id, ac.Provider, bc.Provider),
-				PathA:   path + ".provider",
-				PathB:   path + ".provider",
-			})
-		}
-		if ac.GoalGate != bc.GoalGate {
-			diffs = append(diffs, Difference{
-				Kind:    "config_mismatch",
-				Message: fmt.Sprintf("node %q goal_gate: %v vs %v", id, ac.GoalGate, bc.GoalGate),
-				PathA:   path + ".goal_gate",
-				PathB:   path + ".goal_gate",
-			})
-		}
-		if ac.AutoStatus != bc.AutoStatus {
-			diffs = append(diffs, Difference{
-				Kind:    "config_mismatch",
-				Message: fmt.Sprintf("node %q auto_status: %v vs %v", id, ac.AutoStatus, bc.AutoStatus),
-				PathA:   path + ".auto_status",
-				PathB:   path + ".auto_status",
-			})
-		}
-
-	case ir.ToolConfig:
-		bc, ok := b.Config.(ir.ToolConfig)
-		if !ok {
-			diffs = append(diffs, Difference{
-				Kind:    "config_mismatch",
-				Message: fmt.Sprintf("node %q config type mismatch: ToolConfig vs %T", id, b.Config),
-				PathA:   path,
-				PathB:   path,
-			})
-			return diffs
-		}
-		if !promptsEqual(ac.Command, bc.Command) {
-			diffs = append(diffs, Difference{
-				Kind:    "config_mismatch",
-				Message: fmt.Sprintf("node %q command differs", id),
-				PathA:   path + ".command",
-				PathB:   path + ".command",
-			})
-		}
-
-	case ir.HumanConfig:
-		bc, ok := b.Config.(ir.HumanConfig)
-		if !ok {
-			diffs = append(diffs, Difference{
-				Kind:    "config_mismatch",
-				Message: fmt.Sprintf("node %q config type mismatch: HumanConfig vs %T", id, b.Config),
-				PathA:   path,
-				PathB:   path,
-			})
-			return diffs
-		}
-		if ac.Mode != bc.Mode {
-			diffs = append(diffs, Difference{
-				Kind:    "config_mismatch",
-				Message: fmt.Sprintf("node %q mode: %q vs %q", id, ac.Mode, bc.Mode),
-				PathA:   path + ".mode",
-				PathB:   path + ".mode",
-			})
-		}
-
-	case ir.ParallelConfig:
-		bc, ok := b.Config.(ir.ParallelConfig)
-		if !ok {
-			diffs = append(diffs, Difference{
-				Kind:    "config_mismatch",
-				Message: fmt.Sprintf("node %q config type mismatch: ParallelConfig vs %T", id, b.Config),
-				PathA:   path,
-				PathB:   path,
-			})
-			return diffs
-		}
-		if strings.Join(ac.Targets, ",") != strings.Join(bc.Targets, ",") {
-			diffs = append(diffs, Difference{
-				Kind:    "config_mismatch",
-				Message: fmt.Sprintf("node %q targets: %v vs %v", id, ac.Targets, bc.Targets),
-				PathA:   path + ".targets",
-				PathB:   path + ".targets",
-			})
-		}
-
-	case ir.FanInConfig:
-		bc, ok := b.Config.(ir.FanInConfig)
-		if !ok {
-			diffs = append(diffs, Difference{
-				Kind:    "config_mismatch",
-				Message: fmt.Sprintf("node %q config type mismatch: FanInConfig vs %T", id, b.Config),
-				PathA:   path,
-				PathB:   path,
-			})
-			return diffs
-		}
-		if strings.Join(ac.Sources, ",") != strings.Join(bc.Sources, ",") {
-			diffs = append(diffs, Difference{
-				Kind:    "config_mismatch",
-				Message: fmt.Sprintf("node %q sources: %v vs %v", id, ac.Sources, bc.Sources),
-				PathA:   path + ".sources",
-				PathB:   path + ".sources",
-			})
-		}
-
-	case ir.SubgraphConfig:
-		bc, ok := b.Config.(ir.SubgraphConfig)
-		if !ok {
-			diffs = append(diffs, Difference{
-				Kind:    "config_mismatch",
-				Message: fmt.Sprintf("node %q config type mismatch: SubgraphConfig vs %T", id, b.Config),
-				PathA:   path,
-				PathB:   path,
-			})
-			return diffs
-		}
-		if ac.Ref != bc.Ref {
-			diffs = append(diffs, Difference{
-				Kind:    "config_mismatch",
-				Message: fmt.Sprintf("node %q ref: %q vs %q", id, ac.Ref, bc.Ref),
-				PathA:   path + ".ref",
-				PathB:   path + ".ref",
-			})
-		}
+	if diffs, handled := comparePrimaryConfigs(id, path, a.Config, b.Config); handled {
+		return diffs
 	}
+	return compareStructuralConfigs(id, path, a.Config, b.Config)
+}
 
+// comparePrimaryConfigs handles Agent, Tool, and Human config comparisons.
+func comparePrimaryConfigs(id, path string, aCfg, bCfg ir.NodeConfig) ([]Difference, bool) {
+	switch ac := aCfg.(type) {
+	case ir.AgentConfig:
+		return compareAgentConfigs(id, path, ac, bCfg), true
+	case ir.ToolConfig:
+		return compareToolConfigs(id, path, ac, bCfg), true
+	case ir.HumanConfig:
+		return compareHumanConfigs(id, path, ac, bCfg), true
+	}
+	return nil, false
+}
+
+// compareStructuralConfigs handles Parallel, FanIn, and Subgraph config comparisons.
+func compareStructuralConfigs(id, path string, aCfg, bCfg ir.NodeConfig) []Difference {
+	switch ac := aCfg.(type) {
+	case ir.ParallelConfig:
+		return compareParallelConfigs(id, path, ac, bCfg)
+	case ir.FanInConfig:
+		return compareFanInConfigs(id, path, ac, bCfg)
+	case ir.SubgraphConfig:
+		return compareSubgraphConfigs(id, path, ac, bCfg)
+	}
+	return nil
+}
+
+func compareAgentConfigs(id, path string, ac ir.AgentConfig, bCfg interface{}) []Difference {
+	bc, ok := bCfg.(ir.AgentConfig)
+	if !ok {
+		return []Difference{configMismatchDiff(id, path, "AgentConfig", bCfg)}
+	}
+	var diffs []Difference
+	diffs = append(diffs, compareAgentPromptAndModel(id, ac, bc)...)
+	diffs = append(diffs, compareAgentBehavior(id, ac, bc)...)
 	return diffs
+}
+
+// compareAgentPromptAndModel compares prompt, model, and provider fields.
+func compareAgentPromptAndModel(id string, ac, bc ir.AgentConfig) []Difference {
+	var diffs []Difference
+	if !promptsEqual(ac.Prompt, bc.Prompt) {
+		diffs = append(diffs, fieldDiff(id, "prompt", fmt.Sprintf("node %q prompt differs", id)))
+	}
+	if ac.Model != bc.Model {
+		diffs = append(diffs, fieldDiff(id, "model", fmt.Sprintf("node %q model: %q vs %q", id, ac.Model, bc.Model)))
+	}
+	if ac.Provider != bc.Provider {
+		diffs = append(diffs, fieldDiff(id, "provider", fmt.Sprintf("node %q provider: %q vs %q", id, ac.Provider, bc.Provider)))
+	}
+	return diffs
+}
+
+// compareAgentBehavior compares goal_gate and auto_status fields.
+func compareAgentBehavior(id string, ac, bc ir.AgentConfig) []Difference {
+	var diffs []Difference
+	if ac.GoalGate != bc.GoalGate {
+		diffs = append(diffs, fieldDiff(id, "goal_gate", fmt.Sprintf("node %q goal_gate: %v vs %v", id, ac.GoalGate, bc.GoalGate)))
+	}
+	if ac.AutoStatus != bc.AutoStatus {
+		diffs = append(diffs, fieldDiff(id, "auto_status", fmt.Sprintf("node %q auto_status: %v vs %v", id, ac.AutoStatus, bc.AutoStatus)))
+	}
+	return diffs
+}
+
+func compareToolConfigs(id, path string, ac ir.ToolConfig, bCfg interface{}) []Difference {
+	bc, ok := bCfg.(ir.ToolConfig)
+	if !ok {
+		return []Difference{configMismatchDiff(id, path, "ToolConfig", bCfg)}
+	}
+	if !promptsEqual(ac.Command, bc.Command) {
+		return []Difference{fieldDiff(id, "command", fmt.Sprintf("node %q command differs", id))}
+	}
+	return nil
+}
+
+func compareHumanConfigs(id, path string, ac ir.HumanConfig, bCfg interface{}) []Difference {
+	bc, ok := bCfg.(ir.HumanConfig)
+	if !ok {
+		return []Difference{configMismatchDiff(id, path, "HumanConfig", bCfg)}
+	}
+	if ac.Mode != bc.Mode {
+		return []Difference{fieldDiff(id, "mode", fmt.Sprintf("node %q mode: %q vs %q", id, ac.Mode, bc.Mode))}
+	}
+	return nil
+}
+
+func compareParallelConfigs(id, path string, ac ir.ParallelConfig, bCfg interface{}) []Difference {
+	bc, ok := bCfg.(ir.ParallelConfig)
+	if !ok {
+		return []Difference{configMismatchDiff(id, path, "ParallelConfig", bCfg)}
+	}
+	if strings.Join(ac.Targets, ",") != strings.Join(bc.Targets, ",") {
+		return []Difference{fieldDiff(id, "targets", fmt.Sprintf("node %q targets: %v vs %v", id, ac.Targets, bc.Targets))}
+	}
+	return nil
+}
+
+func compareFanInConfigs(id, path string, ac ir.FanInConfig, bCfg interface{}) []Difference {
+	bc, ok := bCfg.(ir.FanInConfig)
+	if !ok {
+		return []Difference{configMismatchDiff(id, path, "FanInConfig", bCfg)}
+	}
+	if strings.Join(ac.Sources, ",") != strings.Join(bc.Sources, ",") {
+		return []Difference{fieldDiff(id, "sources", fmt.Sprintf("node %q sources: %v vs %v", id, ac.Sources, bc.Sources))}
+	}
+	return nil
+}
+
+func compareSubgraphConfigs(id, path string, ac ir.SubgraphConfig, bCfg interface{}) []Difference {
+	bc, ok := bCfg.(ir.SubgraphConfig)
+	if !ok {
+		return []Difference{configMismatchDiff(id, path, "SubgraphConfig", bCfg)}
+	}
+	if ac.Ref != bc.Ref {
+		return []Difference{fieldDiff(id, "ref", fmt.Sprintf("node %q ref: %q vs %q", id, ac.Ref, bc.Ref))}
+	}
+	return nil
 }
 
 // promptsEqual compares two strings with whitespace tolerance.
@@ -308,47 +319,37 @@ func promptsEqual(a, b string) bool {
 // compareDefaults reports differences between workflow defaults.
 func compareDefaults(a, b ir.WorkflowDefaults) []Difference {
 	var diffs []Difference
-
-	if a.Model != b.Model {
-		diffs = append(diffs, Difference{
-			Kind:    "defaults_mismatch",
-			Message: fmt.Sprintf("defaults.model: %q vs %q", a.Model, b.Model),
-			PathA:   "defaults.model",
-			PathB:   "defaults.model",
-		})
-	}
-	if a.Provider != b.Provider {
-		diffs = append(diffs, Difference{
-			Kind:    "defaults_mismatch",
-			Message: fmt.Sprintf("defaults.provider: %q vs %q", a.Provider, b.Provider),
-			PathA:   "defaults.provider",
-			PathB:   "defaults.provider",
-		})
-	}
-	if a.MaxRetries != b.MaxRetries {
-		diffs = append(diffs, Difference{
-			Kind:    "defaults_mismatch",
-			Message: fmt.Sprintf("defaults.max_retries: %d vs %d", a.MaxRetries, b.MaxRetries),
-			PathA:   "defaults.max_retries",
-			PathB:   "defaults.max_retries",
-		})
-	}
-	if a.MaxRestarts != b.MaxRestarts {
-		diffs = append(diffs, Difference{
-			Kind:    "defaults_mismatch",
-			Message: fmt.Sprintf("defaults.max_restarts: %d vs %d", a.MaxRestarts, b.MaxRestarts),
-			PathA:   "defaults.max_restarts",
-			PathB:   "defaults.max_restarts",
-		})
-	}
-	if a.Fidelity != b.Fidelity {
-		diffs = append(diffs, Difference{
-			Kind:    "defaults_mismatch",
-			Message: fmt.Sprintf("defaults.fidelity: %q vs %q", a.Fidelity, b.Fidelity),
-			PathA:   "defaults.fidelity",
-			PathB:   "defaults.fidelity",
-		})
-	}
-
+	diffs = append(diffs, compareDefaultField(a.Model, b.Model, "defaults.model", "%q")...)
+	diffs = append(diffs, compareDefaultField(a.Provider, b.Provider, "defaults.provider", "%q")...)
+	diffs = append(diffs, compareDefaultIntField(a.MaxRetries, b.MaxRetries, "defaults.max_retries")...)
+	diffs = append(diffs, compareDefaultIntField(a.MaxRestarts, b.MaxRestarts, "defaults.max_restarts")...)
+	diffs = append(diffs, compareDefaultField(a.Fidelity, b.Fidelity, "defaults.fidelity", "%q")...)
 	return diffs
+}
+
+// compareDefaultField compares a single string field in workflow defaults.
+func compareDefaultField(a, b string, field, format string) []Difference {
+	if a == b {
+		return nil
+	}
+	fmtStr := field + ": " + format + " vs " + format
+	return []Difference{{
+		Kind:    "defaults_mismatch",
+		Message: fmt.Sprintf(fmtStr, a, b),
+		PathA:   field,
+		PathB:   field,
+	}}
+}
+
+// compareDefaultIntField compares a single int field in workflow defaults.
+func compareDefaultIntField(a, b int, field string) []Difference {
+	if a == b {
+		return nil
+	}
+	return []Difference{{
+		Kind:    "defaults_mismatch",
+		Message: fmt.Sprintf("%s: %d vs %d", field, a, b),
+		PathA:   field,
+		PathB:   field,
+	}}
 }

@@ -13,26 +13,26 @@ func TemplateNames() []string {
 	return []string{"conditional", "human-gate", "minimal", "parallel", "review-loop"}
 }
 
+// templateBuilders maps template names to their builder functions.
+var templateBuilders = map[string]func(string) *ir.Workflow{
+	"minimal":     buildMinimal,
+	"parallel":    buildParallel,
+	"conditional": buildConditional,
+	"review-loop": buildReviewLoop,
+	"human-gate":  buildHumanGate,
+}
+
 // Build constructs an ir.Workflow for the named template.
 // The name parameter overrides the workflow name (defaults to the template name).
 func Build(template, name string) (*ir.Workflow, error) {
 	if name == "" {
 		name = template
 	}
-	switch template {
-	case "minimal":
-		return buildMinimal(name), nil
-	case "parallel":
-		return buildParallel(name), nil
-	case "conditional":
-		return buildConditional(name), nil
-	case "review-loop":
-		return buildReviewLoop(name), nil
-	case "human-gate":
-		return buildHumanGate(name), nil
-	default:
+	builder, ok := templateBuilders[template]
+	if !ok {
 		return nil, fmt.Errorf("unknown template %q (available: %v)", template, TemplateNames())
 	}
+	return builder(name), nil
 }
 
 func buildMinimal(name string) *ir.Workflow {

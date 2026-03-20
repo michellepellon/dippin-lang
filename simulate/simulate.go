@@ -60,21 +60,29 @@ type Result struct {
 	Path []string
 }
 
+// validateSimInput checks preconditions common to Run and RunAllPaths.
+func validateSimInput(w *ir.Workflow) error {
+	if w.Start == "" {
+		return fmt.Errorf("workflow has no start node")
+	}
+	if w.Exit == "" {
+		return fmt.Errorf("workflow has no exit node")
+	}
+	if w.Node(w.Start) == nil {
+		return fmt.Errorf("start node %q not found", w.Start)
+	}
+	if w.Node(w.Exit) == nil {
+		return fmt.Errorf("exit node %q not found", w.Exit)
+	}
+	return nil
+}
+
 // Run executes a single simulation of the workflow.
 // It walks from workflow.Start to workflow.Exit, emitting events.
 // Context values from opts.Scenario are used to resolve conditional edges.
 func Run(w *ir.Workflow, opts Options) (*Result, error) {
-	if w.Start == "" {
-		return nil, fmt.Errorf("workflow has no start node")
-	}
-	if w.Exit == "" {
-		return nil, fmt.Errorf("workflow has no exit node")
-	}
-	if w.Node(w.Start) == nil {
-		return nil, fmt.Errorf("start node %q not found", w.Start)
-	}
-	if w.Node(w.Exit) == nil {
-		return nil, fmt.Errorf("exit node %q not found", w.Exit)
+	if err := validateSimInput(w); err != nil {
+		return nil, err
 	}
 
 	// Ensure all conditions are parsed into AST form.
@@ -101,17 +109,8 @@ func Run(w *ir.Workflow, opts Options) (*Result, error) {
 // Each Result represents one complete path from start to exit (or a dead end).
 // Each path has a unique run ID.
 func RunAllPaths(w *ir.Workflow, opts Options) ([]*Result, error) {
-	if w.Start == "" {
-		return nil, fmt.Errorf("workflow has no start node")
-	}
-	if w.Exit == "" {
-		return nil, fmt.Errorf("workflow has no exit node")
-	}
-	if w.Node(w.Start) == nil {
-		return nil, fmt.Errorf("start node %q not found", w.Start)
-	}
-	if w.Node(w.Exit) == nil {
-		return nil, fmt.Errorf("exit node %q not found", w.Exit)
+	if err := validateSimInput(w); err != nil {
+		return nil, err
 	}
 
 	// Ensure all conditions are parsed into AST form.
@@ -169,52 +168,13 @@ func (s *simulator) run() (*Result, error) {
 
 	current := s.workflow.Start
 	for s.steps < maxSteps {
-		node := s.workflow.Node(current)
-		if node == nil {
-			return nil, fmt.Errorf("node %q not found during traversal", current)
-		}
-
-		if err := s.visitNode(node); err != nil {
-			return nil, err
-		}
-
-		// Exit node reached.
-		if current == s.workflow.Exit {
-			s.emit(event.PipelineEnd{
-				Event:        event.TypePipelineEnd,
-				Status:       "success",
-				NodesVisited: len(s.visited),
-				Timestamp:    event.Now(),
-			})
-			return &Result{
-				Events:       s.events,
-				NodesVisited: len(s.visited),
-				Status:       "success",
-				Path:         s.path,
-			}, nil
-		}
-
-		// Find the next node.
-		next, err := s.resolveNext(node)
+		next, result, err := s.stepNode(current)
 		if err != nil {
 			return nil, err
 		}
-		if next == "" {
-			// Dead end — no outgoing edges matching any condition.
-			s.emit(event.PipelineEnd{
-				Event:        event.TypePipelineEnd,
-				Status:       "dead_end",
-				NodesVisited: len(s.visited),
-				Timestamp:    event.Now(),
-			})
-			return &Result{
-				Events:       s.events,
-				NodesVisited: len(s.visited),
-				Status:       "dead_end",
-				Path:         s.path,
-			}, nil
+		if result != nil {
+			return result, nil
 		}
-
 		current = next
 		s.steps++
 	}
@@ -222,10 +182,55 @@ func (s *simulator) run() (*Result, error) {
 	return nil, fmt.Errorf("simulation exceeded %d steps (possible infinite loop)", maxSteps)
 }
 
-func (s *simulator) visitNode(node *ir.Node) error {
-	s.visited[node.ID] = true
-	s.path = append(s.path, node.ID)
+// stepNode processes one node and returns the next node ID.
+// If a terminal condition is reached, it returns a non-nil Result instead.
+func (s *simulator) stepNode(current string) (string, *Result, error) {
+	node := s.workflow.Node(current)
+	if node == nil {
+		return "", nil, fmt.Errorf("node %q not found during traversal", current)
+	}
 
+	if err := s.visitNode(node); err != nil {
+		return "", nil, err
+	}
+
+	if current == s.workflow.Exit {
+		return "", s.finishRun("success"), nil
+	}
+
+	return s.advanceToNext(node)
+}
+
+// advanceToNext resolves the next node, returning a dead_end result if none.
+func (s *simulator) advanceToNext(node *ir.Node) (string, *Result, error) {
+	next, err := s.resolveNext(node)
+	if err != nil {
+		return "", nil, err
+	}
+	if next == "" {
+		return "", s.finishRun("dead_end"), nil
+	}
+	return next, nil, nil
+}
+
+// finishRun emits a PipelineEnd event and returns the final Result.
+func (s *simulator) finishRun(status string) *Result {
+	s.emit(event.PipelineEnd{
+		Event:        event.TypePipelineEnd,
+		Status:       status,
+		NodesVisited: len(s.visited),
+		Timestamp:    event.Now(),
+	})
+	return &Result{
+		Events:       s.events,
+		NodesVisited: len(s.visited),
+		Status:       status,
+		Path:         s.path,
+	}
+}
+
+// buildNodeEnterEvent constructs a NodeEnter event with kind-specific fields.
+func buildNodeEnterEvent(node *ir.Node, w *ir.Workflow) event.NodeEnter {
 	enterEvt := event.NodeEnter{
 		Event:     event.TypeNodeEnter,
 		Node:      node.ID,
@@ -233,85 +238,45 @@ func (s *simulator) visitNode(node *ir.Node) error {
 		Label:     node.Label,
 		Timestamp: event.Now(),
 	}
+	populateEnterFields(&enterEvt, node, w)
+	return enterEvt
+}
 
+// populateEnterFields fills kind-specific fields on a NodeEnter event.
+func populateEnterFields(evt *event.NodeEnter, node *ir.Node, w *ir.Workflow) {
 	switch cfg := node.Config.(type) {
 	case ir.AgentConfig:
-		enterEvt.Model = resolveModel(cfg.Model, s.workflow.Defaults.Model)
-		enterEvt.Provider = resolveProvider(cfg.Provider, s.workflow.Defaults.Provider)
-		enterEvt.Prompt = cfg.Prompt
-		enterEvt.Fidelity = resolveFidelity(cfg.Fidelity, s.workflow.Defaults.Fidelity)
+		evt.Model = resolveModel(cfg.Model, w.Defaults.Model)
+		evt.Provider = resolveProvider(cfg.Provider, w.Defaults.Provider)
+		evt.Prompt = cfg.Prompt
+		evt.Fidelity = resolveFidelity(cfg.Fidelity, w.Defaults.Fidelity)
 	case ir.ToolConfig:
-		enterEvt.Command = cfg.Command
+		evt.Command = cfg.Command
 	case ir.HumanConfig:
-		enterEvt.Mode = cfg.Mode
-	case ir.ParallelConfig:
-		// Fan-out node: emit enter, parallel_start, then exit.
-		s.emit(enterEvt)
-		s.emit(event.ParallelStart{
-			Event:     event.TypeParallelStart,
-			Node:      node.ID,
-			Targets:   cfg.Targets,
-			Timestamp: event.Now(),
-		})
-		s.emit(event.NodeExit{
-			Event:      event.TypeNodeExit,
-			Node:       node.ID,
-			Status:     "success",
-			DurationMs: 0,
-			Timestamp:  event.Now(),
-		})
-		return nil
-	case ir.FanInConfig:
-		// Fan-in node: emit enter, parallel_end, then exit.
-		s.emit(enterEvt)
-		s.emit(event.ParallelEnd{
-			Event:     event.TypeParallelEnd,
-			Node:      node.ID,
-			Sources:   cfg.Sources,
-			Timestamp: event.Now(),
-		})
-		s.emit(event.NodeExit{
-			Event:      event.TypeNodeExit,
-			Node:       node.ID,
-			Status:     "success",
-			DurationMs: 0,
-			Timestamp:  event.Now(),
-		})
-		return nil
+		evt.Mode = cfg.Mode
 	case ir.SubgraphConfig:
-		// Annotate label with the referenced subgraph path.
-		enterEvt.Label = fmt.Sprintf("subgraph:%s", cfg.Ref)
+		evt.Label = fmt.Sprintf("subgraph:%s", cfg.Ref)
+	}
+}
+
+func (s *simulator) visitNode(node *ir.Node) error {
+	s.visited[node.ID] = true
+	s.path = append(s.path, node.ID)
+
+	enterEvt := buildNodeEnterEvent(node, s.workflow)
+
+	// Parallel and fan-in nodes have special event sequences.
+	if handled := s.emitFanOutIn(node, enterEvt); handled {
+		return nil
 	}
 
 	s.emit(enterEvt)
 
+	s.applyNodeDefaults(node)
+
 	// Handle human node interaction.
-	if hc, ok := node.Config.(ir.HumanConfig); ok {
-		if s.opts.Interactive && s.opts.Stdin != nil {
-			response, err := s.promptInteractive(node, hc)
-			if err != nil {
-				return fmt.Errorf("interactive prompt at %q: %w", node.ID, err)
-			}
-			s.updateContext("human_response", response)
-		}
-	}
-
-	// For agent nodes with AutoStatus, the simulator uses scenario context
-	// to determine the outcome. If no scenario value is set, default to "success".
-	if ac, ok := node.Config.(ir.AgentConfig); ok && ac.AutoStatus {
-		if _, exists := s.ctx["outcome"]; !exists {
-			s.updateContext("outcome", "success")
-		}
-	}
-
-	// For tool nodes, set tool_stdout from scenario or default to "success".
-	if _, ok := node.Config.(ir.ToolConfig); ok {
-		if _, exists := s.ctx["tool_stdout"]; !exists {
-			s.updateContext("tool_stdout", "success")
-		}
-		if _, exists := s.ctx["outcome"]; !exists {
-			s.updateContext("outcome", "success")
-		}
+	if err := s.handleHumanInteraction(node); err != nil {
+		return err
 	}
 
 	s.emit(event.NodeExit{
@@ -325,19 +290,65 @@ func (s *simulator) visitNode(node *ir.Node) error {
 	return nil
 }
 
-func (s *simulator) promptInteractive(node *ir.Node, hc ir.HumanConfig) (string, error) {
-	if s.opts.Stderr != nil {
-		label := node.Label
-		if label == "" {
-			label = node.ID
-		}
-		fmt.Fprintf(s.opts.Stderr, "\n[HUMAN] %s\n", label)
-		if hc.Mode == "freeform" {
-			fmt.Fprintf(s.opts.Stderr, "  Enter response: ")
-		} else {
-			fmt.Fprintf(s.opts.Stderr, "  Enter choice: ")
-		}
+// emitFanOutIn handles parallel and fan-in nodes, returning true if the node was handled.
+func (s *simulator) emitFanOutIn(node *ir.Node, enterEvt event.NodeEnter) bool {
+	switch cfg := node.Config.(type) {
+	case ir.ParallelConfig:
+		s.emit(enterEvt)
+		s.emit(event.ParallelStart{
+			Event: event.TypeParallelStart, Node: node.ID,
+			Targets: cfg.Targets, Timestamp: event.Now(),
+		})
+	case ir.FanInConfig:
+		s.emit(enterEvt)
+		s.emit(event.ParallelEnd{
+			Event: event.TypeParallelEnd, Node: node.ID,
+			Sources: cfg.Sources, Timestamp: event.Now(),
+		})
+	default:
+		return false
 	}
+	s.emit(event.NodeExit{
+		Event: event.TypeNodeExit, Node: node.ID,
+		Status: "success", DurationMs: 0, Timestamp: event.Now(),
+	})
+	return true
+}
+
+// handleHumanInteraction prompts the user when the node is a human node in interactive mode.
+func (s *simulator) handleHumanInteraction(node *ir.Node) error {
+	hc, ok := node.Config.(ir.HumanConfig)
+	if !ok || !s.opts.Interactive || s.opts.Stdin == nil {
+		return nil
+	}
+	response, err := s.promptInteractive(node, hc)
+	if err != nil {
+		return fmt.Errorf("interactive prompt at %q: %w", node.ID, err)
+	}
+	s.updateContext("human_response", response)
+	return nil
+}
+
+// applyNodeDefaults seeds default context values for agent and tool nodes.
+func (s *simulator) applyNodeDefaults(node *ir.Node) {
+	if ac, ok := node.Config.(ir.AgentConfig); ok && ac.AutoStatus {
+		s.setContextDefault("outcome", "success")
+	}
+	if _, ok := node.Config.(ir.ToolConfig); ok {
+		s.setContextDefault("tool_stdout", "success")
+		s.setContextDefault("outcome", "success")
+	}
+}
+
+// setContextDefault sets a context key only if it doesn't already exist.
+func (s *simulator) setContextDefault(key, value string) {
+	if _, exists := s.ctx[key]; !exists {
+		s.updateContext(key, value)
+	}
+}
+
+func (s *simulator) promptInteractive(node *ir.Node, hc ir.HumanConfig) (string, error) {
+	s.writeInteractivePrompt(node, hc)
 
 	scanner := bufio.NewScanner(s.opts.Stdin)
 	if scanner.Scan() {
@@ -347,10 +358,24 @@ func (s *simulator) promptInteractive(node *ir.Node, hc ir.HumanConfig) (string,
 		return "", err
 	}
 	// EOF — return default or empty.
-	if hc.Default != "" {
-		return hc.Default, nil
+	return hc.Default, nil
+}
+
+// writeInteractivePrompt writes the human prompt to stderr if available.
+func (s *simulator) writeInteractivePrompt(node *ir.Node, hc ir.HumanConfig) {
+	if s.opts.Stderr == nil {
+		return
 	}
-	return "", nil
+	label := node.Label
+	if label == "" {
+		label = node.ID
+	}
+	fmt.Fprintf(s.opts.Stderr, "\n[HUMAN] %s\n", label)
+	if hc.Mode == "freeform" {
+		fmt.Fprintf(s.opts.Stderr, "  Enter response: ")
+	} else {
+		fmt.Fprintf(s.opts.Stderr, "  Enter choice: ")
+	}
 }
 
 // resolveNext determines which node to visit after the current one.
@@ -372,27 +397,45 @@ func (s *simulator) resolveNext(node *ir.Node) (string, error) {
 		return edges[0].To, nil
 	}
 
-	// Try conditional edges first (in declaration order).
-	for _, e := range edges {
-		if e.Condition != nil && s.evalCondition(e.Condition.Parsed) {
-			s.emitEdgeTraverse(e)
-			return e.To, nil
-		}
-	}
-
-	// Fall back to the first unconditional edge (acts as a default branch).
-	for _, e := range edges {
-		if e.Condition == nil {
-			s.emitEdgeTraverse(e)
-			return e.To, nil
-		}
+	// Try conditional edges, then unconditional fallback.
+	if next := s.findMatchingEdge(edges); next != nil {
+		return next.To, nil
 	}
 
 	// No conditional matched and no unconditional default exists.
-	// Fall back to the first edge — this gives a "happy path" traversal when
-	// no scenario values are injected and edges are purely conditional.
+	// Fall back to the first edge — this gives a "happy path" traversal.
 	s.emitEdgeTraverse(edges[0])
 	return edges[0].To, nil
+}
+
+// findMatchingEdge tries conditional edges first, then unconditional ones.
+func (s *simulator) findMatchingEdge(edges []*ir.Edge) *ir.Edge {
+	if e := s.firstMatchingConditional(edges); e != nil {
+		return e
+	}
+	return s.firstUnconditional(edges)
+}
+
+// firstMatchingConditional returns the first conditional edge whose condition is satisfied.
+func (s *simulator) firstMatchingConditional(edges []*ir.Edge) *ir.Edge {
+	for _, e := range edges {
+		if e.Condition != nil && s.evalCondition(e.Condition.Parsed) {
+			s.emitEdgeTraverse(e)
+			return e
+		}
+	}
+	return nil
+}
+
+// firstUnconditional returns the first edge with no condition.
+func (s *simulator) firstUnconditional(edges []*ir.Edge) *ir.Edge {
+	for _, e := range edges {
+		if e.Condition == nil {
+			s.emitEdgeTraverse(e)
+			return e
+		}
+	}
+	return nil
 }
 
 func (s *simulator) emitEdgeTraverse(e *ir.Edge) {
@@ -410,41 +453,59 @@ func (s *simulator) emitEdgeTraverse(e *ir.Edge) {
 	s.emit(evt)
 }
 
+// operatorFuncs maps condition operators to their evaluation functions.
+var operatorFuncs = map[string]func(ctxVal, value string) bool{
+	"=":          func(a, b string) bool { return a == b },
+	"==":         func(a, b string) bool { return a == b },
+	"!=":         func(a, b string) bool { return a != b },
+	"contains":   func(a, b string) bool { return strings.Contains(a, b) },
+	"startswith": func(a, b string) bool { return strings.HasPrefix(a, b) },
+	"endswith":   func(a, b string) bool { return strings.HasSuffix(a, b) },
+}
+
 func (s *simulator) evalCondition(expr ir.ConditionExpr) bool {
 	switch e := expr.(type) {
 	case ir.CondCompare:
-		ctxVal := s.resolveVariable(e.Variable)
-		switch e.Op {
-		case "=", "==":
-			return ctxVal == e.Value
-		case "!=":
-			return ctxVal != e.Value
-		case "contains":
-			return strings.Contains(ctxVal, e.Value)
-		case "startswith":
-			return strings.HasPrefix(ctxVal, e.Value)
-		case "endswith":
-			return strings.HasSuffix(ctxVal, e.Value)
-		case "in":
-			parts := strings.Split(e.Value, ",")
-			for _, p := range parts {
-				if ctxVal == strings.TrimSpace(p) {
-					return true
-				}
-			}
-			return false
-		default:
-			return false
-		}
+		return s.evalCompare(e)
 	case ir.CondAnd:
-		return s.evalCondition(e.Left) && s.evalCondition(e.Right)
+		return s.evalCondAnd(e)
 	case ir.CondOr:
-		return s.evalCondition(e.Left) || s.evalCondition(e.Right)
+		return s.evalCondOr(e)
 	case ir.CondNot:
 		return !s.evalCondition(e.Inner)
-	default:
-		return false
 	}
+	return false
+}
+
+func (s *simulator) evalCondAnd(e ir.CondAnd) bool {
+	return s.evalCondition(e.Left) && s.evalCondition(e.Right)
+}
+
+func (s *simulator) evalCondOr(e ir.CondOr) bool {
+	return s.evalCondition(e.Left) || s.evalCondition(e.Right)
+}
+
+// evalCompare evaluates a single comparison condition.
+func (s *simulator) evalCompare(e ir.CondCompare) bool {
+	ctxVal := s.resolveVariable(e.Variable)
+
+	if fn, ok := operatorFuncs[e.Op]; ok {
+		return fn(ctxVal, e.Value)
+	}
+	if e.Op == "in" {
+		return evalIn(ctxVal, e.Value)
+	}
+	return false
+}
+
+// evalIn checks if ctxVal matches any comma-separated item in value.
+func evalIn(ctxVal, value string) bool {
+	for _, p := range strings.Split(value, ",") {
+		if ctxVal == strings.TrimSpace(p) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *simulator) resolveVariable(variable string) string {
@@ -560,10 +621,7 @@ func (pe *pathEnumerator) enumerate() ([]*Result, error) {
 }
 
 func (pe *pathEnumerator) explore(state *pathState) {
-	if len(pe.results) >= pe.maxResults {
-		return
-	}
-	if state.depth > pe.maxDepth {
+	if !pe.shouldExplore(state) {
 		return
 	}
 
@@ -572,20 +630,51 @@ func (pe *pathEnumerator) explore(state *pathState) {
 		return
 	}
 
-	// Loop detection: allow revisiting a node up to 2 times (for retry loops).
-	if state.visited[state.nodeID] >= 2 {
+	// Clone mutable state for this branch to prevent cross-path contamination.
+	ctx, visited, events, path := pe.cloneState(state)
+
+	visited[state.nodeID]++
+	path = append(path, state.nodeID)
+
+	// Build and emit the node events.
+	events = pe.appendNodeEvents(node, events)
+
+	// Exit node reached — record this complete path.
+	if state.nodeID == pe.workflow.Exit {
+		pe.recordPath(events, visited, path, "success")
 		return
 	}
 
-	// Clone mutable state for this branch to prevent cross-path contamination.
+	// Find outgoing edges and explore each branch.
+	edges := pe.workflow.EdgesFrom(state.nodeID)
+	if len(edges) == 0 {
+		pe.recordPath(events, visited, path, "dead_end")
+		return
+	}
+
+	pe.exploreEdges(edges, events, ctx, visited, path, state.depth)
+}
+
+// shouldExplore checks whether the path should continue to be explored.
+func (pe *pathEnumerator) shouldExplore(state *pathState) bool {
+	if len(pe.results) >= pe.maxResults {
+		return false
+	}
+	if state.depth > pe.maxDepth {
+		return false
+	}
+	// Loop detection: allow revisiting a node up to 2 times (for retry loops).
+	return state.visited[state.nodeID] < 2
+}
+
+// cloneState creates deep copies of all mutable state for a branch.
+func (pe *pathEnumerator) cloneState(state *pathState) (map[string]string, map[string]int, []event.Event, []string) {
 	ctx := cloneMap(state.ctx)
 	visited := cloneMapInt(state.visited)
 	events := cloneEvents(state.events)
 	path := append([]string(nil), state.path...)
 
-	// At the root of the traversal (no events yet), add a placeholder
-	// PipelineStart. The RunID will be updated when this path completes
-	// so that each distinct completed path gets a unique ID.
+	// At the root of the traversal (no events yet), add PipelineStart.
 	if len(events) == 0 {
 		events = append(events, event.PipelineStart{
 			Event:     event.TypePipelineStart,
@@ -595,124 +684,61 @@ func (pe *pathEnumerator) explore(state *pathState) {
 		})
 	}
 
-	visited[state.nodeID]++
-	path = append(path, state.nodeID)
+	return ctx, visited, events, path
+}
 
-	// Build the node_enter event with kind-specific fields.
-	enterEvt := event.NodeEnter{
-		Event:     event.TypeNodeEnter,
-		Node:      node.ID,
-		Kind:      string(node.Kind),
-		Label:     node.Label,
-		Timestamp: event.Now(),
-	}
+// appendNodeEvents adds the node_enter (with kind-specific events) and node_exit events.
+func (pe *pathEnumerator) appendNodeEvents(node *ir.Node, events []event.Event) []event.Event {
+	enterEvt := buildNodeEnterEvent(node, pe.workflow)
 
 	switch cfg := node.Config.(type) {
-	case ir.AgentConfig:
-		enterEvt.Model = resolveModel(cfg.Model, pe.workflow.Defaults.Model)
-		enterEvt.Provider = resolveProvider(cfg.Provider, pe.workflow.Defaults.Provider)
-		enterEvt.Prompt = cfg.Prompt
-		enterEvt.Fidelity = resolveFidelity(cfg.Fidelity, pe.workflow.Defaults.Fidelity)
-		events = append(events, enterEvt)
-	case ir.ToolConfig:
-		enterEvt.Command = cfg.Command
-		events = append(events, enterEvt)
-	case ir.HumanConfig:
-		enterEvt.Mode = cfg.Mode
-		events = append(events, enterEvt)
 	case ir.ParallelConfig:
-		// Fan-out: emit node_enter, parallel_start, node_exit.
 		events = append(events, enterEvt)
 		events = append(events, event.ParallelStart{
-			Event:     event.TypeParallelStart,
-			Node:      node.ID,
-			Targets:   cfg.Targets,
-			Timestamp: event.Now(),
+			Event: event.TypeParallelStart, Node: node.ID,
+			Targets: cfg.Targets, Timestamp: event.Now(),
 		})
 	case ir.FanInConfig:
-		// Fan-in: emit node_enter, parallel_end, node_exit.
 		events = append(events, enterEvt)
 		events = append(events, event.ParallelEnd{
-			Event:     event.TypeParallelEnd,
-			Node:      node.ID,
-			Sources:   cfg.Sources,
-			Timestamp: event.Now(),
+			Event: event.TypeParallelEnd, Node: node.ID,
+			Sources: cfg.Sources, Timestamp: event.Now(),
 		})
-	case ir.SubgraphConfig:
-		enterEvt.Label = fmt.Sprintf("subgraph:%s", cfg.Ref)
-		events = append(events, enterEvt)
 	default:
 		events = append(events, enterEvt)
 	}
 
 	events = append(events, event.NodeExit{
-		Event:      event.TypeNodeExit,
-		Node:       node.ID,
-		Status:     "success",
-		DurationMs: 0,
-		Timestamp:  event.Now(),
+		Event: event.TypeNodeExit, Node: node.ID,
+		Status: "success", DurationMs: 0, Timestamp: event.Now(),
 	})
+	return events
+}
 
-	// Exit node reached — record this complete path.
-	if state.nodeID == pe.workflow.Exit {
-		events = append(events, event.PipelineEnd{
-			Event:        event.TypePipelineEnd,
-			Status:       "success",
-			NodesVisited: len(visited),
-			Timestamp:    event.Now(),
-		})
-		// Assign a unique run ID now that we know this is a distinct completed path.
-		pe.pathCount++
-		events = assignRunID(events, fmt.Sprintf("sim-path-%03d", pe.pathCount))
-		pe.results = append(pe.results, &Result{
-			Events:       events,
-			NodesVisited: len(visited),
-			Status:       "success",
-			Path:         path,
-		})
-		return
-	}
+// recordPath records a completed or dead-end path as a result.
+func (pe *pathEnumerator) recordPath(events []event.Event, visited map[string]int, path []string, status string) {
+	events = append(events, event.PipelineEnd{
+		Event:        event.TypePipelineEnd,
+		Status:       status,
+		NodesVisited: len(visited),
+		Timestamp:    event.Now(),
+	})
+	pe.pathCount++
+	events = assignRunID(events, fmt.Sprintf("sim-path-%03d", pe.pathCount))
+	pe.results = append(pe.results, &Result{
+		Events:       events,
+		NodesVisited: len(visited),
+		Status:       status,
+		Path:         path,
+	})
+}
 
-	// Find outgoing edges.
-	edges := pe.workflow.EdgesFrom(state.nodeID)
-	if len(edges) == 0 {
-		// Dead end.
-		events = append(events, event.PipelineEnd{
-			Event:        event.TypePipelineEnd,
-			Status:       "dead_end",
-			NodesVisited: len(visited),
-			Timestamp:    event.Now(),
-		})
-		// Assign a unique run ID for this dead-end path.
-		pe.pathCount++
-		events = assignRunID(events, fmt.Sprintf("sim-path-%03d", pe.pathCount))
-		pe.results = append(pe.results, &Result{
-			Events:       events,
-			NodesVisited: len(visited),
-			Status:       "dead_end",
-			Path:         path,
-		})
-		return
-	}
-
-	// Explore every outgoing edge as a separate branch.
+// exploreEdges explores each outgoing edge as a separate branch.
+func (pe *pathEnumerator) exploreEdges(edges []*ir.Edge, events []event.Event, ctx map[string]string, visited map[string]int, path []string, depth int) {
 	for _, e := range edges {
-		edgeEvt := event.EdgeTraverse{
-			Event:     event.TypeEdgeTraverse,
-			From:      e.From,
-			To:        e.To,
-			Label:     e.Label,
-			Restart:   e.Restart,
-			Timestamp: event.Now(),
-		}
-		if e.Condition != nil {
-			edgeEvt.Condition = e.Condition.Raw
-		}
-
+		edgeEvt := buildEdgeTraverseEvent(e)
 		branchEvents := append(cloneEvents(events), edgeEvt)
 
-		// For conditional edges, seed the context with values that satisfy
-		// the condition so the branch can continue to follow its natural path.
 		branchCtx := cloneMap(ctx)
 		if e.Condition != nil {
 			seedConditionContext(e.Condition.Parsed, branchCtx)
@@ -724,9 +750,25 @@ func (pe *pathEnumerator) explore(state *pathState) {
 			visited: cloneMapInt(visited),
 			events:  branchEvents,
 			path:    append([]string(nil), path...),
-			depth:   state.depth + 1,
+			depth:   depth + 1,
 		})
 	}
+}
+
+// buildEdgeTraverseEvent constructs an EdgeTraverse event from an edge.
+func buildEdgeTraverseEvent(e *ir.Edge) event.EdgeTraverse {
+	evt := event.EdgeTraverse{
+		Event:     event.TypeEdgeTraverse,
+		From:      e.From,
+		To:        e.To,
+		Label:     e.Label,
+		Restart:   e.Restart,
+		Timestamp: event.Now(),
+	}
+	if e.Condition != nil {
+		evt.Condition = e.Condition.Raw
+	}
+	return evt
 }
 
 // seedConditionContext sets context values that would satisfy the condition.
@@ -734,20 +776,7 @@ func (pe *pathEnumerator) explore(state *pathState) {
 func seedConditionContext(expr ir.ConditionExpr, ctx map[string]string) {
 	switch e := expr.(type) {
 	case ir.CondCompare:
-		key := e.Variable
-		if strings.HasPrefix(key, "ctx.") {
-			key = strings.TrimPrefix(key, "ctx.")
-		}
-		switch e.Op {
-		case "=", "==":
-			ctx[key] = e.Value
-		case "in":
-			// Pick the first option from the comma-separated list.
-			parts := strings.Split(e.Value, ",")
-			if len(parts) > 0 {
-				ctx[key] = strings.TrimSpace(parts[0])
-			}
-		}
+		seedCompareContext(e, ctx)
 	case ir.CondAnd:
 		seedConditionContext(e.Left, ctx)
 		seedConditionContext(e.Right, ctx)
@@ -756,6 +785,23 @@ func seedConditionContext(expr ir.ConditionExpr, ctx map[string]string) {
 		seedConditionContext(e.Left, ctx)
 	case ir.CondNot:
 		// Cannot trivially negate; leave context unchanged.
+	}
+}
+
+// seedCompareContext seeds a single compare condition into the context.
+func seedCompareContext(e ir.CondCompare, ctx map[string]string) {
+	key := e.Variable
+	if strings.HasPrefix(key, "ctx.") {
+		key = strings.TrimPrefix(key, "ctx.")
+	}
+	switch e.Op {
+	case "=", "==":
+		ctx[key] = e.Value
+	case "in":
+		parts := strings.Split(e.Value, ",")
+		if len(parts) > 0 {
+			ctx[key] = strings.TrimSpace(parts[0])
+		}
 	}
 }
 

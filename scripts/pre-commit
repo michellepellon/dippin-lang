@@ -20,6 +20,22 @@ fi
 echo "=== pre-commit: go test ==="
 go test ./... -count=1 -race
 
+echo "=== pre-commit: cyclomatic complexity ==="
+violations=$(gocyclo -over 5 . | grep -v _test.go || true)
+if [ -n "$violations" ]; then
+  echo "ERROR: Functions exceed cyclomatic complexity threshold (max 5):"
+  echo "$violations"
+  exit 1
+fi
+
+echo "=== pre-commit: cognitive complexity ==="
+violations=$(gocognit -over 7 . | grep -v _test.go || true)
+if [ -n "$violations" ]; then
+  echo "ERROR: Functions exceed cognitive complexity threshold (max 7):"
+  echo "$violations"
+  exit 1
+fi
+
 echo "=== pre-commit: validate examples ==="
 go build -o /tmp/dippin-precommit ./cmd/dippin/
 for f in examples/*.dip; do

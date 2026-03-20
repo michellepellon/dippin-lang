@@ -82,34 +82,91 @@ func (l *lexer) advance() byte {
 	return ch
 }
 
+// tokenKindNames maps token kinds to their display names.
+var tokenKindNames = map[tokenKind]string{
+	tokEOF:       "EOF",
+	tokID:        "identifier",
+	tokString:    "string",
+	tokLBrace:    "'{'",
+	tokRBrace:    "'}'",
+	tokLBrack:    "'['",
+	tokRBrack:    "']'",
+	tokEquals:    "'='",
+	tokSemicolon: "';'",
+	tokComma:     "','",
+	tokArrow:     "'->'",
+}
+
+func tokenKindName(k tokenKind) string {
+	if name, ok := tokenKindNames[k]; ok {
+		return name
+	}
+	return "unknown"
+}
+
+// punctTokens maps single-character punctuation to their token kinds.
+var punctTokens = map[byte]tokenKind{
+	'{': tokLBrace,
+	'}': tokRBrace,
+	'[': tokLBrack,
+	']': tokRBrack,
+	'=': tokEquals,
+	';': tokSemicolon,
+	',': tokComma,
+}
+
+// isWhitespace returns true for space, tab, newline, and carriage return.
+func isWhitespace(ch byte) bool {
+	return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r'
+}
+
 func (l *lexer) skipWhitespace() {
 	for l.pos < len(l.input) {
-		ch := l.input[l.pos]
-		if ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' {
+		if isWhitespace(l.input[l.pos]) {
 			l.pos++
 			continue
 		}
-		// C-style line comments.
-		if ch == '/' && l.pos+1 < len(l.input) && l.input[l.pos+1] == '/' {
-			l.pos += 2
-			for l.pos < len(l.input) && l.input[l.pos] != '\n' {
-				l.pos++
-			}
-			continue
-		}
-		// C-style block comments.
-		if ch == '/' && l.pos+1 < len(l.input) && l.input[l.pos+1] == '*' {
-			l.pos += 2
-			for l.pos+1 < len(l.input) {
-				if l.input[l.pos] == '*' && l.input[l.pos+1] == '/' {
-					l.pos += 2
-					break
-				}
-				l.pos++
-			}
+		if l.trySkipComment() {
 			continue
 		}
 		break
+	}
+}
+
+// trySkipComment attempts to skip a line or block comment starting at the current position.
+// Returns true if a comment was skipped.
+func (l *lexer) trySkipComment() bool {
+	if l.pos+1 >= len(l.input) || l.input[l.pos] != '/' {
+		return false
+	}
+	if l.input[l.pos+1] == '/' {
+		l.skipLineComment()
+		return true
+	}
+	if l.input[l.pos+1] == '*' {
+		l.skipBlockComment()
+		return true
+	}
+	return false
+}
+
+// skipLineComment skips from // to end of line.
+func (l *lexer) skipLineComment() {
+	l.pos += 2
+	for l.pos < len(l.input) && l.input[l.pos] != '\n' {
+		l.pos++
+	}
+}
+
+// skipBlockComment skips from /* to */.
+func (l *lexer) skipBlockComment() {
+	l.pos += 2
+	for l.pos+1 < len(l.input) {
+		if l.input[l.pos] == '*' && l.input[l.pos+1] == '/' {
+			l.pos += 2
+			return
+		}
+		l.pos++
 	}
 }
 
@@ -122,48 +179,45 @@ func (l *lexer) next() token {
 	start := l.pos
 	ch := l.peek()
 
-	switch ch {
-	case '{':
+	// Single-character punctuation.
+	if kind, ok := punctTokens[ch]; ok {
 		l.advance()
-		return token{kind: tokLBrace, val: "{", pos: start}
-	case '}':
-		l.advance()
-		return token{kind: tokRBrace, val: "}", pos: start}
-	case '[':
-		l.advance()
-		return token{kind: tokLBrack, val: "[", pos: start}
-	case ']':
-		l.advance()
-		return token{kind: tokRBrack, val: "]", pos: start}
-	case '=':
-		l.advance()
-		return token{kind: tokEquals, val: "=", pos: start}
-	case ';':
-		l.advance()
-		return token{kind: tokSemicolon, val: ";", pos: start}
-	case ',':
-		l.advance()
-		return token{kind: tokComma, val: ",", pos: start}
-	case '-':
-		if l.pos+1 < len(l.input) && l.input[l.pos+1] == '>' {
-			l.pos += 2
-			return token{kind: tokArrow, val: "->", pos: start}
-		}
-		// Bare '-' — treat as part of an identifier.
-		return l.readID()
-	case '"':
-		return l.readString()
-	default:
-		if isIDStart(ch) || (ch >= '0' && ch <= '9') {
-			return l.readID()
-		}
-		l.advance()
-		return token{kind: tokID, val: string(ch), pos: start}
+		return token{kind: kind, val: string(ch), pos: start}
 	}
+
+	return l.lexNonPunct(start, ch)
+}
+
+// lexNonPunct handles non-punctuation tokens: arrows, strings, identifiers, etc.
+func (l *lexer) lexNonPunct(start int, ch byte) token {
+	if ch == '-' {
+		return l.lexDashOrArrow(start)
+	}
+	if ch == '"' {
+		return l.readString()
+	}
+	if isIDOrDigitStart(ch) {
+		return l.readID()
+	}
+	l.advance()
+	return token{kind: tokID, val: string(ch), pos: start}
+}
+
+// lexDashOrArrow handles '-' which may be an arrow '->' or start of an identifier.
+func (l *lexer) lexDashOrArrow(start int) token {
+	if l.pos+1 < len(l.input) && l.input[l.pos+1] == '>' {
+		l.pos += 2
+		return token{kind: tokArrow, val: "->", pos: start}
+	}
+	return l.readID()
 }
 
 func isIDStart(ch byte) bool {
 	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch == '_'
+}
+
+func isIDOrDigitStart(ch byte) bool {
+	return isIDStart(ch) || (ch >= '0' && ch <= '9')
 }
 
 func isIDCont(ch byte) bool {
@@ -184,32 +238,41 @@ func (l *lexer) readString() token {
 	var b strings.Builder
 	for l.pos < len(l.input) {
 		ch := l.advance()
-		if ch == '\\' && l.pos < len(l.input) {
-			next := l.advance()
-			switch next {
-			case '"':
-				b.WriteByte('"')
-			case '\\':
-				b.WriteByte('\\')
-			case 'n':
-				b.WriteByte('\n')
-			case 'l':
-				b.WriteByte('\n') // DOT \l = left-justified newline → real newline
-			case 'r':
-				// DOT \r — ignore (not meaningful)
-			default:
-				b.WriteByte('\\')
-				b.WriteByte(next)
-			}
-			continue
-		}
 		if ch == '"' {
 			return token{kind: tokString, val: b.String(), pos: start}
+		}
+		if ch == '\\' && l.pos < len(l.input) {
+			l.writeEscapeChar(&b)
+			continue
 		}
 		b.WriteByte(ch)
 	}
 	// Unterminated string — return what we have; parser will catch the error.
 	return token{kind: tokString, val: b.String(), pos: start}
+}
+
+// escapeMap maps DOT escape characters to their unescaped bytes.
+// Special values: 0 means ignore (write nothing), absent means unknown escape.
+var escapeMap = map[byte]byte{
+	'"':  '"',
+	'\\': '\\',
+	'n':  '\n',
+	'l':  '\n', // DOT \l = left-justified newline → real newline
+	'r':  0,    // DOT \r — ignore (not meaningful)
+}
+
+// writeEscapeChar reads the character after a backslash and writes
+// the unescaped result to the builder.
+func (l *lexer) writeEscapeChar(b *strings.Builder) {
+	next := l.advance()
+	if replacement, ok := escapeMap[next]; ok {
+		if replacement != 0 {
+			b.WriteByte(replacement)
+		}
+		return
+	}
+	b.WriteByte('\\')
+	b.WriteByte(next)
 }
 
 // --- DOT Parser ---
@@ -250,46 +313,11 @@ func (p *parser) expect(k tokenKind) (token, error) {
 	return t, nil
 }
 
-func tokenKindName(k tokenKind) string {
-	switch k {
-	case tokEOF:
-		return "EOF"
-	case tokID:
-		return "identifier"
-	case tokString:
-		return "string"
-	case tokLBrace:
-		return "'{'"
-	case tokRBrace:
-		return "'}'"
-	case tokLBrack:
-		return "'['"
-	case tokRBrack:
-		return "']'"
-	case tokEquals:
-		return "'='"
-	case tokSemicolon:
-		return "';'"
-	case tokComma:
-		return "','"
-	case tokArrow:
-		return "'->'"
-	default:
-		return "unknown"
-	}
-}
-
 func (p *parser) parseDigraph() error {
-	// Expect: digraph <name> { ... }
-	id, err := p.expect(tokID)
-	if err != nil {
+	if err := p.expectDigraphKeyword(); err != nil {
 		return err
 	}
-	if id.val != "digraph" {
-		return fmt.Errorf("DOT parse error at offset %d: expected 'digraph', got %q", id.pos, id.val)
-	}
 
-	// Graph name: can be ID or string.
 	name, err := p.readIDOrString()
 	if err != nil {
 		return err
@@ -299,33 +327,43 @@ func (p *parser) parseDigraph() error {
 	if _, err := p.expect(tokLBrace); err != nil {
 		return err
 	}
+	if err := p.parseStatements(); err != nil {
+		return err
+	}
+	_, err = p.expect(tokRBrace)
+	return err
+}
 
+// expectDigraphKeyword expects and consumes the "digraph" keyword.
+func (p *parser) expectDigraphKeyword() error {
+	id, err := p.expect(tokID)
+	if err != nil {
+		return err
+	}
+	if id.val != "digraph" {
+		return fmt.Errorf("DOT parse error at offset %d: expected 'digraph', got %q", id.pos, id.val)
+	}
+	return nil
+}
+
+// parseStatements parses all statements inside the digraph braces.
+func (p *parser) parseStatements() error {
 	for p.cur.kind != tokRBrace && p.cur.kind != tokEOF {
 		if err := p.parseStatement(); err != nil {
 			return err
 		}
 	}
-
-	if _, err := p.expect(tokRBrace); err != nil {
-		return err
-	}
 	return nil
 }
 
 func (p *parser) readIDOrString() (string, error) {
-	switch p.cur.kind {
-	case tokID:
+	if p.cur.kind == tokID || p.cur.kind == tokString {
 		t := p.cur
 		p.advance()
 		return t.val, nil
-	case tokString:
-		t := p.cur
-		p.advance()
-		return t.val, nil
-	default:
-		return "", fmt.Errorf("DOT parse error at offset %d: expected identifier or string, got %q",
-			p.cur.pos, p.cur.val)
 	}
+	return "", fmt.Errorf("DOT parse error at offset %d: expected identifier or string, got %q",
+		p.cur.pos, p.cur.val)
 }
 
 func (p *parser) parseStatement() error {
@@ -335,7 +373,6 @@ func (p *parser) parseStatement() error {
 		return nil
 	}
 
-	// Must be an ID or string to start a statement.
 	if p.cur.kind != tokID && p.cur.kind != tokString {
 		return fmt.Errorf("DOT parse error at offset %d: unexpected token %q", p.cur.pos, p.cur.val)
 	}
@@ -344,15 +381,17 @@ func (p *parser) parseStatement() error {
 	nameKind := p.cur.kind
 	p.advance()
 
-	// Dispatch based on statement type
+	return p.dispatchStatement(name, nameKind)
+}
+
+// dispatchStatement routes to the appropriate statement parser.
+func (p *parser) dispatchStatement(name string, nameKind tokenKind) error {
 	if nameKind == tokID && isDefaultsKeyword(name) && p.cur.kind == tokLBrack {
 		return p.parseDefaultsStatement(name)
 	}
-
 	if p.cur.kind == tokArrow {
 		return p.parseEdgeStatement(name)
 	}
-
 	return p.parseNodeStatement(name)
 }
 
@@ -361,28 +400,28 @@ func isDefaultsKeyword(name string) bool {
 	return name == "graph" || name == "node" || name == "edge"
 }
 
+// defaultsTargets maps defaults keywords to their target maps.
+func (p *parser) defaultsTarget(keyword string) map[string]string {
+	switch keyword {
+	case "graph":
+		return p.graph.GraphAttrs
+	case "node":
+		return p.graph.NodeAttrs
+	default:
+		return p.graph.EdgeAttrs
+	}
+}
+
 // parseDefaultsStatement handles graph/node/edge [ ... ] default attributes.
 func (p *parser) parseDefaultsStatement(keyword string) error {
 	attrs, err := p.parseAttrList()
 	if err != nil {
 		return err
 	}
-
-	switch keyword {
-	case "graph":
-		for k, v := range attrs {
-			p.graph.GraphAttrs[k] = v
-		}
-	case "node":
-		for k, v := range attrs {
-			p.graph.NodeAttrs[k] = v
-		}
-	case "edge":
-		for k, v := range attrs {
-			p.graph.EdgeAttrs[k] = v
-		}
+	target := p.defaultsTarget(keyword)
+	for k, v := range attrs {
+		target[k] = v
 	}
-
 	p.consumeOptionalSemicolon()
 	return nil
 }
@@ -396,56 +435,51 @@ func (p *parser) parseEdgeStatement(fromNode string) error {
 		return err
 	}
 
-	attrs := make(map[string]string)
-	if p.cur.kind == tokLBrack {
-		attrs, err = p.parseAttrList()
-		if err != nil {
-			return err
-		}
+	attrs, err := p.parseOptionalAttrs()
+	if err != nil {
+		return err
 	}
 
-	// Merge default edge attrs.
-	merged := make(map[string]string)
-	for k, v := range p.graph.EdgeAttrs {
-		merged[k] = v
-	}
-	for k, v := range attrs {
-		merged[k] = v
-	}
-
+	merged := mergeAttrs(p.graph.EdgeAttrs, attrs)
 	p.graph.Edges = append(p.graph.Edges, dotEdge{From: fromNode, To: to, Attrs: merged})
 
-	// Ensure both nodes exist (implicit declaration).
 	p.ensureNode(fromNode)
 	p.ensureNode(to)
-
 	p.consumeOptionalSemicolon()
 	return nil
 }
 
 // parseNodeStatement handles ID [ ... ] or bare ID node statements.
 func (p *parser) parseNodeStatement(nodeID string) error {
-	attrs := make(map[string]string)
-	if p.cur.kind == tokLBrack {
-		var err error
-		attrs, err = p.parseAttrList()
-		if err != nil {
-			return err
-		}
+	attrs, err := p.parseOptionalAttrs()
+	if err != nil {
+		return err
 	}
 
-	// Merge default node attrs.
-	merged := make(map[string]string)
-	for k, v := range p.graph.NodeAttrs {
-		merged[k] = v
-	}
-	for k, v := range attrs {
-		merged[k] = v
-	}
-
+	merged := mergeAttrs(p.graph.NodeAttrs, attrs)
 	p.addOrUpdateNode(nodeID, merged)
 	p.consumeOptionalSemicolon()
 	return nil
+}
+
+// parseOptionalAttrs parses an optional attribute list (if '[' is present).
+func (p *parser) parseOptionalAttrs() (map[string]string, error) {
+	if p.cur.kind == tokLBrack {
+		return p.parseAttrList()
+	}
+	return make(map[string]string), nil
+}
+
+// mergeAttrs merges defaults with overrides, returning a new map.
+func mergeAttrs(defaults, overrides map[string]string) map[string]string {
+	merged := make(map[string]string, len(defaults)+len(overrides))
+	for k, v := range defaults {
+		merged[k] = v
+	}
+	for k, v := range overrides {
+		merged[k] = v
+	}
+	return merged
 }
 
 // parseAttrList parses [ key=value, key=value, ... ].
@@ -453,32 +487,59 @@ func (p *parser) parseAttrList() (map[string]string, error) {
 	if _, err := p.expect(tokLBrack); err != nil {
 		return nil, err
 	}
-
-	attrs := make(map[string]string)
-	for p.cur.kind != tokRBrack && p.cur.kind != tokEOF {
-		key, err := p.readIDOrString()
-		if err != nil {
-			return nil, err
-		}
-		if _, err := p.expect(tokEquals); err != nil {
-			return nil, err
-		}
-		val, err := p.readIDOrString()
-		if err != nil {
-			return nil, err
-		}
-		attrs[key] = val
-
-		// Optional comma or semicolon separator.
-		if p.cur.kind == tokComma || p.cur.kind == tokSemicolon {
-			p.advance()
-		}
+	attrs, err := p.parseAttrPairs()
+	if err != nil {
+		return nil, err
 	}
-
 	if _, err := p.expect(tokRBrack); err != nil {
 		return nil, err
 	}
 	return attrs, nil
+}
+
+// parseAttrPairs parses key=value pairs until ] or EOF.
+func (p *parser) parseAttrPairs() (map[string]string, error) {
+	attrs := make(map[string]string)
+	for p.cur.kind != tokRBrack && p.cur.kind != tokEOF {
+		if err := p.parseOneAttr(attrs); err != nil {
+			return nil, err
+		}
+	}
+	return attrs, nil
+}
+
+// parseOneAttr parses a single key=value pair and adds it to attrs.
+func (p *parser) parseOneAttr(attrs map[string]string) error {
+	key, val, err := p.readKeyValuePair()
+	if err != nil {
+		return err
+	}
+	attrs[key] = val
+	p.consumeOptionalSeparator()
+	return nil
+}
+
+// readKeyValuePair reads a key=value pair.
+func (p *parser) readKeyValuePair() (string, string, error) {
+	key, err := p.readIDOrString()
+	if err != nil {
+		return "", "", err
+	}
+	if _, err := p.expect(tokEquals); err != nil {
+		return "", "", err
+	}
+	val, err := p.readIDOrString()
+	if err != nil {
+		return "", "", err
+	}
+	return key, val, nil
+}
+
+// consumeOptionalSeparator consumes an optional comma or semicolon.
+func (p *parser) consumeOptionalSeparator() {
+	if p.cur.kind == tokComma || p.cur.kind == tokSemicolon {
+		p.advance()
+	}
 }
 
 func (p *parser) consumeOptionalSemicolon() {

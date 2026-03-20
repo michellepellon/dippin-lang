@@ -104,11 +104,7 @@ func (p *condParser) parseCompare() (ir.ConditionExpr, error) {
 		return nil, fmt.Errorf("expected operator after %q, got end of input", variable)
 	}
 
-	// Validate operator.
-	switch op {
-	case "=", "==", "!=", "<", ">", "<=", ">=", "contains", "startswith", "endswith", "in":
-		// valid
-	default:
+	if !isValidOperator(op) {
 		return nil, fmt.Errorf("unknown operator %q", op)
 	}
 
@@ -124,6 +120,18 @@ func (p *condParser) parseCompare() (ir.ConditionExpr, error) {
 	}, nil
 }
 
+// validOperators is the set of recognized comparison operators.
+var validOperators = map[string]bool{
+	"=": true, "==": true, "!=": true,
+	"<": true, ">": true, "<=": true, ">=": true,
+	"contains": true, "startswith": true, "endswith": true, "in": true,
+}
+
+// isValidOperator checks whether op is a recognized comparison operator.
+func isValidOperator(op string) bool {
+	return validOperators[op]
+}
+
 // tokenizeCondition splits a raw condition string into tokens.
 // Handles quoted strings and standard whitespace splitting.
 func tokenizeCondition(raw string) []string {
@@ -137,29 +145,26 @@ func tokenizeCondition(raw string) []string {
 			break
 		}
 
-		var token string
-		var consumed int
-
-		// Dispatch to recognizers
-		if token, consumed = tryTokenizeQuotedCond(raw, i); consumed > 0 {
+		token, consumed := tokenizeOne(raw, i)
+		if consumed > 0 {
 			tokens = append(tokens, token)
 			i += consumed
-			continue
+		} else {
+			i++ // skip unknown
 		}
-		if token, consumed = tryTokenizeOperatorCond(raw, i); consumed > 0 {
-			tokens = append(tokens, token)
-			i += consumed
-			continue
-		}
-		if token, consumed = tryTokenizeWordCond(raw, i); consumed > 0 {
-			tokens = append(tokens, token)
-			i += consumed
-			continue
-		}
-
-		i++ // skip unknown
 	}
 	return tokens
+}
+
+// tokenizeOne dispatches to the appropriate tokenizer for the current position.
+func tokenizeOne(raw string, i int) (string, int) {
+	if token, n := tryTokenizeQuotedCond(raw, i); n > 0 {
+		return token, n
+	}
+	if token, n := tryTokenizeOperatorCond(raw, i); n > 0 {
+		return token, n
+	}
+	return tryTokenizeWordCond(raw, i)
 }
 
 // skipCondWhitespace advances the index past any whitespace characters.
@@ -170,9 +175,14 @@ func skipCondWhitespace(raw string, i int) int {
 	return i
 }
 
+// isQuoteChar returns true if ch is a single or double quote.
+func isQuoteChar(ch byte) bool {
+	return ch == '"' || ch == '\''
+}
+
 // tryTokenizeQuotedCond handles quoted strings (single or double quotes).
 func tryTokenizeQuotedCond(raw string, i int) (token string, consumed int) {
-	if raw[i] != '"' && raw[i] != '\'' {
+	if !isQuoteChar(raw[i]) {
 		return "", 0
 	}
 
@@ -189,29 +199,37 @@ func tryTokenizeQuotedCond(raw string, i int) (token string, consumed int) {
 	return token, i - (start - 1)
 }
 
+// operatorChars is the set of characters that form operators.
+var operatorChars = [256]bool{
+	'=': true, '!': true, '<': true, '>': true,
+}
+
+// isOperatorChar returns true if ch is an operator character.
+func isOperatorChar(ch byte) bool {
+	return operatorChars[ch]
+}
+
+// twoCharOperators is the set of valid two-character operators.
+var twoCharOperators = map[string]bool{
+	"==": true, "!=": true, "<=": true, ">=": true,
+}
+
 // tryTokenizeOperatorCond handles comparison operators.
 func tryTokenizeOperatorCond(raw string, i int) (token string, consumed int) {
-	// Check for multi-char operators first
-	if i+1 < len(raw) {
-		two := raw[i : i+2]
-		if two == "==" || two == "!=" || two == "<=" || two == ">=" {
-			return two, 2
-		}
+	if !isOperatorChar(raw[i]) {
+		return "", 0
 	}
-
-	// Single-char operators
-	if raw[i] == '=' || raw[i] == '<' || raw[i] == '>' || raw[i] == '!' {
-		return string(raw[i]), 1
+	// Check for multi-char operators first.
+	if i+1 < len(raw) && twoCharOperators[raw[i:i+2]] {
+		return raw[i : i+2], 2
 	}
-
-	return "", 0
+	return string(raw[i]), 1
 }
 
 // tryTokenizeWordCond handles regular tokens (identifiers, keywords, values).
 func tryTokenizeWordCond(raw string, i int) (token string, consumed int) {
 	start := i
-	for i < len(raw) && raw[i] != ' ' && raw[i] != '\t' &&
-		raw[i] != '=' && raw[i] != '!' && raw[i] != '<' && raw[i] != '>' {
+	for i < len(raw) && !isWordBreak(raw[i]) {
 		i++
 	}
 	if i > start {
@@ -220,18 +238,32 @@ func tryTokenizeWordCond(raw string, i int) (token string, consumed int) {
 	return "", 0
 }
 
+// isWordBreak returns true if ch should terminate a word token.
+func isWordBreak(ch byte) bool {
+	return ch == ' ' || ch == '\t' || isOperatorChar(ch)
+}
+
 // EnsureConditionsParsed walks all edges in a workflow and ensures that any
 // Condition with a Raw string but nil Parsed field gets parsed. This is needed
 // because the .dip parser may not always populate the Parsed AST.
 func EnsureConditionsParsed(w *ir.Workflow) error {
 	for _, e := range w.Edges {
-		if e.Condition != nil && e.Condition.Parsed == nil && e.Condition.Raw != "" {
-			parsed, err := ParseCondition(e.Condition.Raw)
-			if err != nil {
-				return fmt.Errorf("edge %s -> %s: invalid condition %q: %w", e.From, e.To, e.Condition.Raw, err)
-			}
-			e.Condition.Parsed = parsed
+		if err := ensureEdgeConditionParsed(e); err != nil {
+			return err
 		}
 	}
+	return nil
+}
+
+// ensureEdgeConditionParsed parses a single edge's condition if needed.
+func ensureEdgeConditionParsed(e *ir.Edge) error {
+	if e.Condition == nil || e.Condition.Parsed != nil || e.Condition.Raw == "" {
+		return nil
+	}
+	parsed, err := ParseCondition(e.Condition.Raw)
+	if err != nil {
+		return fmt.Errorf("edge %s -> %s: invalid condition %q: %w", e.From, e.To, e.Condition.Raw, err)
+	}
+	e.Condition.Parsed = parsed
 	return nil
 }

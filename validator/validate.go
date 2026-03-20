@@ -81,53 +81,56 @@ func checkEdgeEndpoints(w *ir.Workflow) []Diagnostic {
 	nodeSet := buildNodeSet(w)
 
 	for _, e := range w.Edges {
-		if _, ok := nodeSet[e.From]; !ok && e.From != "" {
-			d := Diagnostic{
-				Code:     DIP003,
-				Severity: SeverityError,
-				Message:  fmt.Sprintf("edge references unknown source node %q", e.From),
-				Location: e.Source,
-			}
-			if suggestion := closestNodeID(w, e.From); suggestion != "" {
-				d.Help = fmt.Sprintf("did you mean %q?", suggestion)
-			} else {
-				d.Help = fmt.Sprintf("declare a node with ID %q or fix the edge source", e.From)
-			}
-			diags = append(diags, d)
-		}
-		if _, ok := nodeSet[e.To]; !ok && e.To != "" {
-			d := Diagnostic{
-				Code:     DIP003,
-				Severity: SeverityError,
-				Message:  fmt.Sprintf("edge references unknown target node %q", e.To),
-				Location: e.Source,
-			}
-			if suggestion := closestNodeID(w, e.To); suggestion != "" {
-				d.Help = fmt.Sprintf("did you mean %q?", suggestion)
-			} else {
-				d.Help = fmt.Sprintf("declare a node with ID %q or fix the edge target", e.To)
-			}
-			diags = append(diags, d)
-		}
+		diags = append(diags, checkEndpoint(w, nodeSet, e, e.From, "source")...)
+		diags = append(diags, checkEndpoint(w, nodeSet, e, e.To, "target")...)
 	}
 	return diags
 }
 
-// checkReachability verifies DIP004: all nodes are reachable from the start node.
-// Uses BFS traversal including restart edges (restart edges are valid paths for
-// reachability purposes).
-func checkReachability(w *ir.Workflow) []Diagnostic {
-	// If start doesn't exist, we can't do reachability.
-	if w.Start == "" || w.Node(w.Start) == nil {
+// checkEndpoint verifies a single edge endpoint exists, producing a diagnostic if not.
+func checkEndpoint(w *ir.Workflow, nodeSet map[string]bool, e *ir.Edge, endpoint, role string) []Diagnostic {
+	if endpoint == "" || nodeSet[endpoint] {
 		return nil
 	}
+	d := Diagnostic{
+		Code:     DIP003,
+		Severity: SeverityError,
+		Message:  fmt.Sprintf("edge references unknown %s node %q", role, endpoint),
+		Location: e.Source,
+	}
+	if suggestion := closestNodeID(w, endpoint); suggestion != "" {
+		d.Help = fmt.Sprintf("did you mean %q?", suggestion)
+	} else {
+		d.Help = fmt.Sprintf("declare a node with ID %q or fix the edge %s", endpoint, role)
+	}
+	return []Diagnostic{d}
+}
 
-	// Build adjacency list from edges for BFS.
+// buildAllEdgeAdjacency builds an adjacency map including all edges (including restart).
+// It also includes implicit parallel/fan_in edges.
+func buildAllEdgeAdjacency(w *ir.Workflow) map[string][]string {
 	adj := make(map[string][]string)
 	for _, e := range w.Edges {
 		adj[e.From] = append(adj[e.From], e.To)
 	}
-	// Include implicit edges from parallel → targets and sources → fan_in. (REACH)
+	addParallelFanInEdges(adj, w)
+	return adj
+}
+
+// buildNonRestartAdjacency builds an adjacency map excluding restart edges.
+// Does NOT include implicit parallel/fan_in edges (used for cycle detection).
+func buildNonRestartAdjacency(w *ir.Workflow) map[string][]string {
+	adj := make(map[string][]string)
+	for _, e := range w.Edges {
+		if !e.Restart {
+			adj[e.From] = append(adj[e.From], e.To)
+		}
+	}
+	return adj
+}
+
+// addParallelFanInEdges adds implicit edges from parallel targets and fan_in sources.
+func addParallelFanInEdges(adj map[string][]string, w *ir.Workflow) {
 	for _, n := range w.Nodes {
 		switch cfg := n.Config.(type) {
 		case ir.ParallelConfig:
@@ -138,10 +141,13 @@ func checkReachability(w *ir.Workflow) []Diagnostic {
 			}
 		}
 	}
+}
 
+// bfsReachable returns the set of nodes reachable from start via BFS.
+func bfsReachable(start string, adj map[string][]string) map[string]bool {
 	visited := make(map[string]bool)
-	queue := []string{w.Start}
-	visited[w.Start] = true
+	queue := []string{start}
+	visited[start] = true
 
 	for len(queue) > 0 {
 		curr := queue[0]
@@ -153,7 +159,25 @@ func checkReachability(w *ir.Workflow) []Diagnostic {
 			}
 		}
 	}
+	return visited
+}
 
+// checkReachability verifies DIP004: all nodes are reachable from the start node.
+// Uses BFS traversal including restart edges (restart edges are valid paths for
+// reachability purposes).
+func checkReachability(w *ir.Workflow) []Diagnostic {
+	// If start doesn't exist, we can't do reachability.
+	if w.Start == "" || w.Node(w.Start) == nil {
+		return nil
+	}
+
+	adj := buildAllEdgeAdjacency(w)
+	visited := bfsReachable(w.Start, adj)
+	return findUnreachableNodes(w, visited)
+}
+
+// findUnreachableNodes returns diagnostics for nodes not in the visited set.
+func findUnreachableNodes(w *ir.Workflow, visited map[string]bool) []Diagnostic {
 	var diags []Diagnostic
 	for _, n := range w.Nodes {
 		if !visited[n.ID] {
@@ -177,64 +201,60 @@ func checkNoCycles(w *ir.Workflow) []Diagnostic {
 		return nil
 	}
 
-	// Build adjacency list excluding restart edges.
-	// Do NOT include implicit parallel/fan_in edges here — fork-join
-	// patterns (parallel → targets → fan_in) are structural, not cycles.
-	// Implicit edges are only needed for reachability (DIP004).
-	adj := make(map[string][]string)
-	for _, e := range w.Edges {
-		if !e.Restart {
-			adj[e.From] = append(adj[e.From], e.To)
-		}
+	adj := buildNonRestartAdjacency(w)
+	return detectCyclesDFS(w, adj)
+}
+
+// cycleDetector holds state for DFS-based cycle detection.
+type cycleDetector struct {
+	adj      map[string][]string
+	color    map[string]int // 0=white, 1=gray, 2=black
+	parent   map[string]string
+	reported map[string]bool
+	diags    []Diagnostic
+}
+
+// detectCyclesDFS uses DFS with white/gray/black coloring to find cycles.
+func detectCyclesDFS(w *ir.Workflow, adj map[string][]string) []Diagnostic {
+	cd := &cycleDetector{
+		adj:      adj,
+		color:    make(map[string]int),
+		parent:   make(map[string]string),
+		reported: make(map[string]bool),
 	}
-
-	// DFS with white/gray/black coloring for cycle detection.
-	const (
-		white = 0 // Not visited
-		gray  = 1 // In current DFS path (visiting)
-		black = 2 // Fully processed (done)
-	)
-
-	color := make(map[string]int)
-	parent := make(map[string]string)
-
-	var diags []Diagnostic
-
-	reported := make(map[string]bool) // avoid duplicate cycle reports
-	var dfs func(node string)
-	dfs = func(node string) {
-		color[node] = gray
-		for _, next := range adj[node] {
-			if color[next] == gray {
-				// Found a cycle — reconstruct path from next → ... → node → next.
-				// Only report if we haven't already reported a cycle through this back-edge target.
-				if !reported[next] {
-					reported[next] = true
-					cycle := reconstructCycle(parent, node, next)
-					diags = append(diags, Diagnostic{
-						Code:     DIP005,
-						Severity: SeverityError,
-						Message:  fmt.Sprintf("unconditional cycle detected: %s", strings.Join(cycle, " → ")),
-						Help:     "break the cycle by removing an edge or marking it restart: true",
-					})
-				}
-			}
-			if color[next] == white {
-				parent[next] = node
-				dfs(next)
-			}
-		}
-		color[node] = black
-	}
-
-	// Start DFS from all nodes to catch cycles in disconnected components too.
 	for _, n := range w.Nodes {
-		if color[n.ID] == white {
-			dfs(n.ID)
+		if cd.color[n.ID] == 0 {
+			cd.visit(n.ID)
 		}
 	}
+	return cd.diags
+}
 
-	return diags
+// visit performs DFS from node, recording cycles found.
+func (cd *cycleDetector) visit(node string) {
+	cd.color[node] = 1 // gray
+	for _, next := range cd.adj[node] {
+		cd.processNeighbor(node, next)
+	}
+	cd.color[node] = 2 // black
+}
+
+// processNeighbor handles a single neighbor during DFS traversal.
+func (cd *cycleDetector) processNeighbor(node, next string) {
+	if cd.color[next] == 1 && !cd.reported[next] {
+		cd.reported[next] = true
+		cycle := reconstructCycle(cd.parent, node, next)
+		cd.diags = append(cd.diags, Diagnostic{
+			Code:     DIP005,
+			Severity: SeverityError,
+			Message:  fmt.Sprintf("unconditional cycle detected: %s", strings.Join(cycle, " → ")),
+			Help:     "break the cycle by removing an edge or marking it restart: true",
+		})
+	}
+	if cd.color[next] == 0 {
+		cd.parent[next] = node
+		cd.visit(next)
+	}
 }
 
 // reconstructCycle builds the cycle path from the DFS parent map.
@@ -250,20 +270,28 @@ func reconstructCycle(parent map[string]string, from, to string) []string {
 	curr := from
 	seen := make(map[string]bool)
 	seen[to] = true
-	// Walk at most len(parent)+1 steps to guarantee termination.
 	maxSteps := len(parent) + 2
-	for curr != to && curr != "" && !seen[curr] && maxSteps > 0 {
+	for canWalk(curr, to, seen, maxSteps) {
 		seen[curr] = true
 		path = append(path, curr)
 		curr = parent[curr]
 		maxSteps--
 	}
 	path = append(path, to)
-	// Reverse so it reads: to → ... → from → to
+	reversePath(path)
+	return path
+}
+
+// canWalk checks whether the cycle reconstruction loop should continue.
+func canWalk(curr, target string, seen map[string]bool, maxSteps int) bool {
+	return curr != target && curr != "" && !seen[curr] && maxSteps > 0
+}
+
+// reversePath reverses a string slice in place.
+func reversePath(path []string) {
 	for i, j := 0, len(path)-1; i < j; i, j = i+1, j-1 {
 		path[i], path[j] = path[j], path[i]
 	}
-	return path
 }
 
 // checkExitNoOutgoing verifies DIP006: the exit node has no outgoing edges.
@@ -294,16 +322,21 @@ func checkExitNoOutgoing(w *ir.Workflow) []Diagnostic {
 // fan-in node, and vice versa. Matching means the ParallelConfig.Targets set
 // equals the FanInConfig.Sources set (order-insensitive).
 func checkParallelFanIn(w *ir.Workflow) []Diagnostic {
+	parallels, fanIns := collectParallelFanIn(w)
 	var diags []Diagnostic
+	diags = append(diags, checkUnmatchedParallels(parallels, fanIns)...)
+	diags = append(diags, checkUnmatchedFanIns(fanIns, parallels)...)
+	return diags
+}
 
-	type nodeTargets struct {
-		node   *ir.Node
-		sorted []string
-	}
+// nodeTargets pairs a node with its sorted target/source list for matching.
+type nodeTargets struct {
+	node   *ir.Node
+	sorted []string
+}
 
-	var parallels []nodeTargets
-	var fanIns []nodeTargets
-
+// collectParallelFanIn collects and sorts targets/sources from parallel and fan_in nodes.
+func collectParallelFanIn(w *ir.Workflow) (parallels, fanIns []nodeTargets) {
 	for _, n := range w.Nodes {
 		switch cfg := n.Config.(type) {
 		case ir.ParallelConfig:
@@ -318,17 +351,24 @@ func checkParallelFanIn(w *ir.Workflow) []Diagnostic {
 			fanIns = append(fanIns, nodeTargets{node: n, sorted: sorted})
 		}
 	}
+	return
+}
 
-	// For each parallel node, check there's a matching fan-in.
-	for _, p := range parallels {
-		found := false
-		for _, f := range fanIns {
-			if slicesEqual(p.sorted, f.sorted) {
-				found = true
-				break
-			}
+// hasMatch checks if any entry in candidates has sorted list equal to target.
+func hasMatch(target []string, candidates []nodeTargets) bool {
+	for _, c := range candidates {
+		if slicesEqual(target, c.sorted) {
+			return true
 		}
-		if !found {
+	}
+	return false
+}
+
+// checkUnmatchedParallels returns diagnostics for parallel nodes without matching fan_in.
+func checkUnmatchedParallels(parallels, fanIns []nodeTargets) []Diagnostic {
+	var diags []Diagnostic
+	for _, p := range parallels {
+		if !hasMatch(p.sorted, fanIns) {
 			diags = append(diags, Diagnostic{
 				Code:     DIP007,
 				Severity: SeverityError,
@@ -338,17 +378,14 @@ func checkParallelFanIn(w *ir.Workflow) []Diagnostic {
 			})
 		}
 	}
+	return diags
+}
 
-	// For each fan-in node, check there's a matching parallel.
+// checkUnmatchedFanIns returns diagnostics for fan_in nodes without matching parallel.
+func checkUnmatchedFanIns(fanIns, parallels []nodeTargets) []Diagnostic {
+	var diags []Diagnostic
 	for _, f := range fanIns {
-		found := false
-		for _, p := range parallels {
-			if slicesEqual(f.sorted, p.sorted) {
-				found = true
-				break
-			}
-		}
-		if !found {
+		if !hasMatch(f.sorted, parallels) {
 			diags = append(diags, Diagnostic{
 				Code:     DIP007,
 				Severity: SeverityError,
@@ -358,7 +395,6 @@ func checkParallelFanIn(w *ir.Workflow) []Diagnostic {
 			})
 		}
 	}
-
 	return diags
 }
 
@@ -451,7 +487,6 @@ func levenshtein(a, b string) int {
 		return la
 	}
 
-	// Use two rows for space efficiency.
 	prev := make([]int, lb+1)
 	curr := make([]int, lb+1)
 
@@ -461,26 +496,33 @@ func levenshtein(a, b string) int {
 
 	for i := 1; i <= la; i++ {
 		curr[0] = i
-		for j := 1; j <= lb; j++ {
-			cost := 1
-			if a[i-1] == b[j-1] {
-				cost = 0
-			}
-			ins := curr[j-1] + 1
-			del := prev[j] + 1
-			sub := prev[j-1] + cost
-			m := ins
-			if del < m {
-				m = del
-			}
-			if sub < m {
-				m = sub
-			}
-			curr[j] = m
-		}
+		fillLevenshteinRow(a, b, i, prev, curr)
 		prev, curr = curr, prev
 	}
 	return prev[lb]
+}
+
+// fillLevenshteinRow computes one row of the Levenshtein distance matrix.
+func fillLevenshteinRow(a, b string, i int, prev, curr []int) {
+	for j := 1; j <= len(b); j++ {
+		cost := 1
+		if a[i-1] == b[j-1] {
+			cost = 0
+		}
+		curr[j] = min3(curr[j-1]+1, prev[j]+1, prev[j-1]+cost)
+	}
+}
+
+// min3 returns the minimum of three integers.
+func min3(a, b, c int) int {
+	m := a
+	if b < m {
+		m = b
+	}
+	if c < m {
+		m = c
+	}
+	return m
 }
 
 // slicesEqual returns true if two sorted string slices are element-wise equal.

@@ -47,6 +47,67 @@ type CLI struct {
 	Format OutputFormat
 }
 
+// commandDispatch maps subcommand names to their handler methods.
+func (c *CLI) commandDispatch() map[string]func([]string) ExitCode {
+	return map[string]func([]string) ExitCode{
+		"parse":              c.CmdParse,
+		"validate":           c.CmdValidate,
+		"lint":               c.CmdLint,
+		"check":              c.CmdCheck,
+		"fmt":                c.CmdFmt,
+		"new":                c.CmdNew,
+		"export-dot":         c.CmdExportDOT,
+		"migrate":            c.CmdMigrate,
+		"validate-migration": c.CmdValidateMigration,
+		"simulate":           c.CmdSimulate,
+	}
+}
+
+// resolveFormat maps a format string to an OutputFormat value.
+// Returns false if the format string is unknown.
+func resolveFormat(s string) (OutputFormat, bool) {
+	formats := map[string]OutputFormat{
+		"text": FormatText,
+		"json": FormatJSON,
+		"dot":  FormatDOT,
+	}
+	f, ok := formats[s]
+	return f, ok
+}
+
+// parseGlobalFlags parses global flags from args and returns the CLI, remaining
+// args, and an exit code. If the exit code is not -1, the caller should return it.
+func parseGlobalFlags(args []string, stdout, stderr io.Writer) (*CLI, []string, ExitCode) {
+	c := &CLI{
+		Stdout: stdout,
+		Stderr: stderr,
+		Format: FormatText,
+	}
+
+	globalFlags := flag.NewFlagSet("dippin", flag.ContinueOnError)
+	globalFlags.SetOutput(stderr)
+	formatStr := globalFlags.String("format", "text", "output format (text|json)")
+
+	if err := globalFlags.Parse(args); err != nil {
+		return nil, nil, ExitUsageError
+	}
+
+	f, ok := resolveFormat(*formatStr)
+	if !ok {
+		fmt.Fprintf(stderr, "unknown format: %s\n", *formatStr)
+		return nil, nil, ExitUsageError
+	}
+	c.Format = f
+
+	remaining := globalFlags.Args()
+	if len(remaining) == 0 {
+		printGlobalUsage(stderr)
+		return nil, nil, ExitUsageError
+	}
+
+	return c, remaining, ExitCode(-1)
+}
+
 // Run is the testable entry point for the entire CLI. It accepts raw args
 // (without the program name), captures output into the provided writers,
 // and returns a deterministic exit code.
@@ -56,70 +117,25 @@ func Run(args []string, stdout, stderr io.Writer) ExitCode {
 		return ExitUsageError
 	}
 
-	c := &CLI{
-		Stdout: stdout,
-		Stderr: stderr,
-		Format: FormatText,
-	}
-
-	// Parse global flags that appear before the subcommand.
-	globalFlags := flag.NewFlagSet("dippin", flag.ContinueOnError)
-	globalFlags.SetOutput(stderr)
-	formatStr := globalFlags.String("format", "text", "output format (text|json)")
-
-	if err := globalFlags.Parse(args); err != nil {
-		return ExitUsageError
-	}
-
-	switch *formatStr {
-	case "text":
-		c.Format = FormatText
-	case "json":
-		c.Format = FormatJSON
-	case "dot":
-		c.Format = FormatDOT
-	default:
-		fmt.Fprintf(stderr, "unknown format: %s\n", *formatStr)
-		return ExitUsageError
-	}
-
-	remaining := globalFlags.Args()
-	if len(remaining) == 0 {
-		printGlobalUsage(stderr)
-		return ExitUsageError
+	c, remaining, code := parseGlobalFlags(args, stdout, stderr)
+	if code != ExitCode(-1) {
+		return code
 	}
 
 	cmd := remaining[0]
 	cmdArgs := remaining[1:]
 
-	switch cmd {
-	case "parse":
-		return c.CmdParse(cmdArgs)
-	case "validate":
-		return c.CmdValidate(cmdArgs)
-	case "lint":
-		return c.CmdLint(cmdArgs)
-	case "check":
-		return c.CmdCheck(cmdArgs)
-	case "fmt":
-		return c.CmdFmt(cmdArgs)
-	case "new":
-		return c.CmdNew(cmdArgs)
-	case "export-dot":
-		return c.CmdExportDOT(cmdArgs)
-	case "migrate":
-		return c.CmdMigrate(cmdArgs)
-	case "validate-migration":
-		return c.CmdValidateMigration(cmdArgs)
-	case "simulate":
-		return c.CmdSimulate(cmdArgs)
-	case "help":
+	if cmd == "help" {
 		printGlobalUsage(stdout)
 		return ExitOK
-	default:
+	}
+
+	handler, ok := c.commandDispatch()[cmd]
+	if !ok {
 		fmt.Fprintf(stderr, "unknown command: %s\n", cmd)
 		return ExitUsageError
 	}
+	return handler(cmdArgs)
 }
 
 func printGlobalUsage(w io.Writer) {
@@ -175,17 +191,11 @@ func (c *CLI) CmdParse(args []string) ExitCode {
 
 // CmdValidate runs structural validation (DIP001-DIP009) on a workflow.
 func (c *CLI) CmdValidate(args []string) ExitCode {
-	fs := flag.NewFlagSet("validate", flag.ContinueOnError)
-	fs.SetOutput(c.Stderr)
-	if err := fs.Parse(args); err != nil {
-		return ExitUsageError
-	}
-	if fs.NArg() < 1 {
-		fmt.Fprintln(c.Stderr, "usage: dippin validate <file>")
-		return ExitUsageError
+	path, code := parseSingleFileArg("validate", "usage: dippin validate <file>", args, c.Stderr)
+	if code != ExitCode(-1) {
+		return code
 	}
 
-	path := fs.Arg(0)
 	w, err := loadWorkflow(path)
 	if err != nil {
 		c.renderError(err, path)
@@ -193,9 +203,7 @@ func (c *CLI) CmdValidate(args []string) ExitCode {
 	}
 
 	res := validator.Validate(w)
-	if len(res.Diagnostics) > 0 {
-		c.renderDiagnostics(res.Diagnostics)
-	}
+	c.renderDiagnostics(res.Diagnostics)
 
 	if res.HasErrors() {
 		return ExitError
@@ -209,17 +217,11 @@ func (c *CLI) CmdValidate(args []string) ExitCode {
 // CmdLint runs both structural validation and semantic linting.
 // Errors cause exit 1; warnings alone exit 0.
 func (c *CLI) CmdLint(args []string) ExitCode {
-	fs := flag.NewFlagSet("lint", flag.ContinueOnError)
-	fs.SetOutput(c.Stderr)
-	if err := fs.Parse(args); err != nil {
-		return ExitUsageError
-	}
-	if fs.NArg() < 1 {
-		fmt.Fprintln(c.Stderr, "usage: dippin lint <file>")
-		return ExitUsageError
+	path, code := parseSingleFileArg("lint", "usage: dippin lint <file>", args, c.Stderr)
+	if code != ExitCode(-1) {
+		return code
 	}
 
-	path := fs.Arg(0)
 	w, err := loadWorkflow(path)
 	if err != nil {
 		c.renderError(err, path)
@@ -232,15 +234,31 @@ func (c *CLI) CmdLint(args []string) ExitCode {
 
 	// Merge all diagnostics.
 	allDiags := append(valRes.Diagnostics, lintRes.Diagnostics...)
-	if len(allDiags) > 0 {
-		c.renderDiagnostics(allDiags)
-	}
+	c.renderDiagnostics(allDiags)
 
 	// Exit 1 only if there are errors; warnings alone pass.
 	if valRes.HasErrors() {
 		return ExitError
 	}
 	return ExitOK
+}
+
+// checkReportError reports an error in the appropriate format for the check command.
+func checkReportError(stdout io.Writer, stderr io.Writer, formatStr string, errMsg string) {
+	if formatStr == "json" {
+		renderCheckJSON(stdout, false, nil, errMsg)
+	} else {
+		fmt.Fprintf(stderr, "error: %v\n", errMsg)
+	}
+}
+
+// renderCheckTextResult renders check results in text format.
+func renderCheckTextResult(w io.Writer, diags []validator.Diagnostic) {
+	if len(diags) > 0 {
+		renderDiagnosticsText(w, diags)
+	} else {
+		fmt.Fprintln(w, "check passed")
+	}
 }
 
 // CmdCheck runs parse + validate + lint in one shot and outputs a compact
@@ -259,42 +277,25 @@ func (c *CLI) CmdCheck(args []string) ExitCode {
 	}
 
 	path := fs.Arg(0)
-
-	// Parse.
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if *formatStr == "json" {
-			renderCheckJSON(c.Stdout, false, nil, err.Error())
-		} else {
-			fmt.Fprintf(c.Stderr, "error: %v\n", err)
-		}
+	w, parseErr := parseFile(path)
+	if parseErr != nil {
+		checkReportError(c.Stdout, c.Stderr, *formatStr, parseErr.Error())
 		return ExitError
 	}
 
-	p := parser.NewParser(string(data), path)
-	w, err := p.Parse()
-	if err != nil {
-		if *formatStr == "json" {
-			renderCheckJSON(c.Stdout, false, nil, err.Error())
-		} else {
-			fmt.Fprintf(c.Stderr, "error: %v\n", err)
-		}
-		return ExitError
-	}
+	return runCheckPipeline(c.Stdout, *formatStr, w)
+}
 
-	// Validate + lint.
+// runCheckPipeline validates, lints, and renders the check result.
+func runCheckPipeline(stdout io.Writer, formatStr string, w *ir.Workflow) ExitCode {
 	valRes := validator.Validate(w)
 	lintRes := validator.Lint(w)
 	allDiags := append(valRes.Diagnostics, lintRes.Diagnostics...)
 
-	if *formatStr == "json" {
-		renderCheckJSON(c.Stdout, !valRes.HasErrors(), allDiags, "")
+	if formatStr == "json" {
+		renderCheckJSON(stdout, !valRes.HasErrors(), allDiags, "")
 	} else {
-		if len(allDiags) > 0 {
-			renderDiagnosticsText(c.Stdout, allDiags)
-		} else {
-			fmt.Fprintln(c.Stdout, "check passed")
-		}
+		renderCheckTextResult(stdout, allDiags)
 	}
 
 	if valRes.HasErrors() {
@@ -303,23 +304,75 @@ func (c *CLI) CmdCheck(args []string) ExitCode {
 	return ExitOK
 }
 
+// checkDiag is the JSON representation of a single diagnostic in check output.
+type checkDiag struct {
+	Code     string `json:"code"`
+	Severity string `json:"severity"`
+	Message  string `json:"message"`
+	Line     int    `json:"line,omitempty"`
+	Fix      string `json:"fix,omitempty"`
+}
+
+// checkResult is the JSON representation of the check command output.
+type checkResult struct {
+	Valid            bool        `json:"valid"`
+	Errors           int         `json:"errors"`
+	Warnings         int         `json:"warnings"`
+	Diagnostics      []checkDiag `json:"diagnostics"`
+	SuggestedActions []string    `json:"suggested_actions"`
+}
+
+// toCheckDiag converts a validator diagnostic to a checkDiag.
+func toCheckDiag(d validator.Diagnostic) checkDiag {
+	return checkDiag{
+		Code:     d.Code,
+		Severity: d.Severity.String(),
+		Message:  d.Message,
+		Line:     d.Location.Line,
+		Fix:      d.Fix,
+	}
+}
+
+// countSeverities counts errors and warnings in a slice of diagnostics.
+func countSeverities(diags []validator.Diagnostic) (int, int) {
+	var errors, warnings int
+	for _, d := range diags {
+		if d.Severity == validator.SeverityError {
+			errors++
+		} else if d.Severity == validator.SeverityWarning {
+			warnings++
+		}
+	}
+	return errors, warnings
+}
+
+// collectUniqueFixes returns unique fix suggestions from diagnostics.
+func collectUniqueFixes(diags []validator.Diagnostic) []string {
+	var actions []string
+	seen := make(map[string]bool)
+	for _, d := range diags {
+		if d.Fix != "" && !seen[d.Fix] {
+			seen[d.Fix] = true
+			actions = append(actions, d.Fix)
+		}
+	}
+	return actions
+}
+
+// aggregateCheckDiags converts validator diagnostics into check output fields,
+// returning the converted diagnostics, error/warning counts, and unique suggested actions.
+func aggregateCheckDiags(diags []validator.Diagnostic) ([]checkDiag, int, int, []string) {
+	cds := make([]checkDiag, 0, len(diags))
+	for _, d := range diags {
+		cds = append(cds, toCheckDiag(d))
+	}
+	errors, warnings := countSeverities(diags)
+	actions := collectUniqueFixes(diags)
+	return cds, errors, warnings, actions
+}
+
 // renderCheckJSON writes the compact check output to w.
 func renderCheckJSON(w io.Writer, valid bool, diags []validator.Diagnostic, parseErr string) {
-	type checkDiag struct {
-		Code     string `json:"code"`
-		Severity string `json:"severity"`
-		Message  string `json:"message"`
-		Line     int    `json:"line,omitempty"`
-		Fix      string `json:"fix,omitempty"`
-	}
-	type checkResult struct {
-		Valid            bool        `json:"valid"`
-		Errors           int         `json:"errors"`
-		Warnings         int         `json:"warnings"`
-		Diagnostics      []checkDiag `json:"diagnostics"`
-		SuggestedActions []string    `json:"suggested_actions"`
-	}
-
 	res := checkResult{
 		Valid:       valid,
 		Diagnostics: make([]checkDiag, 0, len(diags)),
@@ -334,28 +387,11 @@ func renderCheckJSON(w io.Writer, valid bool, diags []validator.Diagnostic, pars
 		})
 	}
 
-	seen := make(map[string]bool)
-	for _, d := range diags {
-		cd := checkDiag{
-			Code:     d.Code,
-			Severity: d.Severity.String(),
-			Message:  d.Message,
-			Line:     d.Location.Line,
-			Fix:      d.Fix,
-		}
-		res.Diagnostics = append(res.Diagnostics, cd)
-
-		if d.Severity == validator.SeverityError {
-			res.Errors++
-		} else if d.Severity == validator.SeverityWarning {
-			res.Warnings++
-		}
-
-		if d.Fix != "" && !seen[d.Fix] {
-			seen[d.Fix] = true
-			res.SuggestedActions = append(res.SuggestedActions, d.Fix)
-		}
-	}
+	cds, errors, warnings, actions := aggregateCheckDiags(diags)
+	res.Diagnostics = append(res.Diagnostics, cds...)
+	res.Errors += errors
+	res.Warnings += warnings
+	res.SuggestedActions = actions
 
 	if res.SuggestedActions == nil {
 		res.SuggestedActions = []string{}
@@ -387,17 +423,19 @@ func (c *CLI) CmdNew(args []string) ExitCode {
 		return ExitError
 	}
 
-	source := formatter.Format(w)
+	return writeOutput(c.Stdout, c.Stderr, *writePath, formatter.Format(w))
+}
 
-	if *writePath != "" {
-		if err := os.WriteFile(*writePath, []byte(source), 0644); err != nil {
-			fmt.Fprintf(c.Stderr, "error writing file: %v\n", err)
+// writeOutput writes content to a file path if given, otherwise to stdout.
+func writeOutput(stdout, stderr io.Writer, path, content string) ExitCode {
+	if path != "" {
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			fmt.Fprintf(stderr, "error writing file: %v\n", err)
 			return ExitError
 		}
 		return ExitOK
 	}
-
-	fmt.Fprint(c.Stdout, source)
+	fmt.Fprint(stdout, content)
 	return ExitOK
 }
 
@@ -419,40 +457,54 @@ func (c *CLI) CmdFmt(args []string) ExitCode {
 	}
 
 	path := fs.Arg(0)
+	data, formatted, code := c.parseAndFormat(path)
+	if code != ExitCode(-1) {
+		return code
+	}
+
+	if *check {
+		return c.fmtCheck(path, string(data), formatted)
+	}
+
+	return writeOutput(c.Stdout, c.Stderr, boolToPath(*write, path), formatted)
+}
+
+// boolToPath returns path if cond is true, otherwise empty string.
+func boolToPath(cond bool, path string) string {
+	if cond {
+		return path
+	}
+	return ""
+}
+
+// parseAndFormat reads and parses a file, returning the raw data, formatted
+// output, and an exit code (ExitCode(-1) means success, continue processing).
+func (c *CLI) parseAndFormat(path string) ([]byte, string, ExitCode) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "error: %v\n", err)
-		return ExitError
+		return nil, "", ExitError
 	}
 
 	p := parser.NewParser(string(data), path)
 	w, err := p.Parse()
 	if err != nil {
 		c.renderError(err, path)
+		return nil, "", ExitError
+	}
+
+	return data, formatter.Format(w), ExitCode(-1)
+}
+
+// fmtCheck compares formatted output against original data and returns
+// the appropriate exit code for --check mode.
+func (c *CLI) fmtCheck(path, original, formatted string) ExitCode {
+	if formatted != original {
+		if c.Format == FormatText {
+			fmt.Fprintf(c.Stderr, "%s: not canonically formatted\n", path)
+		}
 		return ExitError
 	}
-
-	formatted := formatter.Format(w)
-
-	if *check {
-		if formatted != string(data) {
-			if c.Format == FormatText {
-				fmt.Fprintf(c.Stderr, "%s: not canonically formatted\n", path)
-			}
-			return ExitError
-		}
-		return ExitOK
-	}
-
-	if *write {
-		if err := os.WriteFile(path, []byte(formatted), 0644); err != nil {
-			fmt.Fprintf(c.Stderr, "error writing file: %v\n", err)
-			return ExitError
-		}
-		return ExitOK
-	}
-
-	fmt.Fprint(c.Stdout, formatted)
 	return ExitOK
 }
 
@@ -505,28 +557,71 @@ func (c *CLI) CmdMigrate(args []string) ExitCode {
 	}
 
 	path := fs.Arg(0)
+	source, err := migrateFile(path)
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "%v\n", err)
+		return ExitError
+	}
+
+	return writeOutput(c.Stdout, c.Stderr, *output, source)
+}
+
+// migrateFile reads a DOT file and converts it to .dip source.
+func migrateFile(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		fmt.Fprintf(c.Stderr, "error: %v\n", err)
-		return ExitError
+		return "", fmt.Errorf("error: %v", err)
 	}
 
 	source, err := migrate.MigrateToSource(string(data))
 	if err != nil {
-		fmt.Fprintf(c.Stderr, "migration failed: %v\n", err)
-		return ExitError
+		return "", fmt.Errorf("migration failed: %v", err)
 	}
+	return source, nil
+}
 
-	if *output != "" {
-		if err := os.WriteFile(*output, []byte(source), 0644); err != nil {
-			fmt.Fprintf(c.Stderr, "error writing output: %v\n", err)
-			return ExitError
-		}
-		return ExitOK
+// loadDOTWorkflow reads and parses a DOT file into an IR workflow.
+func loadDOTWorkflow(path string, stderr io.Writer) (*ir.Workflow, ExitCode) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		fmt.Fprintf(stderr, "error reading %s: %v\n", path, err)
+		return nil, ExitError
 	}
+	w, err := migrate.Migrate(string(data))
+	if err != nil {
+		fmt.Fprintf(stderr, "error parsing %s: %v\n", path, err)
+		return nil, ExitError
+	}
+	return w, ExitCode(-1)
+}
 
-	fmt.Fprint(c.Stdout, source)
-	return ExitOK
+// loadDIPWorkflow reads and parses a .dip file into an IR workflow.
+func (c *CLI) loadDIPWorkflow(path string) (*ir.Workflow, ExitCode) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "error reading %s: %v\n", path, err)
+		return nil, ExitError
+	}
+	p := parser.NewParser(string(data), path)
+	w, err := p.Parse()
+	if err != nil {
+		c.renderError(err, path)
+		return nil, ExitError
+	}
+	return w, ExitCode(-1)
+}
+
+// renderParityDiffs renders migration parity check differences.
+func (c *CLI) renderParityDiffs(diffs []migrate.Difference) {
+	if c.Format == FormatJSON {
+		b, _ := json.MarshalIndent(diffs, "", "  ")
+		fmt.Fprintln(c.Stderr, string(b))
+		return
+	}
+	fmt.Fprintf(c.Stderr, "parity check failed: %d difference(s) found\n", len(diffs))
+	for _, d := range diffs {
+		fmt.Fprintf(c.Stderr, "  [%s] %s\n", d.Kind, d.Message)
+	}
 }
 
 // CmdValidateMigration checks structural parity between a DOT file and a .dip file.
@@ -541,43 +636,24 @@ func (c *CLI) CmdValidateMigration(args []string) ExitCode {
 		return ExitUsageError
 	}
 
-	dotPath := fs.Arg(0)
-	dipPath := fs.Arg(1)
-
-	dotData, err := os.ReadFile(dotPath)
-	if err != nil {
-		fmt.Fprintf(c.Stderr, "error reading %s: %v\n", dotPath, err)
-		return ExitError
-	}
-	wOld, err := migrate.Migrate(string(dotData))
-	if err != nil {
-		fmt.Fprintf(c.Stderr, "error parsing %s: %v\n", dotPath, err)
-		return ExitError
+	wOld, code := loadDOTWorkflow(fs.Arg(0), c.Stderr)
+	if code != ExitCode(-1) {
+		return code
 	}
 
-	dipData, err := os.ReadFile(dipPath)
-	if err != nil {
-		fmt.Fprintf(c.Stderr, "error reading %s: %v\n", dipPath, err)
-		return ExitError
-	}
-	p := parser.NewParser(string(dipData), dipPath)
-	wNew, err := p.Parse()
-	if err != nil {
-		c.renderError(err, dipPath)
-		return ExitError
+	wNew, code := c.loadDIPWorkflow(fs.Arg(1))
+	if code != ExitCode(-1) {
+		return code
 	}
 
+	return c.checkMigrationParity(wOld, wNew)
+}
+
+// checkMigrationParity compares two workflows and reports the result.
+func (c *CLI) checkMigrationParity(wOld, wNew *ir.Workflow) ExitCode {
 	diffs := migrate.CheckParity(wOld, wNew)
 	if len(diffs) > 0 {
-		if c.Format == FormatJSON {
-			b, _ := json.MarshalIndent(diffs, "", "  ")
-			fmt.Fprintln(c.Stderr, string(b))
-		} else {
-			fmt.Fprintf(c.Stderr, "parity check failed: %d difference(s) found\n", len(diffs))
-			for _, d := range diffs {
-				fmt.Fprintf(c.Stderr, "  [%s] %s\n", d.Kind, d.Message)
-			}
-		}
+		c.renderParityDiffs(diffs)
 		return ExitError
 	}
 
@@ -602,10 +678,6 @@ func (c *CLI) CmdSimulate(args []string) ExitCode {
 	interactive := fs.Bool("interactive", false, "prompt at human nodes")
 	allPaths := fs.Bool("all-paths", false, "enumerate all possible execution paths")
 
-	// Reorder args so flags can appear before or after the filename.
-	// This supports both:
-	//   dippin simulate file.dip --scenario key=val
-	//   dippin simulate --scenario key=val file.dip
 	args = reorderSimulateArgs(args)
 
 	if err := fs.Parse(args); err != nil {
@@ -617,58 +689,79 @@ func (c *CLI) CmdSimulate(args []string) ExitCode {
 	}
 
 	path := fs.Arg(0)
+	w, opts, code := c.prepareSimulation(path, scenarios.values, *interactive, *allPaths)
+	if code != ExitCode(-1) {
+		return code
+	}
+
+	if *allPaths {
+		return c.simulateAllPaths(w, opts)
+	}
+	return c.simulateSingle(w, opts)
+}
+
+// prepareSimulation loads and validates the workflow, then builds simulation options.
+func (c *CLI) prepareSimulation(path string, scenario map[string]string, interactive, allPaths bool) (*ir.Workflow, simulate.Options, ExitCode) {
 	w, err := loadWorkflow(path)
 	if err != nil {
 		c.renderError(err, path)
-		return ExitError
+		return nil, simulate.Options{}, ExitError
 	}
 
-	// Validate workflow before simulating.
 	valRes := validator.Validate(w)
 	if valRes.HasErrors() {
 		c.renderDiagnostics(valRes.Diagnostics)
-		return ExitError
+		return nil, simulate.Options{}, ExitError
 	}
 
 	opts := simulate.Options{
-		Scenario:    scenarios.values,
-		Interactive: *interactive,
-		AllPaths:    *allPaths,
+		Scenario:    scenario,
+		Interactive: interactive,
+		AllPaths:    allPaths,
 	}
-
-	if *interactive {
+	if interactive {
 		opts.Stdin = os.Stdin
 		opts.Stderr = c.Stderr
 	}
 
-	if *allPaths {
-		results, err := simulate.RunAllPaths(w, opts)
-		if err != nil {
-			fmt.Fprintf(c.Stderr, "simulation error: %v\n", err)
-			return ExitError
-		}
+	return w, opts, ExitCode(-1)
+}
 
-		for i, res := range results {
-			if i > 0 {
-				// Separator between paths.
-				fmt.Fprintln(c.Stdout)
-			}
-			if c.Format == FormatText {
-				fmt.Fprintf(c.Stderr, "--- path %d: %s (%d nodes: %s) ---\n",
-					i+1, res.Status, res.NodesVisited, strings.Join(res.Path, " → "))
-			}
-			if err := simulate.EmitJSONL(c.Stdout, res.Events); err != nil {
-				fmt.Fprintf(c.Stderr, "output error: %v\n", err)
-				return ExitError
-			}
-		}
+// emitPathResult emits a single simulation path result (separator, header, JSONL).
+func (c *CLI) emitPathResult(i int, res *simulate.Result) error {
+	if i > 0 {
+		fmt.Fprintln(c.Stdout)
+	}
+	if c.Format == FormatText {
+		fmt.Fprintf(c.Stderr, "--- path %d: %s (%d nodes: %s) ---\n",
+			i+1, res.Status, res.NodesVisited, strings.Join(res.Path, " → "))
+	}
+	return simulate.EmitJSONL(c.Stdout, res.Events)
+}
 
-		if c.Format == FormatText {
-			fmt.Fprintf(c.Stderr, "\n%d path(s) enumerated\n", len(results))
-		}
-		return ExitOK
+// simulateAllPaths runs simulation in all-paths mode and renders results.
+func (c *CLI) simulateAllPaths(w *ir.Workflow, opts simulate.Options) ExitCode {
+	results, err := simulate.RunAllPaths(w, opts)
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "simulation error: %v\n", err)
+		return ExitError
 	}
 
+	for i, res := range results {
+		if err := c.emitPathResult(i, res); err != nil {
+			fmt.Fprintf(c.Stderr, "output error: %v\n", err)
+			return ExitError
+		}
+	}
+
+	if c.Format == FormatText {
+		fmt.Fprintf(c.Stderr, "\n%d path(s) enumerated\n", len(results))
+	}
+	return ExitOK
+}
+
+// simulateSingle runs a single simulation path and renders the result.
+func (c *CLI) simulateSingle(w *ir.Workflow, opts simulate.Options) ExitCode {
 	res, err := simulate.Run(w, opts)
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "simulation error: %v\n", err)
@@ -676,12 +769,7 @@ func (c *CLI) CmdSimulate(args []string) ExitCode {
 	}
 
 	if c.Format == FormatDOT {
-		dotOpts := export.ExportOptions{
-			ExecutionPath: res.Path,
-		}
-		dot := export.ExportDOT(w, dotOpts)
-		fmt.Fprint(c.Stdout, dot)
-		return ExitOK
+		return c.renderSimulateDOT(w, res)
 	}
 
 	if err := simulate.EmitJSONL(c.Stdout, res.Events); err != nil {
@@ -694,6 +782,16 @@ func (c *CLI) CmdSimulate(args []string) ExitCode {
 		fmt.Fprintf(c.Stderr, "path: %s\n", strings.Join(res.Path, " → "))
 	}
 
+	return ExitOK
+}
+
+// renderSimulateDOT renders simulation results as a DOT graph.
+func (c *CLI) renderSimulateDOT(w *ir.Workflow, res *simulate.Result) ExitCode {
+	dotOpts := export.ExportOptions{
+		ExecutionPath: res.Path,
+	}
+	dot := export.ExportDOT(w, dotOpts)
+	fmt.Fprint(c.Stdout, dot)
 	return ExitOK
 }
 
@@ -725,6 +823,41 @@ func (s *scenarioFlags) Set(val string) error {
 	return nil
 }
 
+// isValueFlag returns true if the flag name requires a separate value argument.
+func isValueFlag(name string) bool {
+	return name == "scenario"
+}
+
+// hasFollowingValue returns true if a value-taking flag at position i has a
+// non-flag value following it.
+func hasFollowingValue(args []string, i int) bool {
+	return i+1 < len(args) && !strings.HasPrefix(args[i+1], "-")
+}
+
+// classifyArg appends a single arg (and possibly its value) to the flags or
+// positional slices. It returns the number of args consumed (1 or 2).
+func classifyArg(args []string, i int, flags, positional *[]string) int {
+	arg := args[i]
+	if !strings.HasPrefix(arg, "-") {
+		*positional = append(*positional, arg)
+		return 1
+	}
+
+	if strings.Contains(arg, "=") {
+		*flags = append(*flags, arg)
+		return 1
+	}
+
+	flagName := strings.TrimLeft(arg, "-")
+	if isValueFlag(flagName) && hasFollowingValue(args, i) {
+		*flags = append(*flags, arg, args[i+1])
+		return 2
+	}
+
+	*flags = append(*flags, arg)
+	return 1
+}
+
 // reorderSimulateArgs moves any flag arguments that appear after a positional
 // argument (the .dip file path) to before it. This allows natural CLI syntax:
 //
@@ -735,29 +868,36 @@ func (s *scenarioFlags) Set(val string) error {
 func reorderSimulateArgs(args []string) []string {
 	var flags []string
 	var positional []string
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		if strings.HasPrefix(arg, "-") {
-			// It's a flag. Check if it takes a value (--flag value or --flag=value).
-			if strings.Contains(arg, "=") {
-				// --flag=value form
-				flags = append(flags, arg)
-			} else {
-				// Could be --flag value or a boolean flag.
-				// Known value-taking flags for simulate: --scenario
-				flagName := strings.TrimLeft(arg, "-")
-				if flagName == "scenario" && i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
-					flags = append(flags, arg, args[i+1])
-					i++
-				} else {
-					flags = append(flags, arg)
-				}
-			}
-		} else {
-			positional = append(positional, arg)
-		}
+	for i := 0; i < len(args); {
+		i += classifyArg(args, i, &flags, &positional)
 	}
 	return append(flags, positional...)
+}
+
+// parseSingleFileArg is a helper for commands that take a single file argument
+// with no extra flags. Returns the file path and ExitCode(-1) on success, or
+// empty string and an error exit code on failure.
+func parseSingleFileArg(name, usage string, args []string, stderr io.Writer) (string, ExitCode) {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	if err := fs.Parse(args); err != nil {
+		return "", ExitUsageError
+	}
+	if fs.NArg() < 1 {
+		fmt.Fprintln(stderr, usage)
+		return "", ExitUsageError
+	}
+	return fs.Arg(0), ExitCode(-1)
+}
+
+// parseFile reads and parses a .dip file, returning the workflow or an error.
+func parseFile(path string) (*ir.Workflow, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	p := parser.NewParser(string(data), path)
+	return p.Parse()
 }
 
 // loadWorkflow reads a file and parses it to IR. It auto-detects .dot vs .dip

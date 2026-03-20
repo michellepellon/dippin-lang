@@ -46,31 +46,17 @@ func Lint(w *ir.Workflow) Result {
 // (have a non-nil Condition), meaning there is no guaranteed path to it.
 func lintConditionalReachability(w *ir.Workflow) []Diagnostic {
 	var diags []Diagnostic
-
-	// Build a map of incoming edges per node.
-	incoming := make(map[string][]*ir.Edge)
-	for _, e := range w.Edges {
-		incoming[e.To] = append(incoming[e.To], e)
-	}
+	incoming := buildIncomingEdgeMap(w)
 
 	for _, n := range w.Nodes {
-		// Start node is always reachable by definition.
 		if n.ID == w.Start {
 			continue
 		}
 		edges := incoming[n.ID]
 		if len(edges) == 0 {
-			// No incoming edges at all — DIP004 handles this.
 			continue
 		}
-		allConditional := true
-		for _, e := range edges {
-			if e.Condition == nil {
-				allConditional = false
-				break
-			}
-		}
-		if allConditional {
+		if allEdgesConditional(edges) {
 			diags = append(diags, Diagnostic{
 				Code:     DIP101,
 				Severity: SeverityWarning,
@@ -81,6 +67,25 @@ func lintConditionalReachability(w *ir.Workflow) []Diagnostic {
 		}
 	}
 	return diags
+}
+
+// buildIncomingEdgeMap builds a map of incoming edges per node.
+func buildIncomingEdgeMap(w *ir.Workflow) map[string][]*ir.Edge {
+	incoming := make(map[string][]*ir.Edge)
+	for _, e := range w.Edges {
+		incoming[e.To] = append(incoming[e.To], e)
+	}
+	return incoming
+}
+
+// allEdgesConditional returns true if every edge has a non-nil Condition.
+func allEdgesConditional(edges []*ir.Edge) bool {
+	for _, e := range edges {
+		if e.Condition == nil {
+			return false
+		}
+	}
+	return true
 }
 
 // lintDefaultEdge checks DIP102: nodes that have outgoing conditional edges
@@ -94,19 +99,7 @@ func lintDefaultEdge(w *ir.Workflow) []Diagnostic {
 		if len(outgoing) == 0 {
 			continue
 		}
-
-		hasConditional := false
-		hasUnconditional := false
-		for _, e := range outgoing {
-			if e.Condition != nil {
-				hasConditional = true
-			} else {
-				hasUnconditional = true
-			}
-		}
-
-		// Only flag if there are conditional edges but no unconditional fallback.
-		if hasConditional && !hasUnconditional {
+		if hasMissingDefault(outgoing) {
 			diags = append(diags, Diagnostic{
 				Code:     DIP102,
 				Severity: SeverityWarning,
@@ -119,45 +112,77 @@ func lintDefaultEdge(w *ir.Workflow) []Diagnostic {
 	return diags
 }
 
+// hasMissingDefault returns true if edges contain conditional edges but no unconditional one.
+func hasMissingDefault(edges []*ir.Edge) bool {
+	hasConditional := false
+	hasUnconditional := false
+	for _, e := range edges {
+		if e.Condition != nil {
+			hasConditional = true
+		} else {
+			hasUnconditional = true
+		}
+	}
+	return hasConditional && !hasUnconditional
+}
+
 // lintOverlappingConditions checks DIP103: multiple edges from the same node
 // with conditions that compare the same variable to the same value using "=".
 // This indicates contradictory or duplicated routing logic.
 func lintOverlappingConditions(w *ir.Workflow) []Diagnostic {
 	var diags []Diagnostic
 
-	// Group edges by source node.
+	edgesBySource := groupConditionalEdgesBySource(w)
+	for from, edges := range edgesBySource {
+		diags = append(diags, findOverlaps(from, edges)...)
+	}
+	return diags
+}
+
+// groupConditionalEdgesBySource groups edges with conditions by their source node.
+func groupConditionalEdgesBySource(w *ir.Workflow) map[string][]*ir.Edge {
 	edgesBySource := make(map[string][]*ir.Edge)
 	for _, e := range w.Edges {
 		if e.Condition != nil {
 			edgesBySource[e.From] = append(edgesBySource[e.From], e)
 		}
 	}
+	return edgesBySource
+}
 
-	for from, edges := range edgesBySource {
-		// Extract top-level equality comparisons from each edge condition.
-		type condKey struct {
-			variable string
-			op       string
-			value    string
-		}
+// condKey identifies a unique condition comparison.
+type condKey struct {
+	variable string
+	op       string
+	value    string
+}
 
-		seen := make(map[condKey]*ir.Edge)
-		for _, e := range edges {
-			comparisons := extractComparisons(e.Condition.Parsed)
-			for _, cmp := range comparisons {
-				key := condKey{variable: cmp.Variable, op: cmp.Op, value: cmp.Value}
-				if first, ok := seen[key]; ok {
-					diags = append(diags, Diagnostic{
-						Code:     DIP103,
-						Severity: SeverityWarning,
-						Message:  fmt.Sprintf("node %q has overlapping conditions: edges to %q and %q both check %s %s %s", from, first.To, e.To, cmp.Variable, cmp.Op, cmp.Value),
-						Location: e.Source,
-						Help:     "review the conditions to ensure they route to different targets for different states",
-					})
-				} else {
-					seen[key] = e
-				}
-			}
+// findOverlaps detects duplicate condition comparisons among edges from the same node.
+func findOverlaps(from string, edges []*ir.Edge) []Diagnostic {
+	var diags []Diagnostic
+	seen := make(map[condKey]*ir.Edge)
+	for _, e := range edges {
+		comparisons := extractComparisons(e.Condition.Parsed)
+		diags = append(diags, checkComparisonOverlaps(from, e, comparisons, seen)...)
+	}
+	return diags
+}
+
+// checkComparisonOverlaps checks a set of comparisons against previously seen ones.
+func checkComparisonOverlaps(from string, e *ir.Edge, comparisons []ir.CondCompare, seen map[condKey]*ir.Edge) []Diagnostic {
+	var diags []Diagnostic
+	for _, cmp := range comparisons {
+		key := condKey{variable: cmp.Variable, op: cmp.Op, value: cmp.Value}
+		if first, ok := seen[key]; ok {
+			diags = append(diags, Diagnostic{
+				Code:     DIP103,
+				Severity: SeverityWarning,
+				Message:  fmt.Sprintf("node %q has overlapping conditions: edges to %q and %q both check %s %s %s", from, first.To, e.To, cmp.Variable, cmp.Op, cmp.Value),
+				Location: e.Source,
+				Help:     "review the conditions to ensure they route to different targets for different states",
+			})
+		} else {
+			seen[key] = e
 		}
 	}
 	return diags
@@ -166,21 +191,23 @@ func lintOverlappingConditions(w *ir.Workflow) []Diagnostic {
 // extractComparisons recursively extracts all CondCompare nodes from a
 // condition expression tree. This flattens AND/OR/NOT to find the leaf comparisons.
 func extractComparisons(expr ir.ConditionExpr) []ir.CondCompare {
-	if expr == nil {
-		return nil
-	}
 	switch e := expr.(type) {
 	case ir.CondCompare:
 		return []ir.CondCompare{e}
 	case ir.CondAnd:
-		return append(extractComparisons(e.Left), extractComparisons(e.Right)...)
+		return extractBinaryComparisons(e.Left, e.Right)
 	case ir.CondOr:
-		return append(extractComparisons(e.Left), extractComparisons(e.Right)...)
+		return extractBinaryComparisons(e.Left, e.Right)
 	case ir.CondNot:
 		return extractComparisons(e.Inner)
 	default:
 		return nil
 	}
+}
+
+// extractBinaryComparisons extracts comparisons from both sides of a binary condition.
+func extractBinaryComparisons(left, right ir.ConditionExpr) []ir.CondCompare {
+	return append(extractComparisons(left), extractComparisons(right)...)
 }
 
 // lintUnboundedRetry checks DIP104: nodes with retry configuration that have
@@ -189,10 +216,7 @@ func extractComparisons(expr ir.ConditionExpr) []ir.CondCompare {
 func lintUnboundedRetry(w *ir.Workflow) []Diagnostic {
 	var diags []Diagnostic
 	for _, n := range w.Nodes {
-		r := n.Retry
-		// Only flag nodes that have some retry config but no bounds.
-		hasRetryConfig := r.Policy != "" || r.RetryTarget != ""
-		if hasRetryConfig && r.MaxRetries == 0 && r.FallbackTarget == "" {
+		if isUnboundedRetry(n.Retry) {
 			diags = append(diags, Diagnostic{
 				Code:     DIP104,
 				Severity: SeverityWarning,
@@ -205,59 +229,37 @@ func lintUnboundedRetry(w *ir.Workflow) []Diagnostic {
 	return diags
 }
 
+// isUnboundedRetry returns true if retry config exists but has no bounds.
+func isUnboundedRetry(r ir.RetryConfig) bool {
+	hasRetryConfig := r.Policy != "" || r.RetryTarget != ""
+	return hasRetryConfig && r.MaxRetries == 0 && r.FallbackTarget == ""
+}
+
 // lintSuccessPath checks DIP105: there must be at least one path from the
 // start node to the exit node using only non-restart edges. If no such path
 // exists, the workflow can never complete normally.
 func lintSuccessPath(w *ir.Workflow) []Diagnostic {
-	if w.Start == "" || w.Exit == "" {
-		return nil
-	}
-	if w.Node(w.Start) == nil || w.Node(w.Exit) == nil {
+	if !hasValidStartAndExit(w) {
 		return nil
 	}
 
-	// BFS from start, following only non-restart edges.
-	adj := make(map[string][]string)
-	for _, e := range w.Edges {
-		if !e.Restart {
-			adj[e.From] = append(adj[e.From], e.To)
-		}
-	}
-	for _, n := range w.Nodes {
-		switch cfg := n.Config.(type) {
-		case ir.ParallelConfig:
-			adj[n.ID] = append(adj[n.ID], cfg.Targets...)
-		case ir.FanInConfig:
-			for _, src := range cfg.Sources {
-				adj[src] = append(adj[src], n.ID)
-			}
-		}
-	}
+	adj := buildForwardAdjacency(w)
+	visited := bfsReachable(w.Start, adj)
 
-	visited := make(map[string]bool)
-	queue := []string{w.Start}
-	visited[w.Start] = true
-
-	for len(queue) > 0 {
-		curr := queue[0]
-		queue = queue[1:]
-		if curr == w.Exit {
-			return nil // Found a path.
-		}
-		for _, next := range adj[curr] {
-			if !visited[next] {
-				visited[next] = true
-				queue = append(queue, next)
-			}
-		}
+	if visited[w.Exit] {
+		return nil
 	}
-
 	return []Diagnostic{{
 		Code:     DIP105,
 		Severity: SeverityWarning,
 		Message:  fmt.Sprintf("no forward path from start node %q to exit node %q (excluding restart edges)", w.Start, w.Exit),
 		Help:     "ensure there is at least one non-restart path from start to exit",
 	}}
+}
+
+// hasValidStartAndExit returns true if the workflow has valid start and exit nodes.
+func hasValidStartAndExit(w *ir.Workflow) bool {
+	return w.Start != "" && w.Exit != "" && w.Node(w.Start) != nil && w.Node(w.Exit) != nil
 }
 
 // varRefPattern matches ${...} variable references in prompt text.
@@ -278,23 +280,30 @@ var knownNamespaces = map[string]bool{
 func lintUndefinedVariables(w *ir.Workflow) []Diagnostic {
 	var diags []Diagnostic
 	for _, n := range w.Nodes {
-		prompt := nodePrompt(n)
-		if prompt == "" {
-			continue
-		}
-		matches := varRefPattern.FindAllStringSubmatch(prompt, -1)
-		for _, m := range matches {
-			varRef := m[1] // The captured group inside ${...}
-			parts := strings.SplitN(varRef, ".", 2)
-			if len(parts) < 2 || !knownNamespaces[parts[0]] {
-				diags = append(diags, Diagnostic{
-					Code:     DIP106,
-					Severity: SeverityWarning,
-					Message:  fmt.Sprintf("node %q references undefined variable ${%s}", n.ID, varRef),
-					Location: n.Source,
-					Help:     fmt.Sprintf("use a namespaced variable like ${ctx.%s}, ${graph.%s}, or ${params.%s}", varRef, varRef, varRef),
-				})
-			}
+		diags = append(diags, checkNodeVarRefs(n)...)
+	}
+	return diags
+}
+
+// checkNodeVarRefs checks variable references in a single node's prompt.
+func checkNodeVarRefs(n *ir.Node) []Diagnostic {
+	prompt := nodePrompt(n)
+	if prompt == "" {
+		return nil
+	}
+	var diags []Diagnostic
+	matches := varRefPattern.FindAllStringSubmatch(prompt, -1)
+	for _, m := range matches {
+		varRef := m[1]
+		parts := strings.SplitN(varRef, ".", 2)
+		if len(parts) < 2 || !knownNamespaces[parts[0]] {
+			diags = append(diags, Diagnostic{
+				Code:     DIP106,
+				Severity: SeverityWarning,
+				Message:  fmt.Sprintf("node %q references undefined variable ${%s}", n.ID, varRef),
+				Location: n.Source,
+				Help:     fmt.Sprintf("use a namespaced variable like ${ctx.%s}, ${graph.%s}, or ${params.%s}", varRef, varRef, varRef),
+			})
 		}
 	}
 	return diags
@@ -304,13 +313,7 @@ func lintUndefinedVariables(w *ir.Workflow) []Diagnostic {
 // that are not referenced in any other node's reads:. These are dead outputs
 // that may indicate unused work.
 func lintUnusedWrites(w *ir.Workflow) []Diagnostic {
-	// Collect all reads across all nodes.
-	allReads := make(map[string]bool)
-	for _, n := range w.Nodes {
-		for _, key := range n.IO.Reads {
-			allReads[key] = true
-		}
-	}
+	allReads := collectAllReads(w)
 
 	var diags []Diagnostic
 	for _, n := range w.Nodes {
@@ -327,6 +330,17 @@ func lintUnusedWrites(w *ir.Workflow) []Diagnostic {
 		}
 	}
 	return diags
+}
+
+// collectAllReads gathers all read keys across all nodes.
+func collectAllReads(w *ir.Workflow) map[string]bool {
+	allReads := make(map[string]bool)
+	for _, n := range w.Nodes {
+		for _, key := range n.IO.Reads {
+			allReads[key] = true
+		}
+	}
+	return allReads
 }
 
 // knownModelProviders lists known valid model/provider combinations.
@@ -354,49 +368,59 @@ var knownModelProviders = map[string]map[string]bool{
 func lintModelProvider(w *ir.Workflow) []Diagnostic {
 	var diags []Diagnostic
 	for _, n := range w.Nodes {
-		cfg, ok := n.Config.(ir.AgentConfig)
-		if !ok {
-			continue
-		}
-
-		model := cfg.Model
-		provider := cfg.Provider
-
-		// Use workflow defaults as fallback.
-		if model == "" {
-			model = w.Defaults.Model
-		}
-		if provider == "" {
-			provider = w.Defaults.Provider
-		}
-
-		// Only check if both are specified.
-		if model == "" || provider == "" {
-			continue
-		}
-
-		providerModels, providerKnown := knownModelProviders[provider]
-		if !providerKnown {
-			diags = append(diags, Diagnostic{
-				Code:     DIP108,
-				Severity: SeverityWarning,
-				Message:  fmt.Sprintf("node %q uses unknown provider %q", n.ID, provider),
-				Location: n.Source,
-				Help:     fmt.Sprintf("known providers: %s", knownProviderList()),
-			})
-			continue
-		}
-		if !providerModels[model] {
-			diags = append(diags, Diagnostic{
-				Code:     DIP108,
-				Severity: SeverityWarning,
-				Message:  fmt.Sprintf("node %q uses unknown model %q for provider %q", n.ID, model, provider),
-				Location: n.Source,
-				Help:     fmt.Sprintf("known models for %s: %s", provider, knownModelList(provider)),
-			})
-		}
+		diags = append(diags, checkNodeModelProvider(w, n)...)
 	}
 	return diags
+}
+
+// checkNodeModelProvider validates the model/provider for a single node.
+func checkNodeModelProvider(w *ir.Workflow, n *ir.Node) []Diagnostic {
+	cfg, ok := n.Config.(ir.AgentConfig)
+	if !ok {
+		return nil
+	}
+	model, provider := resolveModelProvider(cfg, w)
+	if model == "" || provider == "" {
+		return nil
+	}
+	return validateModelProvider(n, model, provider)
+}
+
+// resolveModelProvider resolves model and provider using node config and workflow defaults.
+func resolveModelProvider(cfg ir.AgentConfig, w *ir.Workflow) (model, provider string) {
+	model = cfg.Model
+	provider = cfg.Provider
+	if model == "" {
+		model = w.Defaults.Model
+	}
+	if provider == "" {
+		provider = w.Defaults.Provider
+	}
+	return
+}
+
+// validateModelProvider checks if a model/provider combination is known.
+func validateModelProvider(n *ir.Node, model, provider string) []Diagnostic {
+	providerModels, providerKnown := knownModelProviders[provider]
+	if !providerKnown {
+		return []Diagnostic{{
+			Code:     DIP108,
+			Severity: SeverityWarning,
+			Message:  fmt.Sprintf("node %q uses unknown provider %q", n.ID, provider),
+			Location: n.Source,
+			Help:     fmt.Sprintf("known providers: %s", knownProviderList()),
+		}}
+	}
+	if !providerModels[model] {
+		return []Diagnostic{{
+			Code:     DIP108,
+			Severity: SeverityWarning,
+			Message:  fmt.Sprintf("node %q uses unknown model %q for provider %q", n.ID, model, provider),
+			Location: n.Source,
+			Help:     fmt.Sprintf("known models for %s: %s", provider, knownModelList(provider)),
+		}}
+	}
+	return nil
 }
 
 // knownProviderList returns a sorted comma-separated list of known providers.
@@ -513,27 +537,8 @@ func lintReadsWithoutUpstreamWrites(w *ir.Workflow) []Diagnostic {
 // buildForwardAdjacency builds a forward adjacency map for non-restart edges,
 // including implicit edges from parallel and fan_in nodes.
 func buildForwardAdjacency(w *ir.Workflow) map[string][]string {
-	adj := make(map[string][]string)
-
-	// Add explicit edges (non-restart only)
-	for _, e := range w.Edges {
-		if !e.Restart {
-			adj[e.From] = append(adj[e.From], e.To)
-		}
-	}
-
-	// Add implicit edges from parallel/fan_in nodes
-	for _, n := range w.Nodes {
-		switch cfg := n.Config.(type) {
-		case ir.ParallelConfig:
-			adj[n.ID] = append(adj[n.ID], cfg.Targets...)
-		case ir.FanInConfig:
-			for _, src := range cfg.Sources {
-				adj[src] = append(adj[src], n.ID)
-			}
-		}
-	}
-
+	adj := buildNonRestartAdjacency(w)
+	addParallelFanInEdges(adj, w)
 	return adj
 }
 
@@ -544,49 +549,60 @@ func computeAvailableWrites(w *ir.Workflow, adj map[string][]string) map[string]
 	queue := findRootNodes(w, inDegree)
 	available := initializeAvailable(w)
 
-	// BFS traversal in topological order
 	for len(queue) > 0 {
 		curr := queue[0]
 		queue = queue[1:]
-
-		// Add this node's writes to available set
-		if n := w.Node(curr); n != nil {
-			for _, key := range n.IO.Writes {
-				available[curr][key] = true
-			}
-		}
-
-		// Propagate to successors
-		for _, next := range adj[curr] {
-			propagateKeys(available, curr, next)
-			inDegree[next]--
-			if inDegree[next] == 0 {
-				queue = append(queue, next)
-			}
-		}
+		addNodeWrites(w, available, curr)
+		queue = propagateAndEnqueue(adj, available, inDegree, curr, queue)
 	}
 
 	return available
+}
+
+// addNodeWrites adds a node's write keys to its available set.
+func addNodeWrites(w *ir.Workflow, available map[string]map[string]bool, nodeID string) {
+	if n := w.Node(nodeID); n != nil {
+		for _, key := range n.IO.Writes {
+			available[nodeID][key] = true
+		}
+	}
+}
+
+// propagateAndEnqueue propagates available keys to successors and enqueues those with zero in-degree.
+func propagateAndEnqueue(adj map[string][]string, available map[string]map[string]bool, inDegree map[string]int, curr string, queue []string) []string {
+	for _, next := range adj[curr] {
+		propagateKeys(available, curr, next)
+		inDegree[next]--
+		if inDegree[next] == 0 {
+			queue = append(queue, next)
+		}
+	}
+	return queue
 }
 
 // computeInDegrees calculates the in-degree for each node considering
 // both explicit edges and implicit parallel/fan_in edges.
 func computeInDegrees(w *ir.Workflow, adj map[string][]string) map[string]int {
 	inDegree := make(map[string]int)
-
-	// Initialize all nodes with in-degree 0
 	for _, n := range w.Nodes {
 		inDegree[n.ID] = 0
 	}
+	countExplicitInDegrees(w, inDegree)
+	countImplicitInDegrees(w, inDegree)
+	return inDegree
+}
 
-	// Count incoming edges
+// countExplicitInDegrees counts in-degrees from non-restart edges.
+func countExplicitInDegrees(w *ir.Workflow, inDegree map[string]int) {
 	for _, e := range w.Edges {
 		if !e.Restart {
 			inDegree[e.To]++
 		}
 	}
+}
 
-	// Count parallel/fan_in incoming edges
+// countImplicitInDegrees counts in-degrees from parallel/fan_in implicit edges.
+func countImplicitInDegrees(w *ir.Workflow, inDegree map[string]int) {
 	for _, n := range w.Nodes {
 		switch cfg := n.Config.(type) {
 		case ir.ParallelConfig:
@@ -597,8 +613,6 @@ func computeInDegrees(w *ir.Workflow, adj map[string][]string) map[string]int {
 			inDegree[n.ID] += len(cfg.Sources)
 		}
 	}
-
-	return inDegree
 }
 
 // findRootNodes returns all nodes with in-degree 0 (entry points for traversal).
@@ -661,18 +675,27 @@ var validRetryPolicies = map[string]bool{
 // lintRetryPolicy checks DIP113: retry_policy must be one of the known policy names.
 func lintRetryPolicy(w *ir.Workflow) []Diagnostic {
 	var diags []Diagnostic
+	diags = append(diags, checkDefaultRetryPolicy(w)...)
+	diags = append(diags, checkNodeRetryPolicies(w)...)
+	return diags
+}
 
-	// Check workflow default.
+// checkDefaultRetryPolicy checks the workflow-level default retry policy.
+func checkDefaultRetryPolicy(w *ir.Workflow) []Diagnostic {
 	if p := w.Defaults.RetryPolicy; p != "" && !validRetryPolicies[p] {
-		diags = append(diags, Diagnostic{
+		return []Diagnostic{{
 			Code:     DIP113,
 			Severity: SeverityWarning,
 			Message:  fmt.Sprintf("workflow default retry_policy %q is not a recognized policy name", p),
 			Help:     "valid policies: standard, aggressive, patient, linear, none",
-		})
+		}}
 	}
+	return nil
+}
 
-	// Check per-node.
+// checkNodeRetryPolicies checks per-node retry policies.
+func checkNodeRetryPolicies(w *ir.Workflow) []Diagnostic {
+	var diags []Diagnostic
 	for _, n := range w.Nodes {
 		if p := n.Retry.Policy; p != "" && !validRetryPolicies[p] {
 			diags = append(diags, Diagnostic{
@@ -700,18 +723,27 @@ var validFidelityLevels = map[string]bool{
 // lintFidelity checks DIP114: fidelity must be one of the known levels.
 func lintFidelity(w *ir.Workflow) []Diagnostic {
 	var diags []Diagnostic
+	diags = append(diags, checkDefaultFidelity(w)...)
+	diags = append(diags, checkNodeFidelity(w)...)
+	return diags
+}
 
-	// Check workflow default.
+// checkDefaultFidelity checks the workflow-level default fidelity.
+func checkDefaultFidelity(w *ir.Workflow) []Diagnostic {
 	if f := w.Defaults.Fidelity; f != "" && !validFidelityLevels[f] {
-		diags = append(diags, Diagnostic{
+		return []Diagnostic{{
 			Code:     DIP114,
 			Severity: SeverityWarning,
 			Message:  fmt.Sprintf("workflow default fidelity %q is not a recognized level", f),
 			Help:     "valid levels: full, summary:high, summary:medium, summary:low, compact, truncate",
-		})
+		}}
 	}
+	return nil
+}
 
-	// Check per-node.
+// checkNodeFidelity checks per-node fidelity levels.
+func checkNodeFidelity(w *ir.Workflow) []Diagnostic {
+	var diags []Diagnostic
 	for _, n := range w.Nodes {
 		cfg, ok := n.Config.(ir.AgentConfig)
 		if !ok {
@@ -736,11 +768,7 @@ func lintFidelity(w *ir.Workflow) []Diagnostic {
 func lintGoalGateFallback(w *ir.Workflow) []Diagnostic {
 	var diags []Diagnostic
 	for _, n := range w.Nodes {
-		cfg, ok := n.Config.(ir.AgentConfig)
-		if !ok || !cfg.GoalGate {
-			continue
-		}
-		if n.Retry.RetryTarget == "" && n.Retry.FallbackTarget == "" {
+		if needsGoalGateFallback(n) {
 			diags = append(diags, Diagnostic{
 				Code:     DIP115,
 				Severity: SeverityWarning,
@@ -751,6 +779,15 @@ func lintGoalGateFallback(w *ir.Workflow) []Diagnostic {
 		}
 	}
 	return diags
+}
+
+// needsGoalGateFallback returns true if a node has goal_gate but no recovery path.
+func needsGoalGateFallback(n *ir.Node) bool {
+	cfg, ok := n.Config.(ir.AgentConfig)
+	if !ok || !cfg.GoalGate {
+		return false
+	}
+	return n.Retry.RetryTarget == "" && n.Retry.FallbackTarget == ""
 }
 
 // nodePrompt extracts the prompt text from a node if it has one.

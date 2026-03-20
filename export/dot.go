@@ -37,35 +37,16 @@ type ExportOptions struct {
 func ExportDOT(w *ir.Workflow, opts ExportOptions) string {
 	var b strings.Builder
 
-	rankDir := opts.RankDir
-	if rankDir == "" {
-		rankDir = "TB"
-	}
+	writeDOTHeader(&b, w, opts)
 
-	graphName := w.Name
-	if graphName == "" {
-		graphName = "workflow"
-	}
+	execOrder := buildExecOrder(opts.ExecutionPath)
 
-	b.WriteString(fmt.Sprintf("digraph %s {\n", dotID(graphName)))
-	b.WriteString(fmt.Sprintf("  rankdir=%s;\n", rankDir))
-	b.WriteString("  node [fontname=\"Helvetica\"];\n")
-	b.WriteString("  edge [fontname=\"Helvetica\"];\n")
-
-	// Build execution order map once if path is provided.
-	execOrder := make(map[string][]int)
-	for i, id := range opts.ExecutionPath {
-		execOrder[id] = append(execOrder[id], i+1)
-	}
-
-	// Emit nodes.
 	for _, n := range w.Nodes {
 		writeNodeDOT(&b, n, w, opts, execOrder)
 	}
 
 	b.WriteByte('\n')
 
-	// Emit edges.
 	for _, e := range w.Edges {
 		writeEdgeDOT(&b, e)
 	}
@@ -74,27 +55,50 @@ func ExportDOT(w *ir.Workflow, opts ExportOptions) string {
 	return b.String()
 }
 
-// nodeShape maps a NodeKind to the corresponding DOT shape attribute.
+// writeDOTHeader writes the digraph opening and global attributes.
+func writeDOTHeader(b *strings.Builder, w *ir.Workflow, opts ExportOptions) {
+	rankDir := opts.RankDir
+	if rankDir == "" {
+		rankDir = "TB"
+	}
+	graphName := w.Name
+	if graphName == "" {
+		graphName = "workflow"
+	}
+	b.WriteString(fmt.Sprintf("digraph %s {\n", dotID(graphName)))
+	b.WriteString(fmt.Sprintf("  rankdir=%s;\n", rankDir))
+	b.WriteString("  node [fontname=\"Helvetica\"];\n")
+	b.WriteString("  edge [fontname=\"Helvetica\"];\n")
+}
+
+// buildExecOrder builds a map from node ID to execution order indices.
+func buildExecOrder(path []string) map[string][]int {
+	execOrder := make(map[string][]int)
+	for i, id := range path {
+		execOrder[id] = append(execOrder[id], i+1)
+	}
+	return execOrder
+}
+
+// nodeShapes maps NodeKind to the corresponding DOT shape attribute.
 // Per §15: agent→box, human→hexagon, tool→parallelogram,
 // parallel→component, fan_in→tripleoctagon, subgraph→tab.
-// Start and exit nodes override to Mdiamond and Msquare respectively.
+var nodeShapes = map[ir.NodeKind]string{
+	ir.NodeAgent:    "box",
+	ir.NodeHuman:    "hexagon",
+	ir.NodeTool:     "parallelogram",
+	ir.NodeParallel: "component",
+	ir.NodeFanIn:    "tripleoctagon",
+	ir.NodeSubgraph: "tab",
+}
+
+// nodeShape returns the DOT shape for a given NodeKind.
+// Start and exit nodes override the kind-based shape elsewhere.
 func nodeShape(kind ir.NodeKind) string {
-	switch kind {
-	case ir.NodeAgent:
-		return "box"
-	case ir.NodeHuman:
-		return "hexagon"
-	case ir.NodeTool:
-		return "parallelogram"
-	case ir.NodeParallel:
-		return "component"
-	case ir.NodeFanIn:
-		return "tripleoctagon"
-	case ir.NodeSubgraph:
-		return "tab"
-	default:
-		return "box"
+	if s, ok := nodeShapes[kind]; ok {
+		return s
 	}
+	return "box"
 }
 
 // writeNodeDOT emits a single DOT node statement.
@@ -115,35 +119,39 @@ func writeNodeDOT(b *strings.Builder, n *ir.Node, w *ir.Workflow, opts ExportOpt
 // buildBaseNodeAttrs creates the base attributes for a node (shape, label, execution order).
 func buildBaseNodeAttrs(n *ir.Node, w *ir.Workflow, order map[string][]int) map[string]string {
 	attrs := make(map[string]string)
+	attrs["shape"] = resolveNodeShape(n, w)
+	attrs["label"] = resolveNodeLabel(n, order, attrs)
+	return attrs
+}
 
-	// Shape: start and exit override the kind-based shape.
+// resolveNodeShape returns the DOT shape for a node, with start/exit overrides.
+func resolveNodeShape(n *ir.Node, w *ir.Workflow) string {
 	if n.ID == w.Start {
-		attrs["shape"] = "Mdiamond"
-	} else if n.ID == w.Exit {
-		attrs["shape"] = "Msquare"
-	} else {
-		attrs["shape"] = nodeShape(n.Kind)
+		return "Mdiamond"
 	}
+	if n.ID == w.Exit {
+		return "Msquare"
+	}
+	return nodeShape(n.Kind)
+}
 
-	// Label: use the human-readable label if set, otherwise the node ID.
+// resolveNodeLabel returns the display label, annotated with execution order if applicable.
+func resolveNodeLabel(n *ir.Node, order map[string][]int, attrs map[string]string) string {
 	label := n.Label
 	if label == "" {
 		label = n.ID
 	}
-
-	// Annotate label with execution order if part of the path.
-	if ids, ok := order[n.ID]; ok {
-		var orderStrs []string
-		for _, idx := range ids {
-			orderStrs = append(orderStrs, fmt.Sprintf("%d", idx))
-		}
-		label = fmt.Sprintf("[%s] %s", strings.Join(orderStrs, ","), label)
-		attrs["style"] = "bold,filled"
-		attrs["fillcolor"] = "#e0f0ff"
+	ids, ok := order[n.ID]
+	if !ok {
+		return label
 	}
-	attrs["label"] = label
-
-	return attrs
+	var orderStrs []string
+	for _, idx := range ids {
+		orderStrs = append(orderStrs, fmt.Sprintf("%d", idx))
+	}
+	attrs["style"] = "bold,filled"
+	attrs["fillcolor"] = "#e0f0ff"
+	return fmt.Sprintf("[%s] %s", strings.Join(orderStrs, ","), label)
 }
 
 // applyGoalGateHighlight highlights goal gate nodes if enabled.
@@ -156,6 +164,13 @@ func applyGoalGateHighlight(attrs map[string]string, n *ir.Node) {
 
 // applyConfigAttrs adds config-specific attributes to the node.
 func applyConfigAttrs(attrs map[string]string, cfg interface{}) {
+	if !applyPrimaryConfigAttrs(attrs, cfg) {
+		applyStructuralConfigAttrs(attrs, cfg)
+	}
+}
+
+// applyPrimaryConfigAttrs handles agent, tool, and human configs. Returns true if matched.
+func applyPrimaryConfigAttrs(attrs map[string]string, cfg interface{}) bool {
 	switch c := cfg.(type) {
 	case ir.AgentConfig:
 		applyAgentAttrs(attrs, c)
@@ -163,6 +178,15 @@ func applyConfigAttrs(attrs map[string]string, cfg interface{}) {
 		applyToolAttrs(attrs, c)
 	case ir.HumanConfig:
 		applyHumanAttrs(attrs, c)
+	default:
+		return false
+	}
+	return true
+}
+
+// applyStructuralConfigAttrs handles subgraph, parallel, and fan-in configs.
+func applyStructuralConfigAttrs(attrs map[string]string, cfg interface{}) {
+	switch c := cfg.(type) {
 	case ir.SubgraphConfig:
 		applySubgraphAttrs(attrs, c)
 	case ir.ParallelConfig:
@@ -233,35 +257,8 @@ func writeEdgeDOT(b *strings.Builder, e *ir.Edge) {
 	if e.Label != "" {
 		attrs["label"] = e.Label
 	}
-
-	if e.Condition != nil {
-		var condStr string
-		if e.Condition.Parsed != nil {
-			condStr = formatCondition(e.Condition.Parsed)
-		} else {
-			condStr = e.Condition.Raw
-		}
-		if condStr != "" {
-			// Lower namespaced variables to DOT-compatible format:
-			// ctx.outcome → outcome (Tracker resolves bare keys from context)
-			condStr = lowerConditionNamespaces(condStr)
-			// If there's no separate label, use the condition text as the edge label.
-			if e.Label == "" {
-				attrs["label"] = condStr
-			}
-			attrs["condition"] = condStr
-		}
-	}
-
-	if e.Weight != 0 {
-		attrs["weight"] = fmt.Sprintf("%d", e.Weight)
-	}
-
-	if e.Restart {
-		attrs["restart"] = "true"
-		// Visual hint: restart edges are dashed.
-		attrs["style"] = "dashed"
-	}
+	addEdgeConditionAttrs(attrs, e)
+	addEdgeWeightAndRestart(attrs, e)
 
 	b.WriteString(fmt.Sprintf("  %s -> %s", dotID(e.From), dotID(e.To)))
 	if len(attrs) > 0 {
@@ -269,6 +266,44 @@ func writeEdgeDOT(b *strings.Builder, e *ir.Edge) {
 		b.WriteString(formatDOTAttrs(attrs))
 	}
 	b.WriteString(";\n")
+}
+
+// addEdgeConditionAttrs resolves the condition string and adds it to attrs.
+func addEdgeConditionAttrs(attrs map[string]string, e *ir.Edge) {
+	if e.Condition == nil {
+		return
+	}
+	condStr := resolveConditionStr(e.Condition)
+	if condStr == "" {
+		return
+	}
+	// Lower namespaced variables to DOT-compatible format:
+	// ctx.outcome → outcome (Tracker resolves bare keys from context)
+	condStr = lowerConditionNamespaces(condStr)
+	// If there's no separate label, use the condition text as the edge label.
+	if e.Label == "" {
+		attrs["label"] = condStr
+	}
+	attrs["condition"] = condStr
+}
+
+// resolveConditionStr returns the formatted or raw condition string.
+func resolveConditionStr(cond *ir.Condition) string {
+	if cond.Parsed != nil {
+		return formatCondition(cond.Parsed)
+	}
+	return cond.Raw
+}
+
+// addEdgeWeightAndRestart adds weight and restart attributes to attrs.
+func addEdgeWeightAndRestart(attrs map[string]string, e *ir.Edge) {
+	if e.Weight != 0 {
+		attrs["weight"] = fmt.Sprintf("%d", e.Weight)
+	}
+	if e.Restart {
+		attrs["restart"] = "true"
+		attrs["style"] = "dashed"
+	}
 }
 
 // formatDOTAttrs renders a map of DOT attributes as a bracketed list,
@@ -307,19 +342,31 @@ func dotID(s string) string {
 
 // isSimpleDOTID returns true if s is a valid unquoted DOT identifier.
 func isSimpleDOTID(s string) bool {
-	if len(s) == 0 {
-		return false
-	}
-	// Must not start with a digit.
-	if s[0] >= '0' && s[0] <= '9' {
+	if len(s) == 0 || isDigit(s[0]) {
 		return false
 	}
 	for _, ch := range s {
-		if !((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_') {
+		if !isValidDOTChar(ch) {
 			return false
 		}
 	}
 	return true
+}
+
+// isDigit returns true if ch is an ASCII digit.
+func isDigit(ch byte) bool {
+	return ch >= '0' && ch <= '9'
+}
+
+// isValidDOTChar returns true if ch is valid in an unquoted DOT identifier
+// (alphanumeric or underscore).
+func isValidDOTChar(ch rune) bool {
+	return isAlpha(ch) || (ch >= '0' && ch <= '9') || ch == '_'
+}
+
+// isAlpha returns true if ch is an ASCII letter.
+func isAlpha(ch rune) bool {
+	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
 }
 
 // dotQuote wraps a string in double quotes, escaping internal quotes and
@@ -328,29 +375,37 @@ func dotQuote(s string) string {
 	var b strings.Builder
 	b.WriteByte('"')
 	for i := 0; i < len(s); i++ {
-		ch := s[i]
-		switch ch {
-		case '"':
-			b.WriteString(`\"`)
-		case '\\':
-			// Check if this backslash is part of a DOT escape sequence.
-			if i+1 < len(s) {
-				next := s[i+1]
-				if next == 'n' || next == 'l' || next == 'r' {
-					// Preserve DOT escape sequences.
-					b.WriteByte('\\')
-					b.WriteByte(next)
-					i++
-					continue
-				}
-			}
-			b.WriteString(`\\`)
-		default:
-			b.WriteByte(ch)
-		}
+		i = dotQuoteChar(&b, s, i)
 	}
 	b.WriteByte('"')
 	return b.String()
+}
+
+// dotQuoteChar writes the character at s[i] to b, handling escaping.
+// Returns the index to use for the next iteration (advanced past escape sequences).
+func dotQuoteChar(b *strings.Builder, s string, i int) int {
+	ch := s[i]
+	if ch == '"' {
+		b.WriteString(`\"`)
+		return i
+	}
+	if ch != '\\' {
+		b.WriteByte(ch)
+		return i
+	}
+	// Check if this backslash is part of a DOT escape sequence.
+	if i+1 < len(s) && isDOTEscapeChar(s[i+1]) {
+		b.WriteByte('\\')
+		b.WriteByte(s[i+1])
+		return i + 1
+	}
+	b.WriteString(`\\`)
+	return i
+}
+
+// isDOTEscapeChar returns true if ch follows a backslash in a DOT escape sequence.
+func isDOTEscapeChar(ch byte) bool {
+	return ch == 'n' || ch == 'l' || ch == 'r'
 }
 
 // escapeNewlines replaces literal newlines with the DOT \n escape for
@@ -383,31 +438,34 @@ func formatCondition(expr ir.ConditionExpr) string {
 func formatConditionExpr(expr ir.ConditionExpr, parentPrec int) string {
 	switch e := expr.(type) {
 	case ir.CondCompare:
-		// Strip ctx. prefix for DOT-compatible output.
-		variable := strings.TrimPrefix(e.Variable, "ctx.")
-		return fmt.Sprintf("%s %s %s", variable, e.Op, e.Value)
+		return formatDOTCompare(e)
 	case ir.CondAnd:
-		s := fmt.Sprintf("%s and %s",
-			formatConditionExpr(e.Left, precAnd),
-			formatConditionExpr(e.Right, precAnd))
-		if parentPrec != 0 && parentPrec != precAnd {
-			return "(" + s + ")"
-		}
-		return s
+		return formatBinaryOp(e.Left, e.Right, "and", precAnd, parentPrec)
 	case ir.CondOr:
-		s := fmt.Sprintf("%s or %s",
-			formatConditionExpr(e.Left, precOr),
-			formatConditionExpr(e.Right, precOr))
-		if parentPrec != 0 && parentPrec != precOr {
-			return "(" + s + ")"
-		}
-		return s
+		return formatBinaryOp(e.Left, e.Right, "or", precOr, parentPrec)
 	case ir.CondNot:
-		inner := formatConditionExpr(e.Inner, precNot)
-		return "not " + inner
+		return "not " + formatConditionExpr(e.Inner, precNot)
 	default:
 		return ""
 	}
+}
+
+// formatDOTCompare formats a compare expression, stripping the ctx. prefix.
+func formatDOTCompare(e ir.CondCompare) string {
+	variable := strings.TrimPrefix(e.Variable, "ctx.")
+	return fmt.Sprintf("%s %s %s", variable, e.Op, e.Value)
+}
+
+// formatBinaryOp formats an and/or expression with optional parenthesization.
+func formatBinaryOp(left, right ir.ConditionExpr, op string, prec, parentPrec int) string {
+	s := fmt.Sprintf("%s %s %s",
+		formatConditionExpr(left, prec),
+		op,
+		formatConditionExpr(right, prec))
+	if parentPrec != 0 && parentPrec != prec {
+		return "(" + s + ")"
+	}
+	return s
 }
 
 // --- Duration formatting ---
@@ -416,7 +474,15 @@ func formatDuration(d time.Duration) string {
 	if d == 0 {
 		return "0s"
 	}
-	var parts []string
+	parts, d := appendDurationParts(nil, d)
+	if len(parts) == 0 {
+		return d.String()
+	}
+	return strings.Join(parts, "")
+}
+
+// appendDurationParts appends hours, minutes, and seconds components.
+func appendDurationParts(parts []string, d time.Duration) ([]string, time.Duration) {
 	if h := int(d.Hours()); h > 0 {
 		parts = append(parts, fmt.Sprintf("%dh", h))
 		d -= time.Duration(h) * time.Hour
@@ -428,10 +494,7 @@ func formatDuration(d time.Duration) string {
 	if s := int(d.Seconds()); s > 0 {
 		parts = append(parts, fmt.Sprintf("%ds", s))
 	}
-	if len(parts) == 0 {
-		return d.String()
-	}
-	return strings.Join(parts, "")
+	return parts, d
 }
 
 // sortStrings sorts a string slice in place. Avoids importing sort for this
