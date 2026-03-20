@@ -353,13 +353,13 @@ $ dippin simulate examples/ask_and_execute.dip
 Explore failure paths:
 
 ```sh
-$ dippin simulate workflow.dip --scenario outcome=fail
+dippin simulate workflow.dip --scenario outcome=fail
 ```
 
 Enumerate all possible paths through the graph:
 
 ```sh
-$ dippin simulate workflow.dip --all-paths
+dippin simulate workflow.dip --all-paths
 ```
 
 ## Editor Support
@@ -381,9 +381,9 @@ The [`examples/`](examples/) directory contains 15 workflows:
 | Example | Pattern |
 |---------|---------|
 | `ask_and_execute` | Multi-model parallel implementation with human approval gate |
-| `consensus_task` | Three-model consensus with cross-review |
+| `consensus_task` / `consensus_task_parity` | Three-model consensus with cross-review and parity variant |
 | `human_gate_showcase` | Human gate patterns (freeform, choice, approval) |
-| `megaplan` | Multi-phase sprint planning with orientation, drafting, Q&A |
+| `megaplan` / `megaplan_quality` | Multi-phase sprint planning with orientation, drafting, Q&A |
 | `semport` / `semport_thematic` | Semantic porting between codebases |
 | `sprint_exec` | Sprint execution with parallel implementation and review |
 | `vulnerability_analyzer` | Security analysis with static scanning |

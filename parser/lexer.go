@@ -373,9 +373,13 @@ func (l *Lexer) RawValueText(lineNum int) string {
 		return ""
 	}
 	val := strings.TrimSpace(line[colonIdx+1:])
-	// Strip inline comments: find # preceded by whitespace, outside quotes
-	val = stripComment(val)
-	return strings.TrimSpace(val)
+	// Strip inline comments, but only if the value doesn't start with #
+	// (e.g., a quoted value like `"#ff0000"` should not be stripped).
+	if len(val) > 0 && val[0] != '#' && val[0] != '"' {
+		val = stripComment(val)
+		val = strings.TrimSpace(val)
+	}
+	return val
 }
 
 func isAlphaNum(ch byte) bool {

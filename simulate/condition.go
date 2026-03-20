@@ -106,7 +106,7 @@ func (p *condParser) parseCompare() (ir.ConditionExpr, error) {
 
 	// Validate operator.
 	switch op {
-	case "=", "==", "!=", "contains", "startswith", "endswith", "in":
+	case "=", "==", "!=", "<", ">", "<=", ">=", "contains", "startswith", "endswith", "in":
 		// valid
 	default:
 		return nil, fmt.Errorf("unknown operator %q", op)
@@ -154,12 +154,31 @@ func tokenizeCondition(raw string) []string {
 			continue
 		}
 
-		// Regular token.
+		// Check for multi-char operators (before single-char).
+		if i+1 < len(raw) {
+			two := raw[i : i+2]
+			if two == "==" || two == "!=" || two == "<=" || two == ">=" {
+				tokens = append(tokens, two)
+				i += 2
+				continue
+			}
+		}
+		// Single-char operators.
+		if raw[i] == '=' || raw[i] == '<' || raw[i] == '>' || raw[i] == '!' {
+			tokens = append(tokens, string(raw[i]))
+			i++
+			continue
+		}
+
+		// Regular token (identifier, keyword, value).
 		start := i
-		for i < len(raw) && raw[i] != ' ' && raw[i] != '\t' {
+		for i < len(raw) && raw[i] != ' ' && raw[i] != '\t' &&
+			raw[i] != '=' && raw[i] != '!' && raw[i] != '<' && raw[i] != '>' {
 			i++
 		}
-		tokens = append(tokens, raw[start:i])
+		if i > start {
+			tokens = append(tokens, raw[start:i])
+		}
 	}
 	return tokens
 }
