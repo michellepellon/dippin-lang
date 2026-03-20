@@ -1,0 +1,15 @@
+# Binary
+dippin
+
+# Coverage
+cover.out
+cover_check.out
+
+# Temp test files
+test_*.dip
+ask_*.txt
+ask_*.json
+paths.jsonl
+
+# Tracker build artifacts
+.tracker/

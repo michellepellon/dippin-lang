@@ -1,0 +1,129 @@
+workflow EdgeCases
+  goal: "Stress test: parser edge cases that are syntactically valid but tricky"
+  start: A
+  exit: Z
+
+  defaults
+    fidelity: summary:medium
+    model: claude-sonnet-4-6
+    compaction: sliding-window
+    max_retries: 3
+    max_restarts: 5
+    restart_target: A
+    cache_tools: true
+
+  agent A
+    label: "Node with every agent field"
+    model: claude-opus-4-6
+    provider: anthropic
+    max_turns: 10
+    goal_gate: true
+    auto_status: true
+    reasoning_effort: high
+    fidelity: full:high
+    reads: ctx.input, ctx.config
+    writes: ctx.output, ctx.status
+    retry_policy: aggressive
+    max_retries: 5
+    retry_target: A
+    fallback_target: Z
+    prompt:
+      This prompt tests every feature at once.
+
+      It has multiple paragraphs with blank lines between them.
+
+      And here's a "quoted string" inside the prompt with 'single quotes' too.
+
+      Special chars: -> <- : # $ { } [ ] ( ) | & ; ` ~ @ % ^ * ? ! = < >
+
+      URLs: https://example.com:8443/path?query=value&other=123#fragment
+
+      Code block with Dippin-like syntax that should NOT be parsed:
+      workflow Fake
+        start: X
+        exit: Y
+        edges
+          X -> Y when ctx.a == "b"
+
+      End of prompt.
+
+  tool B
+    label: "Tool with timeout and complex command"
+    timeout: 120s
+    command:
+      #!/bin/bash
+      # This command has a comment that mentions prompt: and command:
+      # It also has workflow and agent and edges keywords
+      # And arrows -> <- and colons : everywhere
+
+      export WORKFLOW_NAME="EdgeCases"
+      export NODE_ID="B"
+
+      # Multi-line string with heredoc containing Dippin keywords
+      python3 -c "
+      import json
+      import sys
+
+      data = {
+          'workflow': 'not a real workflow',
+          'agent': 'not a real agent',
+          'edges': [{'from': 'A', 'to': 'B'}],
+          'prompt': '''
+          This is a multi-level nested string
+          with prompt: keyword and command: keyword
+          and start: and exit: too
+          ''',
+      }
+
+      # Arrow operators in Python
+      result = {'->': 'forward', '<-': 'backward'}
+      print(json.dumps(data, indent=2))
+      "
+
+  human C
+    label: "Human gate with quoted default"
+    mode: choice
+    default: "option with spaces"
+
+  agent D
+    label: "Agent with empty prompt"
+    prompt:
+
+  agent E
+    label: "Agent with single-line prompt containing colons"
+    prompt: "Review this: check status: pass/fail: done"
+
+  tool F
+    label: "Minimal tool"
+    command:
+      echo done
+
+  parallel G -> H, I, J
+
+  agent H
+    label: "Parallel Branch 1"
+    prompt: "Branch 1."
+
+  agent I
+    label: "Parallel Branch 2"
+    prompt: "Branch 2."
+
+  agent J
+    label: "Parallel Branch 3"
+    prompt: "Branch 3."
+
+  fan_in K <- H, I, J
+
+  agent Z
+    label: "Final"
+    prompt: "Complete."
+
+  edges
+    A -> B
+    B -> C when ctx.outcome == "success"
+    B -> D when ctx.outcome == "fail"
+    C -> E
+    D -> E
+    E -> F
+    F -> G
+    K -> Z

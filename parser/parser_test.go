@@ -107,3 +107,102 @@ func TestParseComplexWorkflow(t *testing.T) {
 		t.Errorf("prompt = %q, want it to contain 'Do A.' and 'More text.'", prompt)
 	}
 }
+
+func TestParseShellScriptCommand(t *testing.T) {
+	input := `workflow Build
+  goal: "Build"
+  start: Setup
+  exit: Done
+
+  tool Setup
+    command:
+      #!/bin/sh
+      set -eu
+      if [ -f go.mod ]; then
+        go build ./... 2>&1 || exit 1
+        go test ./... 2>&1
+      fi
+      if [ -f package.json ]; then
+        npm test 2>&1 || { echo "failed"; exit 1; }
+      fi
+      printf 'done'
+
+  agent Done
+    prompt: "Finish."
+
+  edges
+    Setup -> Done
+`
+	p := NewParser(input, "test.dip")
+	w, err := p.Parse()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(w.Nodes) != 2 {
+		t.Fatalf("nodes = %d, want 2", len(w.Nodes))
+	}
+
+	var toolNode *ir.Node
+	for _, n := range w.Nodes {
+		if n.Kind == ir.NodeTool {
+			toolNode = n
+			break
+		}
+	}
+	if toolNode == nil {
+		t.Fatal("tool node not found")
+	}
+
+	cmd := toolNode.Config.(ir.ToolConfig).Command
+	// Must preserve shell syntax verbatim
+	for _, want := range []string{
+		"#!/bin/sh",
+		"set -eu",
+		"if [ -f go.mod ]; then",
+		"  go build ./... 2>&1 || exit 1",
+		"fi",
+		`{ echo "failed"; exit 1; }`,
+		"printf 'done'",
+	} {
+		if !strings.Contains(cmd, want) {
+			t.Errorf("command missing %q\ngot:\n%s", want, cmd)
+		}
+	}
+}
+
+func TestParseColonInValue(t *testing.T) {
+	input := `workflow Test
+  goal: "Test"
+  start: A
+  exit: A
+
+  defaults
+    fidelity: summary:medium
+    max_retries: 3
+
+  agent A
+    fidelity: summary:high
+    prompt: "Do it."
+
+  edges
+    A -> A
+`
+	p := NewParser(input, "test.dip")
+	w, err := p.Parse()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if w.Defaults.Fidelity != "summary:medium" {
+		t.Errorf("defaults fidelity = %q, want %q", w.Defaults.Fidelity, "summary:medium")
+	}
+
+	if len(w.Nodes) != 1 {
+		t.Fatalf("nodes = %d, want 1", len(w.Nodes))
+	}
+	cfg := w.Nodes[0].Config.(ir.AgentConfig)
+	if cfg.Fidelity != "summary:high" {
+		t.Errorf("agent fidelity = %q, want %q", cfg.Fidelity, "summary:high")
+	}
+}

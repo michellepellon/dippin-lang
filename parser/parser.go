@@ -66,15 +66,15 @@ func (p *Parser) parseWorkflow() {
 			case "goal":
 				p.lexer.NextToken()
 				p.expect(TokenColon)
-				p.workflow.Goal = p.lexer.NextToken().Value
+				p.workflow.Goal = p.readFieldValue(t.Location.Line)
 			case "start":
 				p.lexer.NextToken()
 				p.expect(TokenColon)
-				p.workflow.Start = p.lexer.NextToken().Value
+				p.workflow.Start = p.readFieldValue(t.Location.Line)
 			case "exit":
 				p.lexer.NextToken()
 				p.expect(TokenColon)
-				p.workflow.Exit = p.lexer.NextToken().Value
+				p.workflow.Exit = p.readFieldValue(t.Location.Line)
 			case "defaults":
 				p.parseDefaults()
 			case "agent", "human", "tool", "subgraph":
@@ -110,7 +110,7 @@ func (p *Parser) parseDefaults() {
 			key := t.Value
 			p.lexer.NextToken()
 			p.expect(TokenColon)
-			val := p.lexer.NextToken().Value
+			val := p.readFieldValue(t.Location.Line)
 			switch key {
 			case "model":
 				p.workflow.Defaults.Model = val
@@ -173,23 +173,7 @@ func (p *Parser) parseNode(kind ir.NodeKind) {
 			key := t.Value
 			p.lexer.NextToken()
 			p.expect(TokenColon)
-			
-			// Handle multiline block if next token is newline then indent
-			var val string
-			if p.lexer.PeekToken().Type == TokenNewline {
-				p.lexer.NextToken()
-				if p.lexer.PeekToken().Type == TokenIndent {
-					val = p.parseMultilineBlock()
-				}
-			} else {
-				// Consume all tokens until newline for single-line field
-				var parts []string
-				for p.lexer.PeekToken().Type != TokenNewline && p.lexer.PeekToken().Type != TokenEOF {
-					parts = append(parts, p.lexer.NextToken().Value)
-				}
-				val = strings.Join(parts, " ")
-			}
-
+			val := p.readFieldValue(t.Location.Line)
 			p.applyNodeField(node, key, val)
 		} else {
 			p.lexer.NextToken()
@@ -199,41 +183,46 @@ func (p *Parser) parseNode(kind ir.NodeKind) {
 	p.workflow.Nodes = append(p.workflow.Nodes, node)
 }
 
-func (p *Parser) parseMultilineBlock() string {
-	p.lexer.NextToken() // Indent
-	var lines []string
-	// The lexer gives TokenNewline at the end of every line.
-	// But it doesn't give Tokens for the contents of the indented block unless we handle it?
-	// Actually, the lexer I wrote splits by lines and handles indentation.
-	// So inside an indent/outdent pair, we get multiple lines.
-	// Wait, my lexer gives tokens for each line.
-	// We need to collect all tokens until the matching Outdent.
-	
-	// Wait, the lexer gives tokens within a line.
-	// If it's a multiline block, it should probably be raw text.
-	// Let's reconsider the lexer.
-	// For multiline blocks, the parser might need to read raw lines.
-	
-	// Let's cheat a bit and collect all values from tokens until Outdent.
-	// This is not perfect because it loses formatting, but for a quick fix:
-	for p.lexer.PeekToken().Type != TokenOutdent && p.lexer.PeekToken().Type != TokenEOF {
-		t := p.lexer.NextToken()
-		if t.Type == TokenNewline {
-			lines = append(lines, "")
-		} else {
-			if len(lines) == 0 {
-				lines = append(lines, t.Value)
-			} else {
-				if lines[len(lines)-1] == "" {
-					lines[len(lines)-1] = t.Value
-				} else {
-					lines[len(lines)-1] += " " + t.Value // Reconstruct line
-				}
-			}
-		}
+// readFieldValue reads a field value, which may be:
+// - A raw block (multiline content detected by the lexer)
+// - A single-line value on the same line as the key
+// - A newline followed by a raw block (key: \n <indented block>)
+func (p *Parser) readFieldValue(lineNum int) string {
+	// If next token is a raw block, return it directly
+	if p.lexer.PeekToken().Type == TokenRawBlock {
+		return p.lexer.NextToken().Value
 	}
-	p.expect(TokenOutdent)
-	return strings.Join(lines, "\n")
+
+	// If next token is a newline, check for a raw block after it
+	if p.lexer.PeekToken().Type == TokenNewline {
+		// Save position to check ahead
+		p.lexer.NextToken() // consume newline
+		if p.lexer.PeekToken().Type == TokenRawBlock {
+			return p.lexer.NextToken().Value
+		}
+		// No raw block — this was a key: with empty value
+		return ""
+	}
+
+	// Single-line value: use raw extraction from the original input
+	// to preserve characters like colons that the lexer splits on.
+	raw := p.lexer.RawValueText(lineNum)
+
+	// Consume tokens until newline so the parser advances past this line
+	for p.lexer.PeekToken().Type != TokenNewline && p.lexer.PeekToken().Type != TokenEOF {
+		p.lexer.NextToken()
+	}
+
+	// Unquote if the raw value is a quoted string
+	if len(raw) >= 2 && raw[0] == '"' && raw[len(raw)-1] == '"' {
+		unquoted := raw[1 : len(raw)-1]
+		// Handle basic escape sequences
+		unquoted = strings.ReplaceAll(unquoted, `\"`, `"`)
+		unquoted = strings.ReplaceAll(unquoted, `\\`, `\`)
+		return unquoted
+	}
+
+	return raw
 }
 
 func (p *Parser) applyNodeField(n *ir.Node, key, val string) {
@@ -349,9 +338,9 @@ func (p *Parser) parseEdges() {
 		from := p.lexer.NextToken().Value
 		p.expect(TokenArrow)
 		to := p.lexer.NextToken().Value
-		
+
 		edge := &ir.Edge{From: from, To: to}
-		
+
 		// Parse edge attributes
 		for p.lexer.PeekToken().Type != TokenNewline && p.lexer.PeekToken().Type != TokenEOF {
 			attr := p.lexer.NextToken()
@@ -364,10 +353,14 @@ func (p *Parser) parseEdges() {
 					if pk.Value == "label" || pk.Value == "weight" || pk.Value == "restart" {
 						break
 					}
-					condRaw += p.lexer.NextToken().Value + " "
+					t := p.lexer.NextToken()
+					if t.Type == TokenLiteral {
+						condRaw += "\"" + t.Value + "\" "
+					} else {
+						condRaw += t.Value + " "
+					}
 				}
 				edge.Condition = &ir.Condition{Raw: strings.TrimSpace(condRaw)}
-				// In a real implementation, we would call a proper condition parser here.
 			case "label":
 				p.expect(TokenColon)
 				edge.Label = p.lexer.NextToken().Value

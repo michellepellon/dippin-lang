@@ -26,6 +26,10 @@ type ExportOptions struct {
 	// HighlightGoalGates applies a distinct fill color to nodes with
 	// GoalGate: true.
 	HighlightGoalGates bool
+
+	// ExecutionPath is an ordered list of node IDs visited during execution.
+	// If set, nodes on the path are highlighted and numbered.
+	ExecutionPath []string
 }
 
 // ExportDOT renders a workflow as a DOT language string.
@@ -91,6 +95,12 @@ func nodeShape(kind ir.NodeKind) string {
 func writeNodeDOT(b *strings.Builder, n *ir.Node, w *ir.Workflow, opts ExportOptions) {
 	attrs := make(map[string]string)
 
+	// Build execution order map if path is provided.
+	order := make(map[string][]int)
+	for i, id := range opts.ExecutionPath {
+		order[id] = append(order[id], i+1)
+	}
+
 	// Shape: start and exit override the kind-based shape.
 	if n.ID == w.Start {
 		attrs["shape"] = "Mdiamond"
@@ -101,11 +111,22 @@ func writeNodeDOT(b *strings.Builder, n *ir.Node, w *ir.Workflow, opts ExportOpt
 	}
 
 	// Label: use the human-readable label if set, otherwise the node ID.
-	if n.Label != "" {
-		attrs["label"] = n.Label
-	} else {
-		attrs["label"] = n.ID
+	label := n.Label
+	if label == "" {
+		label = n.ID
 	}
+
+	// Annotate label with execution order if part of the path.
+	if ids, ok := order[n.ID]; ok {
+		var orderStrs []string
+		for _, idx := range ids {
+			orderStrs = append(orderStrs, fmt.Sprintf("%d", idx))
+		}
+		label = fmt.Sprintf("[%s] %s", strings.Join(orderStrs, ","), label)
+		attrs["style"] = "bold,filled"
+		attrs["fillcolor"] = "#e0f0ff"
+	}
+	attrs["label"] = label
 
 	// Goal gate highlighting.
 	if opts.HighlightGoalGates {

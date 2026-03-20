@@ -127,6 +127,17 @@ func checkReachability(w *ir.Workflow) []Diagnostic {
 	for _, e := range w.Edges {
 		adj[e.From] = append(adj[e.From], e.To)
 	}
+	// Include implicit edges from parallel → targets and sources → fan_in. (REACH)
+	for _, n := range w.Nodes {
+		switch cfg := n.Config.(type) {
+		case ir.ParallelConfig:
+			adj[n.ID] = append(adj[n.ID], cfg.Targets...)
+		case ir.FanInConfig:
+			for _, src := range cfg.Sources {
+				adj[src] = append(adj[src], n.ID)
+			}
+		}
+	}
 
 	visited := make(map[string]bool)
 	queue := []string{w.Start}
@@ -171,6 +182,17 @@ func checkNoCycles(w *ir.Workflow) []Diagnostic {
 	for _, e := range w.Edges {
 		if !e.Restart {
 			adj[e.From] = append(adj[e.From], e.To)
+		}
+	}
+	// Include implicit edges from parallel → targets and sources → fan_in.
+	for _, n := range w.Nodes {
+		switch cfg := n.Config.(type) {
+		case ir.ParallelConfig:
+			adj[n.ID] = append(adj[n.ID], cfg.Targets...)
+		case ir.FanInConfig:
+			for _, src := range cfg.Sources {
+				adj[src] = append(adj[src], n.ID)
+			}
 		}
 	}
 
@@ -226,12 +248,22 @@ func checkNoCycles(w *ir.Workflow) []Diagnostic {
 // Given that we found an edge from → to where to is already gray (in the
 // current path), we walk parent pointers from "from" back to "to" to
 // reconstruct: to → ... → from → to.
+//
+// The loop is bounded by the total number of nodes to prevent infinite
+// iteration when the parent chain is incomplete (e.g. due to implicit
+// edges added for parallel/fan-in nodes that were never DFS-visited).
 func reconstructCycle(parent map[string]string, from, to string) []string {
 	path := []string{to}
 	curr := from
-	for curr != to {
+	seen := make(map[string]bool)
+	seen[to] = true
+	// Walk at most len(parent)+1 steps to guarantee termination.
+	maxSteps := len(parent) + 2
+	for curr != to && curr != "" && !seen[curr] && maxSteps > 0 {
+		seen[curr] = true
 		path = append(path, curr)
 		curr = parent[curr]
+		maxSteps--
 	}
 	path = append(path, to)
 	// Reverse so it reads: to → ... → from → to
