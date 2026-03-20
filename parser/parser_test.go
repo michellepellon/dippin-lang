@@ -361,3 +361,47 @@ func TestParseEdgeWithQuotedConditionValue(t *testing.T) {
 		t.Errorf("condition raw missing quoted value, got: %q", raw)
 	}
 }
+
+func TestParseComparisonOperators(t *testing.T) {
+	input := `workflow Test
+  goal: "Test"
+  start: A
+  exit: D
+
+  agent A
+    prompt: "A"
+  agent B
+    prompt: "B"
+  agent C
+    prompt: "C"
+  agent D
+    prompt: "D"
+
+  edges
+    A -> B when ctx.retries <= 3
+    A -> C when ctx.score >= 80
+    A -> D when ctx.count < 10
+`
+	p := NewParser(input, "test.dip")
+	w, err := p.Parse()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(w.Edges) != 3 {
+		t.Fatalf("edges = %d, want 3", len(w.Edges))
+	}
+	tests := []struct {
+		idx  int
+		want string
+	}{
+		{0, "<="},
+		{1, ">="},
+		{2, "<"},
+	}
+	for _, tt := range tests {
+		raw := w.Edges[tt.idx].Condition.Raw
+		if !strings.Contains(raw, tt.want) {
+			t.Errorf("edge %d condition missing %q, got: %q", tt.idx, tt.want, raw)
+		}
+	}
+}

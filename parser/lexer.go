@@ -338,6 +338,12 @@ func (l *Lexer) lexLine(line string, filename string) {
 			} else if strings.HasPrefix(line[i:], "==") {
 				l.tokens = append(l.tokens, Token{Type: TokenOperator, Value: "==", Location: loc})
 				i += 2
+			} else if strings.HasPrefix(line[i:], "<=") {
+				l.tokens = append(l.tokens, Token{Type: TokenOperator, Value: "<=", Location: loc})
+				i += 2
+			} else if strings.HasPrefix(line[i:], ">=") {
+				l.tokens = append(l.tokens, Token{Type: TokenOperator, Value: ">=", Location: loc})
+				i += 2
 			} else if ch == '=' {
 				l.tokens = append(l.tokens, Token{Type: TokenOperator, Value: "=", Location: loc})
 				i++
