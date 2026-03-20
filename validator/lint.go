@@ -337,12 +337,12 @@ var knownModelProviders = map[string]map[string]bool{
 		"claude-opus-4-20250116": true,
 	},
 	"openai": {
-		"gpt-5.4":        true,
-		"gpt-5.3-codex":  true,
-		"gpt-4o":         true,
-		"gpt-4o-mini":    true,
-		"o3":             true,
-		"o4-mini":        true,
+		"gpt-5.4":       true,
+		"gpt-5.3-codex": true,
+		"gpt-4o":        true,
+		"gpt-4o-mini":   true,
+		"o3":            true,
+		"o4-mini":       true,
 	},
 }
 

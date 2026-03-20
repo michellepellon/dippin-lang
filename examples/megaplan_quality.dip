@@ -430,7 +430,7 @@ workflow Megaplan
     WriteMergeNotes -> WriteFinalSprint
     WriteFinalSprint -> FinalQualityGate
     FinalQualityGate -> PersistSprintPlaceholder  when ctx.outcome = success  label: pass
-    FinalQualityGate -> RevisedDraftParallel  when ctx.outcome = retry  label: rework
+    FinalQualityGate -> RevisedDraftParallel  when ctx.outcome = retry  label: rework  restart: true
     FinalQualityGate -> Exit  when ctx.outcome = fail  label: blocked
     PersistSprintPlaceholder -> SyncLedger
     SyncLedger -> Exit

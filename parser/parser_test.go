@@ -75,7 +75,7 @@ func TestParseComplexWorkflow(t *testing.T) {
 	if len(w.Nodes) != 4 {
 		t.Errorf("nodes = %d, want 4", len(w.Nodes))
 	}
-	
+
 	// Check parallel node
 	var parallelNode *ir.Node
 	for _, n := range w.Nodes {

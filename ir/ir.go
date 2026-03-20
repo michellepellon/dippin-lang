@@ -68,7 +68,7 @@ type NodeConfig interface {
 type AgentConfig struct {
 	Prompt              string
 	SystemPrompt        string
-	Model               string  // Per-node override
+	Model               string // Per-node override
 	Provider            string
 	MaxTurns            int
 	CmdTimeout          time.Duration

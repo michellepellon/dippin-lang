@@ -212,10 +212,10 @@ func TestMigrateShapeToKindMapping(t *testing.T) {
 		{"component", ir.NodeParallel},
 		{"tripleoctagon", ir.NodeFanIn},
 		{"tab", ir.NodeSubgraph},
-		{"Mdiamond", ir.NodeAgent},   // Start marker
-		{"Msquare", ir.NodeAgent},    // Exit marker
-		{"diamond", ir.NodeAgent},    // Default diamond
-		{"", ir.NodeAgent},           // Missing shape → default
+		{"Mdiamond", ir.NodeAgent}, // Start marker
+		{"Msquare", ir.NodeAgent},  // Exit marker
+		{"diamond", ir.NodeAgent},  // Default diamond
+		{"", ir.NodeAgent},         // Missing shape → default
 	}
 	for _, tt := range tests {
 		t.Run("shape_"+tt.shape, func(t *testing.T) {
@@ -625,9 +625,9 @@ func TestMigrateEdgeWeight(t *testing.T) {
 
 func TestMigrateDurationParsing(t *testing.T) {
 	tests := []struct {
-		name     string
-		timeout  string
-		wantDur  time.Duration
+		name    string
+		timeout string
+		wantDur time.Duration
 	}{
 		{"30s", "30s", 30 * time.Second},
 		{"1h30m", "1h30m", 90 * time.Minute},

@@ -178,21 +178,13 @@ func checkNoCycles(w *ir.Workflow) []Diagnostic {
 	}
 
 	// Build adjacency list excluding restart edges.
+	// Do NOT include implicit parallel/fan_in edges here — fork-join
+	// patterns (parallel → targets → fan_in) are structural, not cycles.
+	// Implicit edges are only needed for reachability (DIP004).
 	adj := make(map[string][]string)
 	for _, e := range w.Edges {
 		if !e.Restart {
 			adj[e.From] = append(adj[e.From], e.To)
-		}
-	}
-	// Include implicit edges from parallel → targets and sources → fan_in.
-	for _, n := range w.Nodes {
-		switch cfg := n.Config.(type) {
-		case ir.ParallelConfig:
-			adj[n.ID] = append(adj[n.ID], cfg.Targets...)
-		case ir.FanInConfig:
-			for _, src := range cfg.Sources {
-				adj[src] = append(adj[src], n.ID)
-			}
 		}
 	}
 
@@ -208,30 +200,31 @@ func checkNoCycles(w *ir.Workflow) []Diagnostic {
 
 	var diags []Diagnostic
 
-	var dfs func(node string) bool
-	dfs = func(node string) bool {
+	reported := make(map[string]bool) // avoid duplicate cycle reports
+	var dfs func(node string)
+	dfs = func(node string) {
 		color[node] = gray
 		for _, next := range adj[node] {
 			if color[next] == gray {
-				// Found a cycle — reconstruct path from next → ... → node → next
-				cycle := reconstructCycle(parent, node, next)
-				diags = append(diags, Diagnostic{
-					Code:     DIP005,
-					Severity: SeverityError,
-					Message:  fmt.Sprintf("unconditional cycle detected: %s", strings.Join(cycle, " → ")),
-					Help:     "break the cycle by removing an edge or marking it restart: true",
-				})
-				return true
+				// Found a cycle — reconstruct path from next → ... → node → next.
+				// Only report if we haven't already reported a cycle through this back-edge target.
+				if !reported[next] {
+					reported[next] = true
+					cycle := reconstructCycle(parent, node, next)
+					diags = append(diags, Diagnostic{
+						Code:     DIP005,
+						Severity: SeverityError,
+						Message:  fmt.Sprintf("unconditional cycle detected: %s", strings.Join(cycle, " → ")),
+						Help:     "break the cycle by removing an edge or marking it restart: true",
+					})
+				}
 			}
 			if color[next] == white {
 				parent[next] = node
-				if dfs(next) {
-					return true
-				}
+				dfs(next)
 			}
 		}
 		color[node] = black
-		return false
 	}
 
 	// Start DFS from all nodes to catch cycles in disconnected components too.

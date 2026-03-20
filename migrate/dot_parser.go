@@ -40,17 +40,17 @@ type dotEdge struct {
 type tokenKind int
 
 const (
-	tokEOF tokenKind = iota
-	tokID            // unquoted identifier or number
-	tokString        // double-quoted string (contents unescaped)
-	tokLBrace        // {
-	tokRBrace        // }
-	tokLBrack        // [
-	tokRBrack        // ]
-	tokEquals        // =
-	tokSemicolon     // ;
-	tokComma         // ,
-	tokArrow         // ->
+	tokEOF       tokenKind = iota
+	tokID                  // unquoted identifier or number
+	tokString              // double-quoted string (contents unescaped)
+	tokLBrace              // {
+	tokRBrace              // }
+	tokLBrack              // [
+	tokRBrack              // ]
+	tokEquals              // =
+	tokSemicolon           // ;
+	tokComma               // ,
+	tokArrow               // ->
 )
 
 type token struct {

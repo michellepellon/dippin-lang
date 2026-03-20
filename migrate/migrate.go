@@ -41,12 +41,12 @@ func MigrateToSource(dotSource string) (string, error) {
 // Mdiamond and Msquare are handled specially (start/exit markers).
 // diamond is handled with disambiguation logic.
 var shapeToKind = map[string]ir.NodeKind{
-	"box":            ir.NodeAgent,
-	"hexagon":        ir.NodeHuman,
-	"parallelogram":  ir.NodeTool,
-	"component":      ir.NodeParallel,
-	"tripleoctagon":  ir.NodeFanIn,
-	"tab":            ir.NodeSubgraph,
+	"box":           ir.NodeAgent,
+	"hexagon":       ir.NodeHuman,
+	"parallelogram": ir.NodeTool,
+	"component":     ir.NodeParallel,
+	"tripleoctagon": ir.NodeFanIn,
+	"tab":           ir.NodeSubgraph,
 }
 
 // convertDOTGraph transforms a parsed DOT graph into an IR workflow.

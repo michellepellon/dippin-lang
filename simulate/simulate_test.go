@@ -261,11 +261,11 @@ func TestRunMinimal(t *testing.T) {
 	// Verify event sequence.
 	assertEventSequence(t, res.Events, []event.Type{
 		event.TypePipelineStart,
-		event.TypeNodeEnter,  // Start
-		event.TypeNodeExit,   // Start
+		event.TypeNodeEnter, // Start
+		event.TypeNodeExit,  // Start
 		event.TypeEdgeTraverse,
-		event.TypeNodeEnter,  // Done
-		event.TypeNodeExit,   // Done
+		event.TypeNodeEnter, // Done
+		event.TypeNodeExit,  // Done
 		event.TypePipelineEnd,
 	})
 }

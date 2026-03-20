@@ -1,0 +1,34 @@
+#!/bin/sh
+# Pre-commit hook for dippin-lang.
+# Install: ln -sf ../../scripts/pre-commit .git/hooks/pre-commit
+set -e
+
+echo "=== pre-commit: go build ==="
+go build ./...
+
+echo "=== pre-commit: go vet ==="
+go vet ./...
+
+echo "=== pre-commit: gofmt ==="
+unformatted=$(gofmt -l . 2>&1 || true)
+if [ -n "$unformatted" ]; then
+  echo "ERROR: Files not gofmt'd:"
+  echo "$unformatted"
+  exit 1
+fi
+
+echo "=== pre-commit: go test ==="
+go test ./... -count=1 -race
+
+echo "=== pre-commit: validate examples ==="
+go build -o /tmp/dippin-precommit ./cmd/dippin/
+for f in examples/*.dip; do
+  /tmp/dippin-precommit validate "$f" > /dev/null 2>&1 || {
+    echo "ERROR: $f failed validation"
+    /tmp/dippin-precommit validate "$f" 2>&1
+    exit 1
+  }
+done
+rm -f /tmp/dippin-precommit
+
+echo "=== pre-commit: all checks passed ==="

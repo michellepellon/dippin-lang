@@ -9,7 +9,7 @@ import (
 
 // Difference describes a structural difference between two workflows.
 type Difference struct {
-	Kind    string // "node_missing", "node_extra", "edge_missing", "edge_extra",
+	Kind string // "node_missing", "node_extra", "edge_missing", "edge_extra",
 	//                "config_mismatch", "kind_mismatch", "start_mismatch",
 	//                "exit_mismatch", "defaults_mismatch"
 	Message string // Human-readable description

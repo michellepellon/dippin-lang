@@ -132,7 +132,7 @@ dippin lint pipeline.dip
 
 ## Language Reference
 
-The full grammar is specified in [`GRAMMAR.ebnf`](GRAMMAR.ebnf). Here's the practical reference.
+The full grammar is specified in [`docs/GRAMMAR.ebnf`](docs/GRAMMAR.ebnf). Here's the practical reference.
 
 ### Workflow Structure
 
