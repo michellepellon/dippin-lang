@@ -252,19 +252,13 @@ This is one of the most implementation-critical behaviors and must be brutally e
 
 ## 6. Recommended Architecture
 
-```
-┌──────────────┐     ┌──────────────┐     ┌──────────────────┐
-│  .dip file   │────▶│   Parser     │────▶│  Canonical IR    │
-│  (Dippin)    │     │  (Go pkg)    │     │  (Go structs)    │
-└──────────────┘     └──────────────┘     └────────┬─────────┘
-                                                   │
-                          ┌────────────────────────┼────────────────┐
-                          │                        │                │
-                          ▼                        ▼                ▼
-                   ┌──────────────┐     ┌──────────────┐   ┌──────────────┐
-                   │  Validator   │     │   Engine      │   │ DOT Exporter │
-                   │  Linter      │     │  (existing)   │   │              │
-                   └──────────────┘     └──────────────┘   └──────────────┘
+```mermaid
+graph TB
+    DIP[".dip file<br>(Dippin)"] --> Parser["Parser<br>(Go pkg)"]
+    Parser --> IR["Canonical IR<br>(Go structs)"]
+    IR --> Validator["Validator<br>Linter"]
+    IR --> Engine["Engine<br>(existing)"]
+    IR --> Exporter["DOT Exporter"]
 ```
 
 **Key property**: The existing engine (`pipeline.Engine`) continues to operate on the IR. The parser is a new frontend. The DOT exporter is a new backend. The engine itself needs minimal changes — mainly accepting IR structs instead of (or in addition to) DOT-parsed structs.

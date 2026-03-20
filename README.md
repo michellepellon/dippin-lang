@@ -8,13 +8,13 @@ Dippin is a domain-specific language that replaces [Graphviz DOT](https://graphv
 
 DOT is a great graph language. Dippin doesn't replace DOT for visualization — it replaces DOT for *authoring*. The two coexist:
 
-```
-Author in Dippin  ──→  Execute with Tracker
-                  ──→  Export to DOT for visualization (dippin export-dot)
-                  ──→  Render with Graphviz (dot -Tpng)
-
-Legacy DOT files  ──→  Migrate to Dippin (dippin migrate)
-                  ──→  Verify parity (dippin validate-migration)
+```mermaid
+graph LR
+    A["Author in Dippin"] --> B["Execute with Tracker"]
+    A --> C["Export to DOT for visualization<br>(dippin export-dot)"]
+    A --> D["Render with Graphviz<br>(dot -Tpng)"]
+    E["Legacy DOT files"] --> F["Migrate to Dippin<br>(dippin migrate)"]
+    E --> G["Verify parity<br>(dippin validate-migration)"]
 ```
 
 **What DOT does well** — and Dippin preserves:
@@ -400,14 +400,17 @@ The [`examples/`](examples/) directory contains 15 workflows:
 
 ## Architecture
 
-```
-.dip source ──→ Parser ──→ IR (Workflow) ──→ Validator (DIP001-009)
-                                          ──→ Linter (DIP101-112)
-                                          ──→ Formatter (canonical .dip)
-                                          ──→ DOT Exporter (visualization)
-                                          ──→ Simulator (dry-run)
-
-.dot file ─────→ Migrator ──→ IR ──→ .dip source
+```mermaid
+graph LR
+    DIP[".dip source"] --> Parser
+    Parser --> IR["IR (Workflow)"]
+    IR --> Validator["Validator<br>(DIP001-009)"]
+    IR --> Linter["Linter<br>(DIP101-112)"]
+    IR --> Formatter["Formatter<br>(canonical .dip)"]
+    IR --> DOT["DOT Exporter<br>(visualization)"]
+    IR --> Sim["Simulator<br>(dry-run)"]
+    DOT_FILE[".dot file"] --> Migrator
+    Migrator --> IR2["IR"] --> DIP_OUT[".dip source"]
 ```
 
 Everything flows through `ir.Workflow` — the canonical intermediate representation. Packages never reach into each other's internals.
