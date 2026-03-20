@@ -188,7 +188,7 @@ func TestExportDOTFullWorkflow(t *testing.T) {
 	assertContains(t, out, "AskUser -> Interpret;")
 
 	// Conditional edge.
-	assertContains(t, out, `Validate -> Approve [condition="ctx.outcome = success", label="ctx.outcome = success"];`)
+	assertContains(t, out, `Validate -> Approve [condition="outcome = success", label="outcome = success"];`)
 
 	// Restart edge with condition and label.
 	assertContains(t, out, `Validate -> Interpret`)
@@ -407,7 +407,7 @@ func TestExportDOTEdgeConditions(t *testing.T) {
 				Raw:    "ctx.outcome = success",
 				Parsed: ir.CondCompare{Variable: "ctx.outcome", Op: "=", Value: "success"},
 			},
-			wantAttr: `condition="ctx.outcome = success"`,
+			wantAttr: `condition="outcome = success"`,
 		},
 		{
 			name: "AND condition",
@@ -418,7 +418,7 @@ func TestExportDOTEdgeConditions(t *testing.T) {
 					Right: ir.CondCompare{Variable: "ctx.y", Op: "=", Value: "2"},
 				},
 			},
-			wantAttr: `condition="ctx.x = 1 and ctx.y = 2"`,
+			wantAttr: `condition="x = 1 and y = 2"`,
 		},
 		{
 			name: "OR condition",
@@ -429,7 +429,7 @@ func TestExportDOTEdgeConditions(t *testing.T) {
 					Right: ir.CondCompare{Variable: "ctx.x", Op: "=", Value: "2"},
 				},
 			},
-			wantAttr: `condition="ctx.x = 1 or ctx.x = 2"`,
+			wantAttr: `condition="x = 1 or x = 2"`,
 		},
 		{
 			name: "NOT condition",
@@ -439,7 +439,7 @@ func TestExportDOTEdgeConditions(t *testing.T) {
 					Inner: ir.CondCompare{Variable: "ctx.done", Op: "=", Value: "true"},
 				},
 			},
-			wantAttr: `condition="not ctx.done = true"`,
+			wantAttr: `condition="not done = true"`,
 		},
 		{
 			name: "nested AND in OR — parenthesized",
@@ -453,7 +453,7 @@ func TestExportDOTEdgeConditions(t *testing.T) {
 					Right: ir.CondCompare{Variable: "ctx.z", Op: "=", Value: "3"},
 				},
 			},
-			wantAttr: `condition="(ctx.x = 1 and ctx.y = 2) or ctx.z = 3"`,
+			wantAttr: `condition="(x = 1 and y = 2) or z = 3"`,
 		},
 		{
 			name: "NOT of compound — parenthesized",
@@ -466,7 +466,7 @@ func TestExportDOTEdgeConditions(t *testing.T) {
 					},
 				},
 			},
-			wantAttr: `condition="not (ctx.x = 1 and ctx.y = 2)"`,
+			wantAttr: `condition="not (x = 1 and y = 2)"`,
 		},
 	}
 
@@ -550,7 +550,7 @@ func TestExportDOTEdgeLabelWithCondition(t *testing.T) {
 	}
 	out := ExportDOT(w, ExportOptions{})
 	assertContains(t, out, `label="retry"`)
-	assertContains(t, out, `condition="ctx.outcome = fail"`)
+	assertContains(t, out, `condition="outcome = fail"`)
 }
 
 func TestExportDOTEdgeConditionAsLabel(t *testing.T) {
@@ -576,8 +576,8 @@ func TestExportDOTEdgeConditionAsLabel(t *testing.T) {
 		},
 	}
 	out := ExportDOT(w, ExportOptions{})
-	assertContains(t, out, `label="ctx.outcome = success"`)
-	assertContains(t, out, `condition="ctx.outcome = success"`)
+	assertContains(t, out, `label="outcome = success"`)
+	assertContains(t, out, `condition="outcome = success"`)
 }
 
 func TestExportDOTEmptyWorkflow(t *testing.T) {
@@ -626,7 +626,7 @@ func TestExportDOTAllEdgeAttributes(t *testing.T) {
 		},
 	}
 	out := ExportDOT(w, ExportOptions{})
-	assertContains(t, out, `condition="ctx.outcome = fail"`)
+	assertContains(t, out, `condition="outcome = fail"`)
 	assertContains(t, out, `label="retry"`)
 	assertContains(t, out, `restart="true"`)
 	assertContains(t, out, `style="dashed"`)
@@ -734,7 +734,7 @@ func TestExportDOTValidDOTSyntax(t *testing.T) {
 }
 
 func TestExportDOTNilConditionParsed(t *testing.T) {
-	// Edge with Condition but nil Parsed should not emit condition attribute.
+	// Edge with Condition but nil Parsed should fall back to Raw string.
 	w := &ir.Workflow{
 		Name:  "test",
 		Start: "A",
@@ -748,7 +748,7 @@ func TestExportDOTNilConditionParsed(t *testing.T) {
 		},
 	}
 	out := ExportDOT(w, ExportOptions{})
-	assertNotContains(t, out, "condition=")
+	assertContains(t, out, `condition="x = 1"`)
 }
 
 func TestExportDOTNilConfig(t *testing.T) {
@@ -877,7 +877,7 @@ func TestFormatConditionExport(t *testing.T) {
 		{
 			name: "simple compare",
 			expr: ir.CondCompare{Variable: "ctx.outcome", Op: "=", Value: "success"},
-			want: "ctx.outcome = success",
+			want: "outcome = success",
 		},
 		{
 			name: "AND",
@@ -885,7 +885,7 @@ func TestFormatConditionExport(t *testing.T) {
 				Left:  ir.CondCompare{Variable: "ctx.x", Op: "=", Value: "1"},
 				Right: ir.CondCompare{Variable: "ctx.y", Op: "=", Value: "2"},
 			},
-			want: "ctx.x = 1 and ctx.y = 2",
+			want: "x = 1 and y = 2",
 		},
 		{
 			name: "OR",
@@ -893,12 +893,12 @@ func TestFormatConditionExport(t *testing.T) {
 				Left:  ir.CondCompare{Variable: "ctx.x", Op: "=", Value: "1"},
 				Right: ir.CondCompare{Variable: "ctx.x", Op: "=", Value: "2"},
 			},
-			want: "ctx.x = 1 or ctx.x = 2",
+			want: "x = 1 or x = 2",
 		},
 		{
 			name: "NOT",
 			expr: ir.CondNot{Inner: ir.CondCompare{Variable: "ctx.done", Op: "=", Value: "true"}},
-			want: "not ctx.done = true",
+			want: "not done = true",
 		},
 		{
 			name: "AND inside OR parenthesized",
@@ -909,7 +909,7 @@ func TestFormatConditionExport(t *testing.T) {
 				},
 				Right: ir.CondCompare{Variable: "ctx.z", Op: "=", Value: "3"},
 			},
-			want: "(ctx.x = 1 and ctx.y = 2) or ctx.z = 3",
+			want: "(x = 1 and y = 2) or z = 3",
 		},
 		{
 			name: "NOT of compound parenthesized",
@@ -919,7 +919,7 @@ func TestFormatConditionExport(t *testing.T) {
 					Right: ir.CondCompare{Variable: "ctx.y", Op: "=", Value: "2"},
 				},
 			},
-			want: "not (ctx.x = 1 and ctx.y = 2)",
+			want: "not (x = 1 and y = 2)",
 		},
 		{
 			name: "nil",

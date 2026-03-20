@@ -189,13 +189,23 @@ func writeEdgeDOT(b *strings.Builder, e *ir.Edge) {
 		attrs["label"] = e.Label
 	}
 
-	if e.Condition != nil && e.Condition.Parsed != nil {
-		condStr := formatCondition(e.Condition.Parsed)
-		// If there's no separate label, use the condition text as the edge label.
-		if e.Label == "" {
-			attrs["label"] = condStr
+	if e.Condition != nil {
+		var condStr string
+		if e.Condition.Parsed != nil {
+			condStr = formatCondition(e.Condition.Parsed)
+		} else {
+			condStr = e.Condition.Raw
 		}
-		attrs["condition"] = condStr
+		if condStr != "" {
+			// Lower namespaced variables to DOT-compatible format:
+			// ctx.outcome → outcome (Tracker resolves bare keys from context)
+			condStr = lowerConditionNamespaces(condStr)
+			// If there's no separate label, use the condition text as the edge label.
+			if e.Label == "" {
+				attrs["label"] = condStr
+			}
+			attrs["condition"] = condStr
+		}
 	}
 
 	if e.Weight != 0 {
@@ -304,6 +314,14 @@ func escapeNewlines(s string) string {
 	return strings.ReplaceAll(s, "\n", `\n`)
 }
 
+// lowerConditionNamespaces strips the ctx. prefix from condition variables
+// for DOT-compatible output. Tracker's condition evaluator resolves bare
+// variable names (e.g., "outcome") from the pipeline context, so the
+// Dippin namespace prefix must be removed.
+func lowerConditionNamespaces(cond string) string {
+	return strings.ReplaceAll(cond, "ctx.", "")
+}
+
 // --- Condition formatting ---
 // Replicates the formatter's condition serialization for DOT attribute values.
 
@@ -320,7 +338,9 @@ func formatCondition(expr ir.ConditionExpr) string {
 func formatConditionExpr(expr ir.ConditionExpr, parentPrec int) string {
 	switch e := expr.(type) {
 	case ir.CondCompare:
-		return fmt.Sprintf("%s %s %s", e.Variable, e.Op, e.Value)
+		// Strip ctx. prefix for DOT-compatible output.
+		variable := strings.TrimPrefix(e.Variable, "ctx.")
+		return fmt.Sprintf("%s %s %s", variable, e.Op, e.Value)
 	case ir.CondAnd:
 		s := fmt.Sprintf("%s and %s",
 			formatConditionExpr(e.Left, precAnd),
