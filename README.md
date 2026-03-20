@@ -30,7 +30,7 @@ graph LR
 | Shell scripts | `tool_command="#!/bin/sh\nset -eu\nif..."` | Real multiline, real syntax |
 | Model config | Untyped `llm_model="..."` attribute | Typed `model:` field with validation |
 | Branching | `condition="context.x!=y && context.a==b"` | `when ctx.x != "y" and ctx.a == "b"` |
-| Validation | Silent — typos in attrs are ignored | 19 diagnostic codes (DIP001–DIP009, DIP101–DIP112) |
+| Validation | Silent — typos in attrs are ignored | 24 diagnostic codes (DIP001–DIP009, DIP101–DIP115) |
 | Node types | Shape overloading (`box`=agent, `hexagon`=human) | Explicit `agent`, `tool`, `human` keywords |
 | Composition | No import/include system | `subgraph` with ref (v2) |
 
@@ -117,8 +117,10 @@ dippin lint pipeline.dip
 |---------|-------------|
 | `dippin parse <file>` | Parse and output IR as JSON |
 | `dippin validate <file>` | Structural validation (DIP001–DIP009) |
-| `dippin lint <file>` | Validation + semantic warnings (DIP101–DIP112) |
+| `dippin lint <file>` | Validation + semantic warnings (DIP101–DIP115) |
+| `dippin check [--format json\|text] <file>` | Parse+validate+lint in one shot (JSON default, for LLM tooling) |
 | `dippin fmt [--check] [--write] <file>` | Format to canonical style |
+| `dippin new [--name N] [--write F] <template>` | Generate a starter .dip from a template |
 | `dippin export-dot [--rankdir LR] [--prompts] <file>` | Export to Graphviz DOT |
 | `dippin migrate [--output <file>] <file.dot>` | Convert DOT to Dippin |
 | `dippin validate-migration <old.dot> <new.dip>` | Verify migration parity |
@@ -291,6 +293,7 @@ Comments are not stripped inside multiline blocks — a `#` inside a prompt or c
 | `ref` | subgraph | Workflow path |
 | `retry_policy` | all | standard, aggressive, patient, linear, none |
 | `max_retries` | all | Max retry count |
+| `base_delay` | all | Override policy's base delay (e.g. 500ms, 2s) |
 | `retry_target` | all | Node to retry from |
 | `fallback_target` | all | Fallback if retries exhausted |
 | `reads` | all | Context keys read (advisory, comma-separated) |
@@ -321,7 +324,7 @@ error[DIP003]: unknown node reference "InterpretX" in edge
 | DIP008 | Duplicate node ID |
 | DIP009 | Duplicate edge |
 
-### Warnings (DIP101–DIP112)
+### Warnings (DIP101–DIP115)
 
 | Code | What it catches |
 |------|----------------|
@@ -335,6 +338,9 @@ error[DIP003]: unknown node reference "InterpretX" in edge
 | DIP110 | Agent with empty prompt |
 | DIP111 | Tool with no timeout |
 | DIP112 | I/O data flow — reads key not written upstream |
+| DIP113 | Invalid retry policy name (typo or unrecognized) |
+| DIP114 | Invalid fidelity level (typo or unrecognized) |
+| DIP115 | Goal gate node without retry or fallback target |
 
 ## Simulation
 

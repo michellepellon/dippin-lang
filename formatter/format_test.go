@@ -1022,3 +1022,43 @@ func TestFormatLabelOnSubgraph(t *testing.T) {
 	assertContains(t, output, `    label: "Code Review"`)
 	assertContains(t, output, "    ref: ./review.dip")
 }
+
+func TestFormatBaseDelay(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "test",
+		Start: "A",
+		Exit:  "A",
+		Nodes: []*ir.Node{
+			{
+				ID:     "A",
+				Kind:   ir.NodeAgent,
+				Config: ir.AgentConfig{Prompt: "go."},
+				Retry: ir.RetryConfig{
+					Policy:    "aggressive",
+					BaseDelay: 500 * time.Millisecond,
+				},
+			},
+		},
+	}
+	output := Format(w)
+	assertContains(t, output, "retry_policy: aggressive")
+	assertContains(t, output, "base_delay: 500ms")
+}
+
+func TestFormatBaseDelay_Zero_Omitted(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "test",
+		Start: "A",
+		Exit:  "A",
+		Nodes: []*ir.Node{
+			{
+				ID:     "A",
+				Kind:   ir.NodeAgent,
+				Config: ir.AgentConfig{Prompt: "go."},
+				Retry:  ir.RetryConfig{Policy: "standard"},
+			},
+		},
+	}
+	output := Format(w)
+	assertNotContains(t, output, "base_delay")
+}

@@ -13,6 +13,7 @@ import (
 	"github.com/2389-research/dippin-lang/ir"
 	"github.com/2389-research/dippin-lang/migrate"
 	"github.com/2389-research/dippin-lang/parser"
+	"github.com/2389-research/dippin-lang/scaffold"
 	"github.com/2389-research/dippin-lang/simulate"
 	"github.com/2389-research/dippin-lang/validator"
 )
@@ -98,8 +99,12 @@ func Run(args []string, stdout, stderr io.Writer) ExitCode {
 		return c.CmdValidate(cmdArgs)
 	case "lint":
 		return c.CmdLint(cmdArgs)
+	case "check":
+		return c.CmdCheck(cmdArgs)
 	case "fmt":
 		return c.CmdFmt(cmdArgs)
+	case "new":
+		return c.CmdNew(cmdArgs)
 	case "export-dot":
 		return c.CmdExportDOT(cmdArgs)
 	case "migrate":
@@ -124,7 +129,12 @@ func printGlobalUsage(w io.Writer) {
 	fmt.Fprintln(w, "  parse <file>                      Parse and output IR as JSON")
 	fmt.Fprintln(w, "  validate <file>                   Run structural validation (DIP001-DIP009)")
 	fmt.Fprintln(w, "  lint <file>                       Run validation and semantic linting")
+	fmt.Fprintln(w, "  check [--format text|json] <file> Parse+validate+lint (JSON default, for LLM tooling)")
 	fmt.Fprintln(w, "  fmt [--check] [--write] <file>    Format a .dip file")
+	fmt.Fprintln(w, "  new [--name N] [--write F] <template>")
+	fmt.Fprintln(w, "                                    Generate a starter .dip file")
+	fmt.Fprintln(w, "                                    Templates: minimal, parallel, conditional,")
+	fmt.Fprintln(w, "                                               review-loop, human-gate")
 	fmt.Fprintln(w, "  export-dot [--rankdir] [--prompts] <file>")
 	fmt.Fprintln(w, "                                    Export workflow to DOT format")
 	fmt.Fprintln(w, "  migrate [--output <file>] <file.dot>")
@@ -230,6 +240,164 @@ func (c *CLI) CmdLint(args []string) ExitCode {
 	if valRes.HasErrors() {
 		return ExitError
 	}
+	return ExitOK
+}
+
+// CmdCheck runs parse + validate + lint in one shot and outputs a compact
+// JSON summary to stdout. Designed for LLM tool-calling loops.
+// CmdCheck parses its own --format flag, defaulting to JSON (unlike other commands).
+func (c *CLI) CmdCheck(args []string) ExitCode {
+	fs := flag.NewFlagSet("check", flag.ContinueOnError)
+	fs.SetOutput(c.Stderr)
+	formatStr := fs.String("format", "json", "output format (json|text)")
+	if err := fs.Parse(args); err != nil {
+		return ExitUsageError
+	}
+	if fs.NArg() < 1 {
+		fmt.Fprintln(c.Stderr, "usage: dippin check [--format json|text] <file>")
+		return ExitUsageError
+	}
+
+	path := fs.Arg(0)
+
+	// Parse.
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if *formatStr == "json" {
+			renderCheckJSON(c.Stdout, false, nil, err.Error())
+		} else {
+			fmt.Fprintf(c.Stderr, "error: %v\n", err)
+		}
+		return ExitError
+	}
+
+	p := parser.NewParser(string(data), path)
+	w, err := p.Parse()
+	if err != nil {
+		if *formatStr == "json" {
+			renderCheckJSON(c.Stdout, false, nil, err.Error())
+		} else {
+			fmt.Fprintf(c.Stderr, "error: %v\n", err)
+		}
+		return ExitError
+	}
+
+	// Validate + lint.
+	valRes := validator.Validate(w)
+	lintRes := validator.Lint(w)
+	allDiags := append(valRes.Diagnostics, lintRes.Diagnostics...)
+
+	if *formatStr == "json" {
+		renderCheckJSON(c.Stdout, !valRes.HasErrors(), allDiags, "")
+	} else {
+		if len(allDiags) > 0 {
+			renderDiagnosticsText(c.Stdout, allDiags)
+		} else {
+			fmt.Fprintln(c.Stdout, "check passed")
+		}
+	}
+
+	if valRes.HasErrors() {
+		return ExitError
+	}
+	return ExitOK
+}
+
+// renderCheckJSON writes the compact check output to w.
+func renderCheckJSON(w io.Writer, valid bool, diags []validator.Diagnostic, parseErr string) {
+	type checkDiag struct {
+		Code     string `json:"code"`
+		Severity string `json:"severity"`
+		Message  string `json:"message"`
+		Line     int    `json:"line,omitempty"`
+		Fix      string `json:"fix,omitempty"`
+	}
+	type checkResult struct {
+		Valid            bool        `json:"valid"`
+		Errors           int         `json:"errors"`
+		Warnings         int         `json:"warnings"`
+		Diagnostics      []checkDiag `json:"diagnostics"`
+		SuggestedActions []string    `json:"suggested_actions"`
+	}
+
+	res := checkResult{
+		Valid:       valid,
+		Diagnostics: make([]checkDiag, 0, len(diags)),
+	}
+
+	if parseErr != "" {
+		res.Errors = 1
+		res.Diagnostics = append(res.Diagnostics, checkDiag{
+			Code:     "DIP000",
+			Severity: "error",
+			Message:  parseErr,
+		})
+	}
+
+	seen := make(map[string]bool)
+	for _, d := range diags {
+		cd := checkDiag{
+			Code:     d.Code,
+			Severity: d.Severity.String(),
+			Message:  d.Message,
+			Line:     d.Location.Line,
+			Fix:      d.Fix,
+		}
+		res.Diagnostics = append(res.Diagnostics, cd)
+
+		if d.Severity == validator.SeverityError {
+			res.Errors++
+		} else if d.Severity == validator.SeverityWarning {
+			res.Warnings++
+		}
+
+		if d.Fix != "" && !seen[d.Fix] {
+			seen[d.Fix] = true
+			res.SuggestedActions = append(res.SuggestedActions, d.Fix)
+		}
+	}
+
+	if res.SuggestedActions == nil {
+		res.SuggestedActions = []string{}
+	}
+
+	b, _ := json.Marshal(res)
+	fmt.Fprintln(w, string(b))
+}
+
+// CmdNew generates a starter .dip file from a named template.
+func (c *CLI) CmdNew(args []string) ExitCode {
+	fs := flag.NewFlagSet("new", flag.ContinueOnError)
+	fs.SetOutput(c.Stderr)
+	name := fs.String("name", "", "workflow name (default: template name)")
+	writePath := fs.String("write", "", "write output to file instead of stdout")
+	if err := fs.Parse(args); err != nil {
+		return ExitUsageError
+	}
+	if fs.NArg() < 1 {
+		fmt.Fprintf(c.Stderr, "usage: dippin new [--name <name>] [--write <file>] <template>\n")
+		fmt.Fprintf(c.Stderr, "templates: %s\n", strings.Join(scaffold.TemplateNames(), ", "))
+		return ExitUsageError
+	}
+
+	template := fs.Arg(0)
+	w, err := scaffold.Build(template, *name)
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "error: %v\n", err)
+		return ExitError
+	}
+
+	source := formatter.Format(w)
+
+	if *writePath != "" {
+		if err := os.WriteFile(*writePath, []byte(source), 0644); err != nil {
+			fmt.Fprintf(c.Stderr, "error writing file: %v\n", err)
+			return ExitError
+		}
+		return ExitOK
+	}
+
+	fmt.Fprint(c.Stdout, source)
 	return ExitOK
 }
 

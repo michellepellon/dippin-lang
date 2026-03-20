@@ -33,6 +33,9 @@ func Lint(w *ir.Workflow) Result {
 	diags = append(diags, lintEmptyPrompts(w)...)
 	diags = append(diags, lintToolTimeout(w)...)
 	diags = append(diags, lintReadsWithoutUpstreamWrites(w)...)
+	diags = append(diags, lintRetryPolicy(w)...)
+	diags = append(diags, lintFidelity(w)...)
+	diags = append(diags, lintGoalGateFallback(w)...)
 
 	return Result{Diagnostics: diags}
 }
@@ -592,6 +595,110 @@ func lintReadsWithoutUpstreamWrites(w *ir.Workflow) []Diagnostic {
 					Help:     fmt.Sprintf("add writes: %s to an upstream node, or the key may be auto-injected at runtime", key),
 				})
 			}
+		}
+	}
+	return diags
+}
+
+// validRetryPolicies is the set of retry policy names recognized by Tracker's engine.
+var validRetryPolicies = map[string]bool{
+	"standard":   true,
+	"aggressive": true,
+	"patient":    true,
+	"linear":     true,
+	"none":       true,
+}
+
+// lintRetryPolicy checks DIP113: retry_policy must be one of the known policy names.
+func lintRetryPolicy(w *ir.Workflow) []Diagnostic {
+	var diags []Diagnostic
+
+	// Check workflow default.
+	if p := w.Defaults.RetryPolicy; p != "" && !validRetryPolicies[p] {
+		diags = append(diags, Diagnostic{
+			Code:     DIP113,
+			Severity: SeverityWarning,
+			Message:  fmt.Sprintf("workflow default retry_policy %q is not a recognized policy name", p),
+			Help:     "valid policies: standard, aggressive, patient, linear, none",
+		})
+	}
+
+	// Check per-node.
+	for _, n := range w.Nodes {
+		if p := n.Retry.Policy; p != "" && !validRetryPolicies[p] {
+			diags = append(diags, Diagnostic{
+				Code:     DIP113,
+				Severity: SeverityWarning,
+				Message:  fmt.Sprintf("node %q has retry_policy %q which is not a recognized policy name", n.ID, p),
+				Location: n.Source,
+				Help:     "valid policies: standard, aggressive, patient, linear, none",
+			})
+		}
+	}
+	return diags
+}
+
+// validFidelityLevels is the set of fidelity levels recognized by Tracker's engine.
+var validFidelityLevels = map[string]bool{
+	"full":           true,
+	"summary:high":   true,
+	"summary:medium": true,
+	"summary:low":    true,
+	"compact":        true,
+	"truncate":       true,
+}
+
+// lintFidelity checks DIP114: fidelity must be one of the known levels.
+func lintFidelity(w *ir.Workflow) []Diagnostic {
+	var diags []Diagnostic
+
+	// Check workflow default.
+	if f := w.Defaults.Fidelity; f != "" && !validFidelityLevels[f] {
+		diags = append(diags, Diagnostic{
+			Code:     DIP114,
+			Severity: SeverityWarning,
+			Message:  fmt.Sprintf("workflow default fidelity %q is not a recognized level", f),
+			Help:     "valid levels: full, summary:high, summary:medium, summary:low, compact, truncate",
+		})
+	}
+
+	// Check per-node.
+	for _, n := range w.Nodes {
+		cfg, ok := n.Config.(ir.AgentConfig)
+		if !ok {
+			continue
+		}
+		if f := cfg.Fidelity; f != "" && !validFidelityLevels[f] {
+			diags = append(diags, Diagnostic{
+				Code:     DIP114,
+				Severity: SeverityWarning,
+				Message:  fmt.Sprintf("node %q has fidelity %q which is not a recognized level", n.ID, f),
+				Location: n.Source,
+				Help:     "valid levels: full, summary:high, summary:medium, summary:low, compact, truncate",
+			})
+		}
+	}
+	return diags
+}
+
+// lintGoalGateFallback checks DIP115: nodes with goal_gate: true should have
+// a retry_target or fallback_target so the pipeline has a recovery path when
+// the gate fails.
+func lintGoalGateFallback(w *ir.Workflow) []Diagnostic {
+	var diags []Diagnostic
+	for _, n := range w.Nodes {
+		cfg, ok := n.Config.(ir.AgentConfig)
+		if !ok || !cfg.GoalGate {
+			continue
+		}
+		if n.Retry.RetryTarget == "" && n.Retry.FallbackTarget == "" {
+			diags = append(diags, Diagnostic{
+				Code:     DIP115,
+				Severity: SeverityWarning,
+				Message:  fmt.Sprintf("node %q has goal_gate: true but no retry_target or fallback_target", n.ID),
+				Location: n.Source,
+				Help:     "add retry_target or fallback_target so the pipeline can recover when the gate fails",
+			})
 		}
 	}
 	return diags

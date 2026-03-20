@@ -47,6 +47,7 @@ These fields are available on **all** block-style node kinds (agent, human, tool
 | `writes` | CSV | No | Context keys this node will produce. Advisory — used for linting (DIP107), not enforced at runtime. |
 | `retry_policy` | String | No | Named retry strategy: `"standard"`, `"aggressive"`, `"patient"`, `"linear"`, `"none"`. Overrides the workflow default. |
 | `max_retries` | Integer | No | Maximum retry attempts before giving up. Overrides the workflow default. |
+| `base_delay` | Duration | No | Override the retry policy's default base delay (e.g. `500ms`, `2s`, `1m`). |
 | `retry_target` | String | No | Node ID to jump to when retrying (instead of re-executing the current node). |
 | `fallback_target` | String | No | Node ID to jump to if all retries are exhausted. |
 

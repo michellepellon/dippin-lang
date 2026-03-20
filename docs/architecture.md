@@ -57,9 +57,12 @@ dippin-lang/
 │   ├── dot_parser.go   # Custom DOT parser
 │   └── parity.go       # Structural comparison for migration verification
 │
+├── scaffold/           # Template scaffolding for `dippin new`
+│   └── scaffold.go     # Build(template, name) → *ir.Workflow
+│
 └── cmd/dippin/         # CLI entry point
     ├── main.go         # os.Args → Run()
-    └── cli.go          # All 8 commands, flag parsing, output formatting
+    └── cli.go          # All commands, flag parsing, output formatting
 ```
 
 ### Dependency Graph
@@ -72,11 +75,13 @@ graph BT
     validator["validator"] --> ir
     export["export"] --> ir
     migrate["migrate"] --> ir
+    scaffold["scaffold"] --> ir
     cmd["cmd/dippin"] --> parser
     cmd --> formatter
     cmd --> validator
     cmd --> export
     cmd --> migrate
+    cmd --> scaffold
 ```
 
 The `ir` package is a leaf dependency — it imports only `time` from the standard library. Every other package imports `ir` but not each other (with the exception of `cmd/dippin` which imports all).

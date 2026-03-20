@@ -187,6 +187,24 @@ func TestCmdLint_Warnings(t *testing.T) {
 	}
 }
 
+func TestCmdLint_NewCodes(t *testing.T) {
+	_, stderr, code := runCLI(t, "lint", testdata("lint_new_codes.dip"))
+
+	// Only warnings, no structural errors — should pass.
+	if code != ExitOK {
+		t.Fatalf("expected exit 0 (warnings don't fail), got %d; stderr: %s", code, stderr)
+	}
+	if !strings.Contains(stderr, "DIP113") {
+		t.Errorf("expected DIP113 (invalid retry policy), got: %s", stderr)
+	}
+	if !strings.Contains(stderr, "DIP114") {
+		t.Errorf("expected DIP114 (invalid fidelity), got: %s", stderr)
+	}
+	if !strings.Contains(stderr, "DIP115") {
+		t.Errorf("expected DIP115 (goal gate without fallback), got: %s", stderr)
+	}
+}
+
 func TestCmdLint_WithErrors(t *testing.T) {
 	// invalid_missing_start.dip has structural errors (DIP001) — lint should fail.
 	_, stderr, code := runCLI(t, "lint", testdata("invalid_missing_start.dip"))
@@ -196,6 +214,194 @@ func TestCmdLint_WithErrors(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "DIP001") {
 		t.Errorf("expected DIP001 on stderr, got: %s", stderr)
+	}
+}
+
+// --- Check Command ---
+
+func TestCmdCheck_ValidFile_JSON(t *testing.T) {
+	stdout, _, code := runCLI(t, "check", testdata("valid_minimal.dip"))
+
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d", code)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &result); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\nstdout: %s", err, stdout)
+	}
+	if result["valid"] != true {
+		t.Errorf("expected valid=true, got %v", result["valid"])
+	}
+	if result["errors"].(float64) != 0 {
+		t.Errorf("expected errors=0, got %v", result["errors"])
+	}
+}
+
+func TestCmdCheck_InvalidFile_JSON(t *testing.T) {
+	stdout, _, code := runCLI(t, "check", testdata("check_errors.dip"))
+
+	if code != ExitError {
+		t.Fatalf("expected exit 1, got %d", code)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &result); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\nstdout: %s", err, stdout)
+	}
+	if result["valid"] != false {
+		t.Errorf("expected valid=false, got %v", result["valid"])
+	}
+	errors := result["errors"].(float64)
+	if errors < 1 {
+		t.Errorf("expected at least 1 error, got %v", errors)
+	}
+	diags, ok := result["diagnostics"].([]interface{})
+	if !ok || len(diags) == 0 {
+		t.Error("expected non-empty diagnostics array")
+	}
+	if _, ok := result["suggested_actions"].([]interface{}); !ok {
+		t.Error("expected suggested_actions array")
+	}
+}
+
+func TestCmdCheck_WarningsOnly(t *testing.T) {
+	stdout, _, code := runCLI(t, "check", testdata("lint_warnings.dip"))
+
+	if code != ExitOK {
+		t.Fatalf("expected exit 0 (warnings don't fail), got %d", code)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &result); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\nstdout: %s", err, stdout)
+	}
+	if result["valid"] != true {
+		t.Errorf("expected valid=true with warnings only, got %v", result["valid"])
+	}
+	warnings := result["warnings"].(float64)
+	if warnings < 1 {
+		t.Errorf("expected at least 1 warning, got %v", warnings)
+	}
+}
+
+func TestCmdCheck_TextFormat(t *testing.T) {
+	stdout, _, code := runCLI(t, "check", "--format", "text", testdata("valid_minimal.dip"))
+
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d", code)
+	}
+	if !strings.Contains(stdout, "check passed") {
+		t.Errorf("expected 'check passed' in text output, got: %s", stdout)
+	}
+}
+
+func TestCmdCheck_DefaultIsJSON(t *testing.T) {
+	stdout, _, _ := runCLI(t, "check", testdata("valid_minimal.dip"))
+
+	// Default format should be JSON, not text.
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &result); err != nil {
+		t.Fatalf("default check output should be JSON, got: %s", stdout)
+	}
+}
+
+func TestCmdCheck_MissingArg(t *testing.T) {
+	_, stderr, code := runCLI(t, "check")
+
+	if code != ExitUsageError {
+		t.Fatalf("expected exit 2, got %d", code)
+	}
+	if !strings.Contains(stderr, "usage:") {
+		t.Errorf("expected usage message, got: %s", stderr)
+	}
+}
+
+func TestCmdCheck_NonexistentFile(t *testing.T) {
+	stdout, _, code := runCLI(t, "check", "testdata/nosuch.dip")
+
+	if code != ExitError {
+		t.Fatalf("expected exit 1, got %d", code)
+	}
+	// JSON output even for file errors.
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &result); err != nil {
+		t.Fatalf("expected JSON error output, got: %s", stdout)
+	}
+	if result["valid"] != false {
+		t.Errorf("expected valid=false, got %v", result["valid"])
+	}
+}
+
+// --- New Command ---
+
+func TestCmdNew_AllTemplates(t *testing.T) {
+	templates := []string{"minimal", "parallel", "conditional", "review-loop", "human-gate"}
+	for _, tmpl := range templates {
+		t.Run(tmpl, func(t *testing.T) {
+			stdout, stderr, code := runCLI(t, "new", tmpl)
+
+			if code != ExitOK {
+				t.Fatalf("expected exit 0, got %d; stderr: %s", code, stderr)
+			}
+			if !strings.Contains(stdout, "workflow") {
+				t.Errorf("expected 'workflow' keyword in output, got: %s", stdout)
+			}
+			if !strings.Contains(stdout, "edges") {
+				t.Errorf("expected 'edges' section in output")
+			}
+		})
+	}
+}
+
+func TestCmdNew_NameFlag(t *testing.T) {
+	stdout, _, code := runCLI(t, "new", "--name", "MyPipeline", "minimal")
+
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d", code)
+	}
+	if !strings.Contains(stdout, "workflow MyPipeline") {
+		t.Errorf("expected 'workflow MyPipeline', got: %s", stdout)
+	}
+}
+
+func TestCmdNew_WriteFlag(t *testing.T) {
+	tmpDir := t.TempDir()
+	outFile := filepath.Join(tmpDir, "new.dip")
+
+	_, stderr, code := runCLI(t, "new", "--write", outFile, "minimal")
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d; stderr: %s", code, stderr)
+	}
+
+	data, err := os.ReadFile(outFile)
+	if err != nil {
+		t.Fatalf("expected output file: %v", err)
+	}
+	if !strings.Contains(string(data), "workflow minimal") {
+		t.Errorf("expected 'workflow minimal' in file, got: %s", string(data))
+	}
+}
+
+func TestCmdNew_UnknownTemplate(t *testing.T) {
+	_, stderr, code := runCLI(t, "new", "nosuch")
+
+	if code != ExitError {
+		t.Fatalf("expected exit 1, got %d", code)
+	}
+	if !strings.Contains(stderr, "unknown template") {
+		t.Errorf("expected 'unknown template' error, got: %s", stderr)
+	}
+}
+
+func TestCmdNew_MissingArg(t *testing.T) {
+	_, stderr, code := runCLI(t, "new")
+
+	if code != ExitUsageError {
+		t.Fatalf("expected exit 2, got %d", code)
+	}
+	if !strings.Contains(stderr, "usage:") {
+		t.Errorf("expected usage message, got: %s", stderr)
 	}
 }
 
@@ -467,6 +673,12 @@ func TestCmdHelp(t *testing.T) {
 	if !strings.Contains(stdout, "simulate") {
 		t.Error("expected 'simulate' command in help output")
 	}
+	if !strings.Contains(stdout, "check") {
+		t.Error("expected 'check' command in help output")
+	}
+	if !strings.Contains(stdout, "new") {
+		t.Error("expected 'new' command in help output")
+	}
 }
 
 // --- Global Flag Tests ---
@@ -586,6 +798,36 @@ func TestExitCodes(t *testing.T) {
 		{
 			name:     "fmt check not canonical",
 			args:     []string{"fmt", "--check", testdata("needs_formatting.dip")},
+			wantCode: ExitError,
+		},
+		{
+			name:     "check missing file arg",
+			args:     []string{"check"},
+			wantCode: ExitUsageError,
+		},
+		{
+			name:     "check valid file",
+			args:     []string{"check", testdata("valid_minimal.dip")},
+			wantCode: ExitOK,
+		},
+		{
+			name:     "check invalid file",
+			args:     []string{"check", testdata("check_errors.dip")},
+			wantCode: ExitError,
+		},
+		{
+			name:     "new missing template arg",
+			args:     []string{"new"},
+			wantCode: ExitUsageError,
+		},
+		{
+			name:     "new valid template",
+			args:     []string{"new", "minimal"},
+			wantCode: ExitOK,
+		},
+		{
+			name:     "new unknown template",
+			args:     []string{"new", "nosuch"},
 			wantCode: ExitError,
 		},
 		{

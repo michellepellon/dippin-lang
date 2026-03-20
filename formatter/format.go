@@ -202,6 +202,9 @@ func writeAgentFields(wr *writer, n *ir.Node, cfg ir.AgentConfig) {
 	if n.Retry.MaxRetries != 0 {
 		wr.line("max_retries: %d", n.Retry.MaxRetries)
 	}
+	if n.Retry.BaseDelay != 0 {
+		wr.line("base_delay: %s", formatDuration(n.Retry.BaseDelay))
+	}
 	if n.Retry.RetryTarget != "" {
 		wr.line("retry_target: %s", n.Retry.RetryTarget)
 	}

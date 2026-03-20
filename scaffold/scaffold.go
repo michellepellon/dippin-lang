@@ -1,0 +1,196 @@
+// Package scaffold builds starter ir.Workflow values for common pipeline topologies.
+// Templates are constructed programmatically to guarantee canonical output via formatter.Format().
+package scaffold
+
+import (
+	"fmt"
+
+	"github.com/2389-research/dippin-lang/ir"
+)
+
+// TemplateNames returns the sorted list of available template names.
+func TemplateNames() []string {
+	return []string{"conditional", "human-gate", "minimal", "parallel", "review-loop"}
+}
+
+// Build constructs an ir.Workflow for the named template.
+// The name parameter overrides the workflow name (defaults to the template name).
+func Build(template, name string) (*ir.Workflow, error) {
+	if name == "" {
+		name = template
+	}
+	switch template {
+	case "minimal":
+		return buildMinimal(name), nil
+	case "parallel":
+		return buildParallel(name), nil
+	case "conditional":
+		return buildConditional(name), nil
+	case "review-loop":
+		return buildReviewLoop(name), nil
+	case "human-gate":
+		return buildHumanGate(name), nil
+	default:
+		return nil, fmt.Errorf("unknown template %q (available: %v)", template, TemplateNames())
+	}
+}
+
+func buildMinimal(name string) *ir.Workflow {
+	return &ir.Workflow{
+		Name:  name,
+		Goal:  "A minimal two-node workflow",
+		Start: "Start",
+		Exit:  "Done",
+		Nodes: []*ir.Node{
+			{ID: "Start", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+				Prompt: "Begin the task.",
+			}},
+			{ID: "Done", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+				Prompt: "Summarize the result.",
+			}},
+		},
+		Edges: []*ir.Edge{
+			{From: "Start", To: "Done"},
+		},
+	}
+}
+
+func buildParallel(name string) *ir.Workflow {
+	return &ir.Workflow{
+		Name:  name,
+		Goal:  "Fan-out to parallel workers then join",
+		Start: "Init",
+		Exit:  "Done",
+		Nodes: []*ir.Node{
+			{ID: "Init", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+				Prompt: "Prepare work for parallel execution.",
+			}},
+			{ID: "Fan", Kind: ir.NodeParallel, Config: ir.ParallelConfig{
+				Targets: []string{"WorkerA", "WorkerB"},
+			}},
+			{ID: "WorkerA", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+				Prompt: "Handle the first work stream.",
+			}},
+			{ID: "WorkerB", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+				Prompt: "Handle the second work stream.",
+			}},
+			{ID: "Join", Kind: ir.NodeFanIn, Config: ir.FanInConfig{
+				Sources: []string{"WorkerA", "WorkerB"},
+			}},
+			{ID: "Done", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+				Prompt: "Combine results and finish.",
+			}},
+		},
+		Edges: []*ir.Edge{
+			{From: "Init", To: "Fan"},
+			{From: "Fan", To: "WorkerA"},
+			{From: "Fan", To: "WorkerB"},
+			{From: "WorkerA", To: "Join"},
+			{From: "WorkerB", To: "Join"},
+			{From: "Join", To: "Done"},
+		},
+	}
+}
+
+func buildConditional(name string) *ir.Workflow {
+	return &ir.Workflow{
+		Name:  name,
+		Goal:  "Route based on status check",
+		Start: "Check",
+		Exit:  "Done",
+		Nodes: []*ir.Node{
+			{ID: "Check", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+				AutoStatus: true,
+				Prompt:     "Evaluate the situation and set STATUS: success or STATUS: fail.",
+			}},
+			{ID: "Pass", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+				Prompt: "Handle the success path.",
+			}},
+			{ID: "Fail", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+				Prompt: "Handle the failure path.",
+			}},
+			{ID: "Done", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+				Prompt: "Wrap up.",
+			}},
+		},
+		Edges: []*ir.Edge{
+			{From: "Check", To: "Pass", Condition: &ir.Condition{
+				Raw:    "ctx.outcome = success",
+				Parsed: ir.CondCompare{Variable: "ctx.outcome", Op: "=", Value: "success"},
+			}},
+			{From: "Check", To: "Fail", Condition: &ir.Condition{
+				Raw:    "ctx.outcome = fail",
+				Parsed: ir.CondCompare{Variable: "ctx.outcome", Op: "=", Value: "fail"},
+			}},
+			{From: "Check", To: "Done"},
+			{From: "Pass", To: "Done"},
+			{From: "Fail", To: "Done"},
+		},
+	}
+}
+
+func buildReviewLoop(name string) *ir.Workflow {
+	return &ir.Workflow{
+		Name:  name,
+		Goal:  "Implement, review, and loop until approved",
+		Start: "Implement",
+		Exit:  "Done",
+		Nodes: []*ir.Node{
+			{ID: "Implement", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+				Prompt: "Write the implementation.",
+			}},
+			{ID: "Review", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+				AutoStatus: true,
+				Prompt:     "Review the implementation. Set STATUS: success if approved, STATUS: fail if changes needed.",
+			}},
+			{ID: "Done", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+				Prompt: "Finalize the approved result.",
+			}},
+		},
+		Edges: []*ir.Edge{
+			{From: "Implement", To: "Review"},
+			{From: "Review", To: "Done", Condition: &ir.Condition{
+				Raw:    "ctx.outcome = success",
+				Parsed: ir.CondCompare{Variable: "ctx.outcome", Op: "=", Value: "success"},
+			}},
+			{From: "Review", To: "Implement", Restart: true, Condition: &ir.Condition{
+				Raw:    "ctx.outcome = fail",
+				Parsed: ir.CondCompare{Variable: "ctx.outcome", Op: "=", Value: "fail"},
+			}},
+		},
+	}
+}
+
+func buildHumanGate(name string) *ir.Workflow {
+	return &ir.Workflow{
+		Name:  name,
+		Goal:  "Gate progress on human approval",
+		Start: "Prepare",
+		Exit:  "Done",
+		Nodes: []*ir.Node{
+			{ID: "Prepare", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+				Prompt: "Prepare the proposal for review.",
+			}},
+			{ID: "Gate", Kind: ir.NodeHuman, Config: ir.HumanConfig{
+				Mode:    "choice",
+				Default: "approve",
+			}},
+			{ID: "Approved", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+				Prompt: "Proceed with the approved plan.",
+			}},
+			{ID: "Rejected", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+				Prompt: "Handle the rejection.",
+			}},
+			{ID: "Done", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+				Prompt: "Wrap up.",
+			}},
+		},
+		Edges: []*ir.Edge{
+			{From: "Prepare", To: "Gate"},
+			{From: "Gate", To: "Approved", Label: "approve"},
+			{From: "Gate", To: "Rejected", Label: "reject"},
+			{From: "Approved", To: "Done"},
+			{From: "Rejected", To: "Done"},
+		},
+	}
+}

@@ -1008,3 +1008,126 @@ func TestExtractComparisons(t *testing.T) {
 		})
 	}
 }
+
+// --- DIP113: Invalid retry policy ---
+
+func TestLint_DIP113_InvalidRetryPolicy_Node(t *testing.T) {
+	w := cleanMinimalWorkflow()
+	w.Nodes[0].Retry.Policy = "bogus"
+	res := Lint(w)
+	assertHasCode(t, res, DIP113)
+}
+
+func TestLint_DIP113_InvalidRetryPolicy_Default(t *testing.T) {
+	w := cleanMinimalWorkflow()
+	w.Defaults.RetryPolicy = "nope"
+	res := Lint(w)
+	assertHasCode(t, res, DIP113)
+}
+
+func TestLint_DIP113_ValidRetryPolicies(t *testing.T) {
+	for _, policy := range []string{"standard", "aggressive", "patient", "linear", "none"} {
+		t.Run(policy, func(t *testing.T) {
+			w := cleanMinimalWorkflow()
+			w.Nodes[0].Retry.Policy = policy
+			res := Lint(w)
+			assertNoCode(t, res, DIP113)
+		})
+	}
+}
+
+func TestLint_DIP113_EmptyPolicy_NoDiag(t *testing.T) {
+	w := cleanMinimalWorkflow()
+	// No retry policy set — should not warn.
+	res := Lint(w)
+	assertNoCode(t, res, DIP113)
+}
+
+// --- DIP114: Invalid fidelity level ---
+
+func TestLint_DIP114_InvalidFidelity_Node(t *testing.T) {
+	w := cleanMinimalWorkflow()
+	w.Nodes[0].Config = ir.AgentConfig{Prompt: "X", Fidelity: "sumary:high"}
+	res := Lint(w)
+	assertHasCode(t, res, DIP114)
+}
+
+func TestLint_DIP114_InvalidFidelity_Default(t *testing.T) {
+	w := cleanMinimalWorkflow()
+	w.Defaults.Fidelity = "hi"
+	res := Lint(w)
+	assertHasCode(t, res, DIP114)
+}
+
+func TestLint_DIP114_ValidFidelityLevels(t *testing.T) {
+	for _, level := range []string{"full", "summary:high", "summary:medium", "summary:low", "compact", "truncate"} {
+		t.Run(level, func(t *testing.T) {
+			w := cleanMinimalWorkflow()
+			w.Nodes[0].Config = ir.AgentConfig{Prompt: "X", Fidelity: level}
+			res := Lint(w)
+			assertNoCode(t, res, DIP114)
+		})
+	}
+}
+
+func TestLint_DIP114_EmptyFidelity_NoDiag(t *testing.T) {
+	w := cleanMinimalWorkflow()
+	res := Lint(w)
+	assertNoCode(t, res, DIP114)
+}
+
+// --- DIP115: Goal gate without fallback ---
+
+func TestLint_DIP115_GoalGateNoFallback(t *testing.T) {
+	w := cleanMinimalWorkflow()
+	w.Nodes[0].Config = ir.AgentConfig{Prompt: "X", GoalGate: true}
+	res := Lint(w)
+	assertHasCode(t, res, DIP115)
+}
+
+func TestLint_DIP115_GoalGateWithRetryTarget(t *testing.T) {
+	w := cleanMinimalWorkflow()
+	w.Nodes[0].Config = ir.AgentConfig{Prompt: "X", GoalGate: true}
+	w.Nodes[0].Retry.RetryTarget = "Begin"
+	res := Lint(w)
+	assertNoCode(t, res, DIP115)
+}
+
+func TestLint_DIP115_GoalGateWithFallbackTarget(t *testing.T) {
+	w := cleanMinimalWorkflow()
+	w.Nodes[0].Config = ir.AgentConfig{Prompt: "X", GoalGate: true}
+	w.Nodes[0].Retry.FallbackTarget = "End"
+	res := Lint(w)
+	assertNoCode(t, res, DIP115)
+}
+
+func TestLint_DIP115_NoGoalGate_NoDiag(t *testing.T) {
+	w := cleanMinimalWorkflow()
+	res := Lint(w)
+	assertNoCode(t, res, DIP115)
+}
+
+// assertHasCode checks that a result contains at least one diagnostic with the given code.
+func assertHasCode(t *testing.T, res Result, code string) {
+	t.Helper()
+	for _, d := range res.Diagnostics {
+		if d.Code == code {
+			return
+		}
+	}
+	codes := make([]string, len(res.Diagnostics))
+	for i, d := range res.Diagnostics {
+		codes[i] = d.Code
+	}
+	t.Errorf("expected diagnostic %s, got codes: %v", code, codes)
+}
+
+// assertNoCode checks that a result does not contain any diagnostic with the given code.
+func assertNoCode(t *testing.T, res Result, code string) {
+	t.Helper()
+	for _, d := range res.Diagnostics {
+		if d.Code == code {
+			t.Errorf("unexpected diagnostic %s: %s", code, d.Message)
+		}
+	}
+}

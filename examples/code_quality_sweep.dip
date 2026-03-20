@@ -1,0 +1,325 @@
+workflow CodeQualitySweep
+  goal: "Analyze the dippin-lang codebase with three LLM providers in parallel, find bugs, write documentation and tests, and verify all work meets the project goal"
+  start: ScanCodebase
+  exit: Done
+
+  defaults
+    provider: anthropic
+    model: claude-sonnet-4-6
+    fidelity: summary:high
+    retry_policy: standard
+    max_retries: 3
+    max_restarts: 2
+
+  # ── Phase 1: Codebase Reconnaissance ─────────────────────────
+
+  agent ScanCodebase
+    label: "Map the codebase"
+    writes: codebase_summary, file_manifest
+    prompt:
+      You are analyzing the dippin-lang project — a Go toolchain for
+      authoring AI pipeline workflows.
+
+      Scan the full repository structure and produce:
+      1. A file manifest grouped by package (ir/, parser/, validator/,
+         formatter/, export/, migrate/, simulate/, event/, scaffold/, cmd/dippin/)
+      2. A summary of each package's purpose, public API surface, and
+         approximate size
+      3. The test coverage landscape: which packages have thorough tests,
+         which have gaps
+      4. Any files that seem out of place or orphaned
+
+      Focus on facts, not opinions. This summary will be consumed by
+      three independent analysis agents downstream.
+
+  # ── Phase 2: Three-Provider Parallel Analysis ────────────────
+
+  parallel AnalysisFan -> AnalyzeAnthropic, AnalyzeGemini, AnalyzeOpenAI
+
+  agent AnalyzeAnthropic
+    label: "Claude deep analysis"
+    model: claude-opus-4-6
+    provider: anthropic
+    reasoning_effort: high
+    reads: codebase_summary, file_manifest
+    writes: anthropic_bugs, anthropic_gaps
+    prompt:
+      You are a senior Go engineer reviewing the dippin-lang codebase.
+      You have access to the codebase summary and file manifest from the
+      scan phase.
+
+      Perform a thorough analysis focusing on:
+
+      **Bug hunting:**
+      - Nil pointer dereferences (especially in type switches on NodeConfig)
+      - Off-by-one errors in the lexer's indentation tracking
+      - Edge cases in condition parsing (nested AND/OR/NOT precedence)
+      - Race conditions if any IR types are shared across goroutines
+      - Validator checks that silently skip invalid states instead of reporting
+
+      **Architecture concerns:**
+      - Packages that import each other (circular or near-circular deps)
+      - Exported types that leak implementation details
+      - Error handling patterns that swallow information
+
+      For each finding, provide:
+      - File path and approximate location
+      - Severity (bug, smell, improvement)
+      - Concrete fix suggestion
+
+  agent AnalyzeGemini
+    label: "Gemini analysis"
+    model: gemini-2.5-pro
+    provider: gemini
+    reads: codebase_summary, file_manifest
+    writes: gemini_bugs, gemini_gaps
+    prompt:
+      You are reviewing the dippin-lang codebase — a Go project with
+      packages: ir, parser, validator, formatter, export, migrate,
+      simulate, event, scaffold, and cmd/dippin.
+
+      Focus your analysis on:
+
+      **Correctness:**
+      - Does the formatter produce output that the parser can round-trip?
+        Look for edge cases: empty prompts, special characters in values,
+        multiline blocks with blank lines, conditions with all operator types
+      - Does the validator's cycle detection (DIP005) correctly exclude
+        restart edges? Check the DFS coloring logic
+      - Does the simulate package correctly evaluate all condition operators
+        (contains, startswith, endswith, in)?
+      - Are parallel/fan_in configs validated symmetrically (DIP007)?
+
+      **Missing test coverage:**
+      - Identify specific scenarios that have no test but should
+      - Focus on boundary conditions and error paths
+      - For each gap, describe what the test should verify
+
+      Produce a structured report with file paths and specific findings.
+
+  agent AnalyzeOpenAI
+    label: "GPT analysis"
+    model: gpt-4.1
+    provider: openai
+    reads: codebase_summary, file_manifest
+    writes: openai_bugs, openai_gaps
+    prompt:
+      You are reviewing the dippin-lang Go codebase for documentation
+      quality and API ergonomics.
+
+      Focus on:
+
+      **Documentation gaps:**
+      - Public functions/types missing godoc comments
+      - Godoc comments that are inaccurate or stale relative to the code
+      - docs/ markdown files that reference features not yet implemented
+        or that contradict the actual behavior
+      - README claims that don't match reality (command flags, exit codes,
+        diagnostic counts)
+
+      **API ergonomics:**
+      - Are the ir types easy to construct programmatically? (The scaffold
+        package is the test case — is it awkward?)
+      - Is the validator Result type convenient to consume?
+      - Does the CLI's exit code contract match its documentation?
+
+      **Spec compliance:**
+      - Compare docs/GRAMMAR.ebnf against what the parser actually accepts
+      - Compare docs/validation.md codes against validator/codes.go and
+        validator/lint_codes.go
+      - Flag any drift
+
+      Produce a prioritized list with file paths.
+
+  fan_in AnalysisJoin <- AnalyzeAnthropic, AnalyzeGemini, AnalyzeOpenAI
+
+  # ── Phase 3: Cross-Reference and Prioritize ──────────────────
+
+  agent Synthesize
+    label: "Merge and deduplicate findings"
+    reads: anthropic_bugs, anthropic_gaps, gemini_bugs, gemini_gaps, openai_bugs, openai_gaps
+    writes: bug_list, doc_gaps, test_gaps
+    prompt:
+      You have three independent analysis reports from Claude, Gemini, and
+      GPT. Your job is to:
+
+      1. **Deduplicate**: Findings reported by multiple models are higher
+         confidence. Flag consensus items.
+      2. **Prioritize**: Rank by severity × confidence.
+         - Bugs confirmed by 2+ models → critical
+         - Bugs from 1 model → needs verification
+         - Doc gaps → important but lower priority than bugs
+         - Test gaps → important for long-term health
+      3. **Produce three actionable lists**:
+         - `bug_list`: Confirmed bugs with file paths and fix descriptions
+         - `doc_gaps`: Documentation to write or fix, with target files
+         - `test_gaps`: Tests to write, with what they should verify
+      4. **Discard**: False positives, vague suggestions, style nits
+
+      Be ruthless about quality. Only pass through findings that are
+      specific, actionable, and backed by evidence from the reports.
+
+  # ── Phase 4: Parallel Work Streams ───────────────────────────
+
+  parallel WorkFan -> FixBugs, WriteDocs, WriteTests
+
+  agent FixBugs
+    label: "Fix confirmed bugs"
+    model: claude-opus-4-6
+    provider: anthropic
+    reasoning_effort: high
+    goal_gate: true
+    retry_policy: patient
+    max_retries: 5
+    retry_target: FixBugs
+    fallback_target: QualityGate
+    reads: bug_list, codebase_summary
+    writes: bug_fixes
+    prompt:
+      You are a Go engineer fixing confirmed bugs in dippin-lang.
+
+      For each item in the bug list:
+      1. Read the relevant source file
+      2. Understand the root cause
+      3. Write the minimal fix
+      4. Verify the fix doesn't break the existing test suite
+
+      Rules:
+      - Do NOT refactor surrounding code. Fix only the bug.
+      - Do NOT add features. This is a bugfix-only pass.
+      - If a fix requires a new test to verify it, note that for the
+        test-writing agent but don't write the test yourself.
+      - If you're unsure about a fix, skip it and note it as unresolved.
+
+      Output a summary of fixes applied with file paths and descriptions.
+
+  agent WriteDocs
+    label: "Fill documentation gaps"
+    model: claude-sonnet-4-6
+    provider: anthropic
+    reads: doc_gaps, codebase_summary
+    writes: doc_changes
+    prompt:
+      You are a technical writer improving dippin-lang's documentation.
+
+      For each item in the doc gaps list:
+      1. Read the relevant source code to understand actual behavior
+      2. Write or fix the documentation to match reality
+      3. Follow existing style conventions in the docs/ directory
+
+      Rules:
+      - Godoc comments: match the Go convention (start with the name)
+      - Markdown docs: use the existing structure (headers, code blocks,
+        tables) as a template
+      - Do NOT invent features. Document only what exists in the code.
+      - Do NOT add commentary or opinions. State facts.
+      - Keep diagnostic count references accurate (currently 24 codes:
+        DIP001-DIP009 + DIP101-DIP115)
+
+      Output a summary of documentation changes with file paths.
+
+  agent WriteTests
+    label: "Write missing tests"
+    model: gemini-2.5-pro
+    provider: gemini
+    reads: test_gaps, bug_fixes, codebase_summary
+    writes: new_tests
+    prompt:
+      You are a Go test engineer adding coverage to dippin-lang.
+
+      For each item in the test gaps list:
+      1. Read the existing test file for that package
+      2. Follow the existing test patterns (table-driven, fixture-based,
+         helper functions)
+      3. Write the test
+      4. If a bug was fixed in this cycle, write a regression test for it
+
+      Rules:
+      - Use testdata/ file fixtures for .dip content, not inline strings
+      - Use the existing helpers: cleanMinimalWorkflow(), assertContains(),
+        assertNotContains(), runCLI()
+      - Name tests consistently: TestXxx_Scenario (e.g., TestLint_DIP113_InvalidRetryPolicy)
+      - Each test should verify one specific behavior
+      - Include both positive (expected to pass) and negative (expected to
+        fail) cases
+
+      Output a summary of tests written with file paths and what each verifies.
+
+  fan_in WorkJoin <- FixBugs, WriteDocs, WriteTests
+
+  # ── Phase 5: Quality Gate ────────────────────────────────────
+
+  agent QualityGate
+    label: "Verify all work meets the goal"
+    model: claude-opus-4-6
+    provider: anthropic
+    reasoning_effort: high
+    auto_status: true
+    goal_gate: true
+    retry_policy: aggressive
+    max_retries: 3
+    fallback_target: Done
+    reads: bug_fixes, doc_changes, new_tests, bug_list, doc_gaps, test_gaps
+    writes: quality_report
+    prompt:
+      You are the quality gate for this code improvement cycle.
+
+      Review all work products against the original goal:
+      "Analyze the dippin-lang codebase, find bugs, write documentation
+      and tests, and verify all work meets the project goal."
+
+      Check:
+      1. **Bug fixes**: Were all critical bugs addressed? Do fixes look
+         correct? Any regressions introduced?
+      2. **Documentation**: Does it match the code? Are counts and
+         references accurate? Is it well-written?
+      3. **Tests**: Do they cover the identified gaps? Do they follow
+         project conventions? Would they catch the bugs that were fixed?
+      4. **Completeness**: Is anything from the prioritized lists still
+         unaddressed without justification?
+
+      Set STATUS: success if all checks pass.
+      Set STATUS: fail if critical items are unaddressed or work quality
+      is below standard.
+
+      Include a quality report summarizing what was done, what was skipped
+      and why, and overall confidence level.
+
+  # ── Phase 6: Summary ─────────────────────────────────────────
+
+  agent Done
+    label: "Final summary"
+    reads: quality_report, bug_fixes, doc_changes, new_tests
+    prompt:
+      Produce a concise executive summary of the code quality sweep:
+
+      - How many bugs found / fixed / remaining
+      - How many doc gaps filled
+      - How many tests added
+      - Overall quality assessment
+      - Any items deferred to future work
+
+      Keep it under 500 words. This is the deliverable the human reads.
+
+  # ── Edges ────────────────────────────────────────────────────
+
+  edges
+    ScanCodebase -> AnalysisFan
+    AnalysisFan -> AnalyzeAnthropic
+    AnalysisFan -> AnalyzeGemini
+    AnalysisFan -> AnalyzeOpenAI
+    AnalyzeAnthropic -> AnalysisJoin
+    AnalyzeGemini -> AnalysisJoin
+    AnalyzeOpenAI -> AnalysisJoin
+    AnalysisJoin -> Synthesize
+    Synthesize -> WorkFan
+    WorkFan -> FixBugs
+    WorkFan -> WriteDocs
+    WorkFan -> WriteTests
+    FixBugs -> WorkJoin
+    WriteDocs -> WorkJoin
+    WriteTests -> WorkJoin
+    WorkJoin -> QualityGate
+    QualityGate -> Done  when ctx.outcome = success
+    QualityGate -> Synthesize  when ctx.outcome = fail  restart: true
+    QualityGate -> Done

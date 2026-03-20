@@ -241,6 +241,8 @@ func (p *Parser) applyNodeField(n *ir.Node, key, val string, loc ir.SourceLocati
 		n.Retry.RetryTarget = val
 	case "fallback_target":
 		n.Retry.FallbackTarget = val
+	case "base_delay":
+		n.Retry.BaseDelay = p.parseDuration(val, key, loc)
 	}
 
 	switch cfg := n.Config.(type) {

@@ -1,9 +1,9 @@
 # Validation and Linting Reference
 
-Dippin provides 21 diagnostic checks split into two categories:
+Dippin provides 24 diagnostic checks split into two categories:
 
 - **Structural validation** (DIP001–DIP009): Errors that **must** be fixed. A workflow with any of these cannot execute.
-- **Semantic linting** (DIP101–DIP112): Warnings that flag likely bugs or questionable patterns. They don't block execution but should be reviewed.
+- **Semantic linting** (DIP101–DIP115): Warnings that flag likely bugs or questionable patterns. They don't block execution but should be reviewed.
 
 Run `dippin validate <file>` for structural checks only, or `dippin lint <file>` for both.
 
@@ -12,7 +12,7 @@ graph LR
     SRC[".dip file"] --> PARSE["Parser"]
     PARSE --> IR["IR"]
     IR --> VAL["Structural Validation<br/>DIP001–DIP009<br/>(errors)"]
-    IR --> LINT["Semantic Linting<br/>DIP101–DIP112<br/>(warnings)"]
+    IR --> LINT["Semantic Linting<br/>DIP101–DIP115<br/>(warnings)"]
     VAL --> DIAG["Diagnostics"]
     LINT --> DIAG
 ```
@@ -224,7 +224,7 @@ error[DIP009]: duplicate edge
 
 ---
 
-## Semantic Lint Warnings (DIP101–DIP112)
+## Semantic Lint Warnings (DIP101–DIP115)
 
 ### DIP101: Node Only Reachable via Conditional Edges
 
@@ -456,6 +456,79 @@ warning[DIP112]: reads key not produced by any upstream writes
 
 ---
 
+### DIP113: Invalid Retry Policy Name
+
+**Severity**: Warning
+
+A node or workflow default specifies a `retry_policy` value that is not a recognized policy name.
+
+```
+warning[DIP113]: node "analyze" has retry_policy "agressive" which is not a recognized policy name
+  --> pipeline.dip:15:3
+  = help: valid policies: standard, aggressive, patient, linear, none
+```
+
+**Valid policies**:
+
+| Policy | Backoff | Description |
+|--------|---------|-------------|
+| `standard` | Exponential | Default. 3 attempts, exponential backoff from base delay |
+| `aggressive` | Exponential | More attempts, shorter initial delay |
+| `patient` | Exponential | Fewer attempts, longer delays between retries |
+| `linear` | Linear | Fixed delay between attempts |
+| `none` | — | No retries (node fails immediately on error) |
+
+**How to fix**: Check for typos. Use one of the five recognized policy names.
+
+---
+
+### DIP114: Invalid Fidelity Level
+
+**Severity**: Warning
+
+A node or workflow default specifies a `fidelity` value that is not a recognized level.
+
+```
+warning[DIP114]: node "analyze" has fidelity "sumary:high" which is not a recognized level
+  --> pipeline.dip:12:3
+  = help: valid levels: full, summary:high, summary:medium, summary:low, compact, truncate
+```
+
+**Valid fidelity levels**:
+
+| Level | Context Injected | Use Case |
+|-------|-----------------|----------|
+| `full` | Complete context from all prior nodes | Default for first execution |
+| `summary:high` | All keys + trimmed artifacts (2000 chars/node) | Reduce context for large pipelines |
+| `summary:medium` | Key decisions only (outcome, last_response, human_response) | Moderate context reduction |
+| `summary:low` | One-line summary per completed node | Minimal context |
+| `compact` | Only workflow goal + current outcome | Near-zero context |
+| `truncate` | Medium keys capped at 500 chars each | Hard size limit |
+
+**Degradation on resume**: When a pipeline resumes from checkpoint, fidelity degrades one level (e.g., `full` → `summary:high`).
+
+**How to fix**: Check for typos. Use one of the six recognized levels.
+
+---
+
+### DIP115: Goal Gate Without Recovery Path
+
+**Severity**: Warning
+
+A node has `goal_gate: true` but no `retry_target` or `fallback_target`, meaning the pipeline has no recovery path if the gate fails.
+
+```
+warning[DIP115]: node "validate_tests" has goal_gate: true but no retry_target or fallback_target
+  --> pipeline.dip:18:3
+  = help: add retry_target or fallback_target so the pipeline can recover when the gate fails
+```
+
+**What `goal_gate` means**: When a node with `goal_gate: true` completes with `outcome != success`, the pipeline fails at exit — even if the exit node itself succeeded. Goal gates enforce invariants (e.g., "all tests must pass").
+
+**How to fix**: Add `retry_target: <node>` to retry from an earlier point, or `fallback_target: <node>` to route to a recovery path.
+
+---
+
 ## Running Validation
 
 ### Structural validation only
@@ -472,7 +545,7 @@ Runs DIP001–DIP009. Exit code 0 if all pass, 1 if any errors.
 dippin lint pipeline.dip
 ```
 
-Runs all DIP001–DIP009 errors and DIP101–DIP112 warnings. Exit code 1 only for errors; warnings alone exit 0.
+Runs all DIP001–DIP009 errors and DIP101–DIP115 warnings. Exit code 1 only for errors; warnings alone exit 0.
 
 ### JSON output for CI
 

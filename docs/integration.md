@@ -612,6 +612,79 @@ if e.Condition != nil {
 
 ---
 
+## LLM Tool-Calling Integration
+
+When using LLMs to generate `.dip` files, `dippin check` provides a single-call validation endpoint optimized for tool-calling loops.
+
+### Tool Definition
+
+Define `dippin check` as a tool that the LLM can call to validate its generated output:
+
+```json
+{
+  "name": "validate_workflow",
+  "description": "Validate a .dip workflow file. Returns JSON with valid (bool), error/warning counts, diagnostics, and suggested fixes.",
+  "parameters": {
+    "file_path": {"type": "string", "description": "Path to the .dip file to validate"}
+  }
+}
+```
+
+### Generate → Check → Fix Loop
+
+```python
+import json, subprocess, tempfile
+
+def generate_and_validate(llm, prompt, max_retries=3):
+    source = llm.generate(prompt)
+
+    for attempt in range(max_retries):
+        with tempfile.NamedTemporaryFile(suffix=".dip", mode="w", delete=False) as f:
+            f.write(source)
+            path = f.name
+
+        result = subprocess.run(
+            ["dippin", "check", path],
+            capture_output=True, text=True
+        )
+        check = json.loads(result.stdout)
+
+        if check["valid"]:
+            return source
+
+        # Feed diagnostics back to the LLM for correction.
+        errors = [d["message"] for d in check["diagnostics"] if d["severity"] == "error"]
+        fixes = check["suggested_actions"]
+        source = llm.generate(
+            f"Fix these errors in the .dip file:\n"
+            + "\n".join(errors)
+            + ("\nSuggested fixes: " + ", ".join(fixes) if fixes else "")
+            + f"\n\nOriginal file:\n{source}"
+        )
+
+    raise ValueError("Failed to generate valid workflow after retries")
+```
+
+### Scaffold + Modify Pattern
+
+For LLMs that struggle with .dip syntax from scratch, use `dippin new` to generate a valid starting point, then modify:
+
+```bash
+# Generate a template the LLM can modify
+dippin new conditional --name MyWorkflow --write /tmp/base.dip
+
+# LLM modifies the file...
+
+# Validate the modifications
+dippin check /tmp/base.dip
+```
+
+### Reference Card
+
+The [`docs/llm-reference.md`](llm-reference.md) file (~2000 tokens) is designed for injection into system prompts. It covers grammar, node kinds, edge syntax, common mistakes, and a complete example.
+
+---
+
 ## What Dippin Does NOT Provide
 
 Dippin is a **language and toolchain**, not a runtime. It does not:

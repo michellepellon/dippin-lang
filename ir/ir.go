@@ -123,10 +123,11 @@ func (SubgraphConfig) nodeConfig() {}
 
 // RetryConfig specifies retry behavior for a node.
 type RetryConfig struct {
-	Policy         string // Named policy: "standard", "aggressive", "patient", "linear", "none"
-	MaxRetries     int    // Override default
-	RetryTarget    string // Node to jump to on retry
-	FallbackTarget string // Fallback if retries exhausted
+	Policy         string        // Named policy: "standard", "aggressive", "patient", "linear", "none"
+	MaxRetries     int           // Override default
+	BaseDelay      time.Duration // Override policy's default base delay (optional)
+	RetryTarget    string        // Node to jump to on retry
+	FallbackTarget string        // Fallback if retries exhausted
 }
 
 // NodeIO declares what context keys a node reads and writes.

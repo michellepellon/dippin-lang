@@ -1,6 +1,6 @@
 package validator
 
-// Diagnostic codes for semantic quality warnings (DIP101–DIP112).
+// Diagnostic codes for semantic quality warnings (DIP101–DIP115).
 const (
 	DIP101 = "DIP101" // unreachable nodes after conditional branches
 	DIP102 = "DIP102" // routing node without default/unconditional edge
@@ -14,6 +14,9 @@ const (
 	DIP110 = "DIP110" // empty prompt on agent node
 	DIP111 = "DIP111" // tool command without timeout
 	DIP112 = "DIP112" // reads key not in any upstream writes
+	DIP113 = "DIP113" // invalid retry policy name
+	DIP114 = "DIP114" // invalid fidelity level
+	DIP115 = "DIP115" // goal_gate without retry/fallback target
 )
 
 func init() {
@@ -30,4 +33,7 @@ func init() {
 	CodeDescription[DIP110] = "empty prompt on agent node"
 	CodeDescription[DIP111] = "tool command has no timeout"
 	CodeDescription[DIP112] = "reads key not produced by any upstream writes"
+	CodeDescription[DIP113] = "invalid retry policy name"
+	CodeDescription[DIP114] = "invalid fidelity level"
+	CodeDescription[DIP115] = "goal_gate node without retry or fallback target"
 }

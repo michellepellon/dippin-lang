@@ -26,6 +26,8 @@ graph LR
     CMD --> export-dot
     CMD --> migrate
     CMD --> validate-migration
+    CMD --> check
+    CMD --> new
     CMD --> help
 ```
 
@@ -117,7 +119,7 @@ error[DIP003]: unknown node reference "InterpretX" in edge
 
 ### lint
 
-Run both structural validation and semantic linting (DIP001–DIP009 + DIP101–DIP112).
+Run both structural validation and semantic linting (DIP001–DIP009 + DIP101–DIP115).
 
 ```bash
 dippin lint <file>
@@ -125,7 +127,7 @@ dippin lint <file>
 
 **Input**: `.dip` or `.dot` file
 
-**Checks**: All 21 diagnostic rules. Errors (DIP001–DIP009) cause exit code 1. Warnings (DIP101–DIP112) are reported but don't affect the exit code.
+**Checks**: All 21 diagnostic rules. Errors (DIP001–DIP009) cause exit code 1. Warnings (DIP101–DIP115) are reported but don't affect the exit code.
 
 **Output**: All diagnostics (errors and warnings) to stderr.
 
@@ -137,6 +139,93 @@ warning[DIP111]: tool command has no timeout
 
 $ echo $?
 0    # warnings don't cause failure
+```
+
+---
+
+### check
+
+Parse, validate, and lint a workflow in one shot. Designed for LLM tool-calling loops and CI.
+
+```bash
+dippin check [--format json|text] <file>
+```
+
+**Default format**: `json` (unlike other commands which default to `text`). The `check` command parses its own `--format` flag, ignoring the global default.
+
+**Output** (to stdout, not stderr):
+
+```json
+{
+  "valid": false,
+  "errors": 1,
+  "warnings": 2,
+  "diagnostics": [
+    {"code": "DIP003", "severity": "error", "message": "unknown node reference \"Nope\" in edge", "line": 19, "fix": ""}
+  ],
+  "suggested_actions": []
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `valid` | `true` if no errors (warnings allowed). Use this to decide whether to retry generation. |
+| `errors` | Count of error-severity diagnostics |
+| `warnings` | Count of warning-severity diagnostics |
+| `diagnostics` | Array of all findings (code, severity, message, line, fix) |
+| `suggested_actions` | Deduplicated non-empty `fix` strings from diagnostics |
+
+**Text mode**: `dippin check --format text pipeline.dip` produces human-readable diagnostic output to stdout.
+
+**Example**:
+```bash
+# LLM tool-calling loop:
+dippin check generated.dip
+# → {"valid":true,"errors":0,"warnings":0,"diagnostics":[],"suggested_actions":[]}
+
+# Feed errors back to LLM for correction:
+dippin check broken.dip | jq '.diagnostics[] | .message'
+```
+
+---
+
+### new
+
+Generate a starter `.dip` file from a built-in template.
+
+```bash
+dippin new [--name <name>] [--write <file>] <template>
+```
+
+**Flags**:
+
+| Flag | Description |
+|------|-------------|
+| `--name <name>` | Override the workflow name (default: template name) |
+| `--write <file>` | Write output to file instead of stdout |
+
+**Available templates**:
+
+| Template | Topology |
+|----------|----------|
+| `minimal` | `Start` → `Done` (two agent nodes) |
+| `parallel` | `Init` → `parallel` → 2 workers → `fan_in` → `Done` |
+| `conditional` | `Check` (auto_status) → `Pass`/`Fail` branching → `Done` |
+| `review-loop` | `Implement` → `Review` → success: `Done` / fail: restart to `Implement` |
+| `human-gate` | `Prepare` → human `Gate` (choice) → approve/reject → `Done` |
+
+Templates are built programmatically from IR types and formatted via `formatter.Format()`, guaranteeing canonical output that always passes `dippin validate`.
+
+**Examples**:
+```bash
+# Preview a template:
+dippin new parallel
+
+# Create a named workflow:
+dippin new --name MyPipeline conditional --write my_pipeline.dip
+
+# Generate and immediately validate:
+dippin new review-loop --write /tmp/test.dip && dippin validate /tmp/test.dip
 ```
 
 ---
