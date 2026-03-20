@@ -425,7 +425,7 @@ Everything flows through `ir.Workflow` — the canonical intermediate representa
 |---------|-------------|
 | `ir/` | Core types: `Workflow`, `Node`, `Edge`, `Condition` AST, typed `NodeConfig` sealed interface |
 | `parser/` | Indentation-aware lexer + recursive-descent parser producing IR |
-| `validator/` | 9 structural checks + 12 semantic lint rules |
+| `validator/` | 9 structural checks + 15 semantic lint rules |
 | `formatter/` | Canonical pretty-printer (idempotent: `format(format(x)) == format(x)`) |
 | `export/` | DOT export with shape mapping, condition serialization, restart edge styling |
 | `migrate/` | DOT→IR→Dippin converter with namespace prefixing and structural parity checker |
@@ -434,6 +434,32 @@ Everything flows through `ir.Workflow` — the canonical intermediate representa
 | `cmd/dippin/` | CLI wiring |
 
 Zero external dependencies. Pure Go standard library.
+
+## Development
+
+```sh
+just setup-hooks   # install pre-commit hook (required)
+just check         # full check suite: build, vet, fmt, test, complexity, examples
+just complexity    # complexity checks only
+just test          # run all tests
+just fmt           # format all Go files
+```
+
+### Code Quality Gates
+
+The pre-commit hook enforces:
+
+| Check | Threshold | Tool |
+|-------|-----------|------|
+| Cyclomatic complexity | ≤ 5 per function | `gocyclo` |
+| Cognitive complexity | ≤ 7 per function | `gocognit` |
+| Formatting | `gofmt` canonical | `gofmt -l` |
+| Tests | all pass with `-race` | `go test` |
+| Examples | all `.dip` files validate | `dippin validate` |
+
+Test functions (`_test.go`) are excluded from complexity enforcement.
+
+See `QUICK_REFERENCE.md` for refactoring patterns when a function exceeds the threshold.
 
 ## License
 
