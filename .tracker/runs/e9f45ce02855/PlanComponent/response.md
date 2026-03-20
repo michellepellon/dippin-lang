@@ -1,325 +1,153 @@
 TURN 1
-TOOL CALL: read
+TOOL CALL: bash
 INPUT:
-{"path": ".tracker/current_context.md"}
-TOOL RESULT: read
+{"command": "cat .tracker/current_context.md"}
+TOOL RESULT: bash
 OUTPUT:
-=== Next component: validator ===
-component: validator
-package: validator/
-description: Graph structure validation (DIP001-DIP009)
+=== Next component: migration ===
+component: migration
+package: migrate/
+description: Migration tool: DOT to IR to .dip
 
 === Current codebase ===
 ./cmd/dippin/main.go
+./export/dot_test.go
+./export/dot.go
+./formatter/format_test.go
+./formatter/format.go
 ./ir/edge.go
 ./ir/ir_test.go
 ./ir/ir.go
 ./ir/lookup.go
 ./ir/source.go
+./validator/codes.go
+./validator/diagnostic.go
+./validator/lint_codes.go
+./validator/lint_test.go
+./validator/lint.go
+./validator/validate_test.go
+./validator/validate.go
 
 === Test status ===
 ?   	github.com/2389/dippin/cmd/dippin	[no test files]
+ok  	github.com/2389/dippin/export	(cached)
+ok  	github.com/2389/dippin/formatter	(cached)
 ok  	github.com/2389/dippin/ir	(cached)
+ok  	github.com/2389/dippin/validator	(cached)
 
 === Ledger ===
 component	package	status	description
 ir	ir/	complete	Canonical IR types (Workflow, Node, Edge, Condition)
-parser-lexer	parser/	in_progress	Line-based indentation-aware lexer
-parser-core	parser/	in_progress	Parser: .dip source to IR with error recovery
-parser-conditions	parser/	in_progress	Condition expression parser (and/or/not/compare)
-validator	validator/	in_progress	Graph structure validation (DIP001-DIP009)
-linter	validator/	pending	Semantic quality warnings (DIP101-DIP112)
-formatter	formatter/	pending	Canonical formatter: IR to .dip source
-dot-exporter	export/	pending	DOT exporter: IR to DOT string
-migration	migrate/	pending	Migration tool: DOT to IR to .dip
+parser-lexer	parser/	complete	Line-based indentation-aware lexer
+parser-core	parser/	complete	Parser: .dip source to IR with error recovery
+parser-conditions	parser/	complete	Condition expression parser (and/or/not/compare)
+validator	validator/	complete	Graph structure validation (DIP001-DIP009)
+linter	validator/	complete	Semantic quality warnings (DIP101-DIP112)
+formatter	formatter/	complete	Canonical formatter: IR to .dip source
+dot-exporter	export/	complete	DOT exporter: IR to DOT string
+migration	migrate/	in_progress	Migration tool: DOT to IR to .dip
 cli	cmd/dippin/	pending	CLI subcommands: parse, validate, lint, fmt, export-dot, migrate
 
-TOOL CALL: read
+TOOL CALL: bash
 INPUT:
-{"path": "../DIPPIN_DESIGN_PLAN.md"}
-TOOL RESULT: read
+{"command": "cat .tracker/ledger.md 2>/dev/null || echo \"No ledger found\""}
+TOOL RESULT: bash
 OUTPUT:
-Tool error (read): path escapes working directory: ../DIPPIN_DESIGN_PLAN.md
+No ledger found
+
+TURN 2
+TOOL CALL: bash
+INPUT:
+{"command": "cat ../DIPPIN_DESIGN_PLAN.md"}
+TOOL RESULT: bash
+OUTPUT:
+stderr: cat: ../DIPPIN_DESIGN_PLAN.md: No such file or directory
+
+exit code: 1
+TURN 3
+TOOL CALL: bash
+INPUT:
+{"command": "find / -name \"DIPPIN_DESIGN_PLAN.md\" -maxdepth 4 2>/dev/null | head -5"}
+TOOL RESULT: bash
+OUTPUT:
+(no output)
+TOOL CALL: bash
+INPUT:
+{"command": "find . -name \"*.md\" | head -20"}
+TOOL RESULT: bash
+OUTPUT:
+./.tracker/current_plan.md
+./.tracker/current_context.md
+./.tracker/runs/794b94d438fb/PlanComponent/prompt.md
+./.tracker/runs/794b94d438fb/PlanComponent/response.md
+./.tracker/runs/51dba511ab85/PlanComponent/prompt.md
+./.tracker/runs/51dba511ab85/PlanComponent/response.md
+./.tracker/runs/e9f45ce02855/PlanComponent/prompt.md
+./.tracker/runs/e9f45ce02855/PlanComponent/response.md
+./.tracker/runs/e9f45ce02855/ReviewClaude/prompt.md
+./.tracker/runs/e9f45ce02855/ReviewClaude/response.md
+./.tracker/runs/e9f45ce02855/ImplementGemini/prompt.md
+./.tracker/runs/e9f45ce02855/ImplementGemini/response.md
+./.tracker/runs/e9f45ce02855/ReviewGPT/prompt.md
+./.tracker/runs/e9f45ce02855/ReviewGPT/response.md
+./.tracker/runs/e9f45ce02855/ReviewAnalysis/prompt.md
+./.tracker/runs/e9f45ce02855/ReviewAnalysis/response.md
+./.tracker/runs/e9f45ce02855/ImplementClaude/prompt.md
+./.tracker/runs/e9f45ce02855/ImplementClaude/response.md
+./.tracker/runs/e9f45ce02855/ReviewGemini/prompt.md
+./.tracker/runs/e9f45ce02855/ReviewGemini/response.md
+
+TURN 4
+TOOL CALL: bash
+INPUT:
+{"command": "find / -name \"DIPPIN*\" -maxdepth 5 2>/dev/null | head -10"}
+TOOL RESULT: bash
+OUTPUT:
+Tool error (bash): command timed out after 10s
 ERROR:
 true
-TURN 2
-TOOL CALL: glob
+TOOL CALL: bash
 INPUT:
-{"pattern": "*DESIGN*"}
-TOOL RESULT: glob
+{"command": "ls -la ../ 2>/dev/null; ls -la . 2>/dev/null"}
+TOOL RESULT: bash
 OUTPUT:
-DIPPIN_DESIGN_PLAN.md
-TOOL CALL: glob
+total 16
+drwxr-xr-x  14 clint  staff   448 Mar 19 19:24 .
+drwxr-xr-x  50 clint  staff  1600 Mar 18 20:03 ..
+-rw-r--r--@  1 clint  staff  6148 Mar  4  2025 .DS_Store
+drwxr-xr-x  31 clint  staff   992 Feb  5  2025 botkeeper
+drwxr-xr-x@ 34 clint  staff  1088 Mar 16 09:44 chatalpha
+drwxr-xr-x@  7 clint  staff   224 Mar 19 20:00 dippin
+drwxr-xr-x@ 12 clint  staff   384 Mar 19 20:33 dippin-lang
+drwxr-xr-x  15 clint  staff   480 Jul  9  2024 findbuybot
+drwxr-xr-x@ 38 clint  staff  1216 Dec 22 21:31 jeff
+drwxr-xr-x@ 31 clint  staff   992 Mar 28  2025 llm-pragma-agent
+drwxr-xr-x  34 clint  staff  1088 Apr  9  2025 mbus
+drwxr-xr-x  37 clint  staff  1184 Feb 22 17:33 pragma_agent
+drwxr-xr-x  37 clint  staff  1184 Oct 24  2024 vision-buy
+drwxr-xr-x  21 clint  staff   672 Oct 30  2024 vision-buy-web
+total 168
+drwxr-xr-x@ 12 clint  staff    384 Mar 19 20:33 .
+drwxr-xr-x  14 clint  staff    448 Mar 19 19:24 ..
+drwxr-xr-x@ 12 clint  staff    384 Mar 19 20:44 .git
+drwxr-xr-x@  6 clint  staff    192 Mar 19 20:44 .tracker
+-rw-r--r--@  1 clint  staff  15534 Mar 19 20:02 build_dippin.dot
+drwxr-xr-x@  3 clint  staff     96 Mar 19 19:24 cmd
+-rw-r--r--@  1 clint  staff  65276 Mar 19 20:02 DIPPIN_DESIGN_PLAN.md
+drwxr-xr-x@  4 clint  staff    128 Mar 19 20:35 export
+drwxr-xr-x@  4 clint  staff    128 Mar 19 20:27 formatter
+-rw-r--r--@  1 clint  staff     41 Mar 19 19:24 go.mod
+drwxr-xr-x@  7 clint  staff    224 Mar 19 19:26 ir
+drwxr-xr-x@  9 clint  staff    288 Mar 19 20:17 validator
+
+TURN 5
+TOOL CALL: bash
 INPUT:
-{"pattern": "**/*DESIGN*"}
-TOOL RESULT: glob
+{"command": "cat DIPPIN_DESIGN_PLAN.md"}
+TOOL RESULT: bash
 OUTPUT:
-no matches for pattern "**/*DESIGN*"
-TOOL CALL: glob
-INPUT:
-{"pattern": "**/*.md"}
-TOOL RESULT: glob
-OUTPUT:
-.tracker/current_context.md
-TURN 3
-TOOL CALL: read
-INPUT:
-{"path": "DIPPIN_DESIGN_PLAN.md"}
-TOOL RESULT: read
-OUTPUT:
-[... truncated 40276 characters ...]
-- **JSON**: Machine-readable array of diagnostics for editor/agent integration
-
-(SARIF deferred to post-v1.)
-
-### Example diagnostic output
-
-```
-error[DIP003]: unknown node reference "InterpretX" in edge
-  --> pipeline.dip:45:5
-   |
-45 |     AskUser -> InterpretX
-   |                ^^^^^^^^^^ this node is not declared
-   |
-   = help: did you mean "Interpret"? (declared at line 12)
-   = fix: replace "InterpretX" with "Interpret"
-```
-
-### Parser error recovery strategy
-
-The parser recovers at **recognized declaration boundaries**. When a syntax error is encountered mid-node or mid-edge:
-
-1. Record the diagnostic with location
-2. Skip forward to the next recognized declaration line at the current or shallower enclosing block depth
-3. Resume parsing from there
-
-**Synchronization tokens**: Any line matching `^(workflow|agent|human|tool|parallel|fan_in|subgraph|edges|defaults|import|#)\b` at the expected block depth is a recovery point.
-
-**Goal**: Collect multiple diagnostics per file. A single typo should not prevent reporting errors in unrelated parts of the file. The parser always processes the entire file and returns all collected diagnostics alongside whatever partial IR it could construct.
-
-### Validation layers
-
-**Layer 1: Syntax** (parser)
-- Valid Dippin syntax
-- Correct indentation
-- Valid block structure
-- Unterminated multiline blocks
-
-**Layer 2: Schema** (post-parse)
-- Known node kinds
-- Known fields per kind (typed config structs prevent most of this structurally)
-- Correct field types (duration, boolean, integer)
-- Required fields present (e.g., agent nodes need `prompt`)
-- Unknown fields flagged (typo detection)
-
-**Layer 3: Graph structure** (IR)
-- `start:` node exists (`DIP001`)
-- `exit:` node exists (`DIP002`)
-- All edge endpoints exist (`DIP003`)
-- All nodes reachable from start (`DIP004`)
-- No unconditional cycles after excluding edges marked `restart: true` (`DIP005`)
-- Exit node has no outgoing edges (`DIP006`)
-- Parallel fan-out has matching fan-in (`DIP007`)
-- No duplicate node IDs (`DIP008`)
-- No duplicate edges (`DIP009`)
-
-**Layer 4: Semantic quality** (warnings)
-- Unreachable nodes after conditional branches (`DIP101`)
-- Routing nodes without fail/default edges (`DIP102`)
-- Overlapping or contradictory conditions (`DIP103`)
-- Unbounded retry loops (no max_retries, no fallback) (`DIP104`)
-- No success path to exit (`DIP105`)
-- Undefined `${variables}` in prompts — tiered by namespace (`DIP106`)
-- Unused context keys (written but never read via `writes:`) (`DIP107`)
-- Model/provider combination not in known catalog (`DIP108`)
-- Namespace collisions in imports (`DIP109`)
-- Empty prompts (`DIP110`)
-- Tool command without timeout (`DIP111`)
-- `reads:` key not in any upstream node's `writes:` (`DIP112`)
-
-### Formatter
-
-`dippin fmt` — canonical formatting:
-- 2-space indentation
-- One blank line between nodes
-- Section comments preserved
-- Trailing whitespace removed
-- Single trailing newline
-
-**Canonical field ordering per node kind**:
-
-- **Agent**: `label`, `class`, `model`, `provider`, `reasoning_effort`, `fidelity`, `goal_gate`, `auto_status`, `max_turns`, `retry_policy`, `max_retries`, `retry_target`, `reads`, `writes`, `prompt`
-- **Human**: `label`, `mode`, `default`, `reads`, `writes`
-- **Tool**: `label`, `timeout`, `reads`, `writes`, `command`
-- **Parallel**: (inline declaration, no fields)
-- **Fan-in**: (inline declaration, no fields)
-- **Subgraph**: `label`, `ref`, `params`
-
-`prompt` and `command` are always last because they're multiline blocks — putting them last means the block doesn't visually interrupt the metadata fields.
-
-Deterministic: `dippin fmt` is idempotent. Running it twice produces identical output.
-
----
-
-## 15. DOT Export Strategy
-
-### Lossless mappings
-
-| Dippin concept | DOT representation |
-|---------------|-------------------|
-| Node ID | Node name |
-| Node kind → DOT shape | `agent`→`box`, `human`→`hexagon`, `tool`→`parallelogram`, `parallel`→`component`, `fan_in`→`tripleoctagon`, `subgraph`→`tab` |
-| Node label | `label` attribute |
-| Edge from/to | Edge endpoints |
-| Edge label | `label` attribute |
-| Edge condition | `condition` attribute (serialized from AST) |
-| Edge weight | `weight` attribute |
-| Start/exit | `Mdiamond`/`Msquare` shape nodes |
-
-### Lossy but acceptable
-
-| Dippin concept | DOT handling |
-|---------------|-------------|
-| Multiline prompts | Serialized with `\n` escapes in `prompt` attribute |
-| Multiline tool commands | Serialized with `\n` escapes in `tool_command` attribute |
-| Import/module structure | Expanded inline; module boundaries lost |
-| Source locations | Not representable in DOT |
-| Parsed condition AST | Serialized back to string expression |
-| Parameter defaults | Not representable; resolved values exported |
-| Comments/sections | Lost (DOT has no comment attachment) |
-| `reads:`/`writes:` contracts | Not represented |
-| `route` sugar (post-v1) | Would expand to conditional edges; not in v1 |
-| Restart edge annotation | Exported as custom attribute `restart=true` on the edge (e.g., `A -> B [restart=true]`). Old Tracker ignores unknown attrs, but the exported DOT preserves the semantic for round-tripping. |
-| Variable namespaces | Stripped back to flat names |
-
-### Intentionally omitted
-
-| Dippin concept | Why omitted from DOT |
-|---------------|---------------------|
-| Validation diagnostics | Not a graph concept |
-| Formatter state | Not a graph concept |
-| Import resolution log | Build artifact, not graph data |
-
-### Implementation
-
-```go
-// dippin/export/dot.go
-func ExportDOT(w *ir.Workflow, opts ExportOptions) string
-```
-
-Options:
-- `IncludePrompts bool` — include full prompts (default true; false for clean topology view)
-- `RankDir string` — "LR" or "TB"
-- `HighlightGoalGates bool` — color goal gate nodes
-
----
-
-## 16. Migration Strategy
-
-### Phase 1: Automated conversion tool (weeks 1-2)
-
-Build `dippin migrate <input.dot> [output.dip]`:
-
-1. **Parse DOT** using existing `pipeline.ParseDOT()`
-2. **Convert to IR** using `GraphToIR()`
-3. **Emit Dippin** using a pretty-printer from IR
-
-What auto-converts cleanly:
-- Graph structure (nodes, edges)
-- Node kinds (via shape mapping)
-- Simple attributes (model, provider, label, max_retries, etc.)
-- Edge conditions (raw string preserved, with namespace prefixes added)
-- Graph-level defaults
-- Start/exit node identification
-
-What needs manual cleanup:
-- Prompts with DOT escape artifacts (`\n` → real newlines, `\"` → `"`) — the migration tool should handle most of this automatically
-- Tool commands with triple-escaped shell — same
-- Subgraph references (need import statements added manually)
-- Section comments (lost in DOT parse — need manual re-addition)
-- `reads:`/`writes:` declarations (entirely new — add incrementally)
-
-### Phase 2: Behavioral parity validation (weeks 2-3)
-
-Build `dippin validate-migration <old.dot> <new.dip>`:
-
-1. Parse both files to IR
-2. Compare graph topology (nodes, edges, conditions)
-3. Compare node configurations (model, provider, prompt content ignoring whitespace)
-4. Report differences with source locations in both files
-5. Optionally dry-run both through engine and compare execution traces
-
-### Phase 3: Gradual rollout (weeks 3-6)
-
-1. Engine accepts both `.dot` and `.dip` files (detect by extension)
-2. CI validates that migrated `.dip` files produce identical IR to original `.dot`
-3. New pipelines authored in Dippin only
-4. Existing pipelines migrated file-by-file with parity checks
-5. DOT parser kept but deprecated; eventually removed from authoring path (kept for import)
-
-### Migration order (by risk)
-
-1. `tracker/pipeline/testdata/*.dot` — smallest, good for validating the tool
-2. `tracker/examples/vulnerability_analyzer.dot` — smallest real pipeline (48 lines)
-3. `tracker/examples/semport.dot` — small, tests tool nodes and conditions
-4. `tracker/examples/consensus_task.dot` — tests parallel patterns
-5. `tracker/examples/ask_and_execute.dot` — tests full lifecycle
-6. `tracker/examples/megaplan.dot` — tests complex parallel + cross-critique
-7. `dotpowers/dotpowers-simple.dot` — first large migration
-8. `dotpowers/dotpowers.dot` — the big one (1,199 lines)
-
----
-
-## 17. Bootstrap / Self-Hosting Strategy
-
-Tracker can help build Dippin, but Tracker should not define Dippin.
-
-### What Tracker should build
-
-**Pipeline: `analyze_dot.dot`** — Analyze existing DOT files
-- Agent reads each DOT file
-- Extracts: node kinds, attributes used, condition patterns, prompt sizes
-- Produces a structured report of the real semantic surface area
-- Validates the inventory in this plan against actual usage
-
-**Pipeline: `generate_dippin.dot`** — Synthesize candidate Dippin from DOT
-- Agent reads a DOT file and the Dippin spec
-- Produces a `.dip` file
-- Validator checks the output
-- Human reviews
-
-**Pipeline: `generate_tests.dot`** — Generate parser test cases
-- Agent reads the spec and produces edge-case `.dip` files
-- Covers: empty workflows, multiline prompts with special chars, deeply nested conditions, import chains
-- Produces expected IR output for each
-
-**Pipeline: `migration_fixture.dot`** — Generate migration test fixtures
-- For each example DOT file:
-  - Parse to IR
-  - Generate Dippin
-  - Parse Dippin to IR
-  - Assert IR equality
-
-### What Tracker should NOT build
-
-- The Dippin spec itself (must be human-reviewed markdown)
-- The parser (must be hand-written Go for diagnostic quality)
-- The formatter (must be deterministic, not LLM-generated)
-- The IR types (must be designed, not generated)
-
-### Guard rail
-
-All Tracker-generated Dippin output goes through the same validator pipeline that human-authored Dippin does. No special paths.
-
----
-
-## 18. Implementation Plan by Phases
-
-### Phase 0: Spec & IR (1 week)
-
-- [ ] Finalize Dippin syntax spec as a markdown document
-- [ ] Define Go types for canonical IR (`dippin/ir/` package) — using typed NodeConfig union
-- [ ] Define `GraphToIR()` adapter from existing `pipeline.Graph`
+[... truncated 50276 characters ...]
+peline.Graph`
 - [ ] Write IR serialization (JSON) for debugging
 - [ ] Write 10 hand-crafted IR test fixtures
 
@@ -596,11 +424,345 @@ File/line/column ranges, error codes (DIP001-DIP999), human explanations, sugges
 **9. How should Tracker be used to bootstrap without trapping us?**
 
 Tracker pipelines can analyze DOT files, generate candidate Dippin, and produce test fixtures. But the spec is a human-reviewed document, the parser is hand-written Go, and all generated Dippin goes through the same validator as hand-written Dippin. Tracker is the factory floor, not the blueprint.
-TURN 4
-TOOL CALL: read
+TURN 6
+TOOL CALL: bash
 INPUT:
-{"path": "ir/ir.go"}
-TOOL RESULT: read
+{"command": "grep -n \"migrat\\|Migrat\\|DOT.*IR\\|DOT.*dip\\|\\.dot.*\\.dip\\|Phase 5\\|parity\" DIPPIN_DESIGN_PLAN.md | head -60"}
+TOOL RESULT: bash
+OUTPUT:
+19:This plan proposes a concrete syntax (two candidates evaluated), a canonical IR, a composition model, tooling strategy, and phased migration path. Every recommendation is grounded in the actual Tracker codebase and the real dotpowers pipelines.
+270:**Key property**: The existing engine (`pipeline.Engine`) continues to operate on the IR. The parser is a new frontend. The DOT exporter is a new backend. The engine itself needs minimal changes — mainly accepting IR structs instead of (or in addition to) DOT-parsed structs.
+272:### Migration bridge
+274:During migration, both paths exist:
+276:- `.dot` → DOT Parser (existing) → IR adapter → Engine
+472:The engine can then be incrementally migrated to accept `ir.Workflow` directly, or a reverse adapter `ir.Workflow → pipeline.Graph` can be used during transition.
+781:| **Migration cost** | Moderate — new syntax to learn | Lower — YAML-adjacent feels familiar | B |
+798:| Migration cost | 3 | 4 |
+1137:## 16. Migration Strategy
+1141:Build `dippin migrate <input.dot> [output.dip]`:
+1156:- Prompts with DOT escape artifacts (`\n` → real newlines, `\"` → `"`) — the migration tool should handle most of this automatically
+1162:### Phase 2: Behavioral parity validation (weeks 2-3)
+1164:Build `dippin validate-migration <old.dot> <new.dip>`:
+1174:1. Engine accepts both `.dot` and `.dip` files (detect by extension)
+1175:2. CI validates that migrated `.dip` files produce identical IR to original `.dot`
+1177:4. Existing pipelines migrated file-by-file with parity checks
+1180:### Migration order (by risk)
+1188:7. `dotpowers/dotpowers-simple.dot` — first large migration
+1216:**Pipeline: `migration_fixture.dot`** — Generate migration test fixtures
+1274:- [ ] Test against existing DOT files (parse DOT → IR → export DOT → parse DOT → compare topology)
+1277:### Phase 5: Migration Tool (1 week)
+1279:- [ ] Implement `dippin migrate <file.dot>` using existing parser + IR + formatter
+1280:- [ ] Post-migration cleanup: un-escape prompts, reformat tool commands, add namespace prefixes to conditions
+1281:- [ ] `dippin validate-migration <old.dot> <new.dip>` parity checker
+1282:- [ ] Migrate all example files; commit both versions during transition
+1288:- [ ] Incrementally migrate engine to accept IR directly
+1308:1. **Parse all existing patterns**: Every DOT pipeline in the repo can be expressed in Dippin and parsed to equivalent IR
+1315:8. **DOT export works**: `dippin export-dot` produces valid, renderable DOT
+1316:9. **Migration tool works**: `dippin migrate` converts all example files with no manual edits needed for correct execution
+1319:12. **CLI is functional**: `dippin parse`, `dippin validate`, `dippin fmt`, `dippin export-dot`, `dippin migrate`
+1381:**Rationale**: In the current engine, condition nodes do nothing — the engine evaluates edge conditions during edge selection regardless of node kind. Making routing a surface-syntax convenience (`route X -> A when ... -> B when ...`) is cleaner than requiring authors to declare a node kind that has no configuration fields. The IR can emit a `NodeCondition` internally for migration compatibility.
+1400:4. **Should `reads:`/`writes:` become mandatory in a future version?** Probably yes, once all existing pipelines are migrated and annotated. But that's a v2 decision.
+1425:12. **Implement DOT exporter** in `dippin/export/dot.go`
+1426:13. **Implement migration tool** in `dippin/migrate/migrate.go`
+1427:14. **Migrate first 3 example pipelines** and verify parity
+1432:16. **Migrate remaining examples**
+1434:18. **Begin adding `reads:`/`writes:` annotations** to migrated pipelines
+1467:├── migrate/
+1468:│   ├── migrate.go             # DOT → Dippin conversion
+1469:│   ├── parity.go              # Behavioral parity checker
+1470:│   └── migrate_test.go
+1473:│       └── main.go            # CLI: parse, validate, fmt, export-dot, migrate
+1476:    ├── ask_and_execute.dip    # Migrated from DOT
+1477:    └── consensus_task.dip     # Migrated from DOT
+
+TOOL CALL: bash
+INPUT:
+{"command": "cat build_dippin.dot"}
+TOOL RESULT: bash
+OUTPUT:
+digraph BuildDippin {
+  graph [
+    goal="Build the Dippin toolchain (parser, validator, formatter, DOT exporter, migration tool) by reading the design spec and iteratively implementing components into the dippin-lang Go module. Ledger-driven: picks the next uncompleted component automatically and loops until all are done.",
+    rankdir=LR,
+    default_max_retry=3,
+    default_fidelity="summary:high",
+    max_restarts=7
+  ];
+
+  Start [shape=Mdiamond, label="Start"];
+  Exit [shape=Msquare, label="Exit"];
+
+  // ── Phase 0: Setup ──────────────────────────────────────────────
+
+  SetupWorkspace [
+    shape=parallelogram,
+    label="Setup Workspace & Ledger",
+    tool_command="set -eu\nmkdir -p .tracker/runs\nif [ ! -f go.mod ]; then\n  echo 'ERROR: must run from dippin-lang directory with go.mod'\n  exit 1\nfi\n# Initialize ledger if it doesn't exist\nif [ ! -f .tracker/ledger.tsv ]; then\n  printf 'component\\tpackage\\tstatus\\tdescription\\n' > .tracker/ledger.tsv\n  printf 'ir\\tir/\\tcomplete\\tCanonical IR types (Workflow, Node, Edge, Condition)\\n' >> .tracker/ledger.tsv\n  printf 'parser-lexer\\tparser/\\tpending\\tLine-based indentation-aware lexer\\n' >> .tracker/ledger.tsv\n  printf 'parser-core\\tparser/\\tpending\\tParser: .dip source to IR with error recovery\\n' >> .tracker/ledger.tsv\n  printf 'parser-conditions\\tparser/\\tpending\\tCondition expression parser (and/or/not/compare)\\n' >> .tracker/ledger.tsv\n  printf 'validator\\tvalidator/\\tpending\\tGraph structure validation (DIP001-DIP009)\\n' >> .tracker/ledger.tsv\n  printf 'linter\\tvalidator/\\tpending\\tSemantic quality warnings (DIP101-DIP112)\\n' >> .tracker/ledger.tsv\n  printf 'formatter\\tformatter/\\tpending\\tCanonical formatter: IR to .dip source\\n' >> .tracker/ledger.tsv\n  printf 'dot-exporter\\texport/\\tpending\\tDOT exporter: IR to DOT string\\n' >> .tracker/ledger.tsv\n  printf 'migration\\tmigrate/\\tpending\\tMigration tool: DOT to IR to .dip\\n' >> .tracker/ledger.tsv\n  printf 'cli\\tcmd/dippin/\\tpending\\tCLI subcommands: parse, validate, lint, fmt, export-dot, migrate\\n' >> .tracker/ledger.tsv\nfi\ncat .tracker/ledger.tsv\nprintf 'workspace-ready'"
+  ];
+
+  // ── Phase 1: Pick next task from ledger ─────────────────────────
+
+  PickNextComponent [
+    shape=parallelogram,
+    label="Pick Next Component",
+    tool_command="set -eu\n# Find first pending component\nNEXT=$(awk -F'\\t' '$3==\"pending\" { print $1; exit }' .tracker/ledger.tsv)\nif [ -z \"$NEXT\" ]; then\n  printf 'all_complete'\n  exit 0\nfi\n# Mark it in-progress\nawk -F'\\t' -v comp=\"$NEXT\" 'BEGIN{OFS=\"\\t\"} $1==comp{$3=\"in_progress\"} {print}' .tracker/ledger.tsv > .tracker/ledger.tmp && mv .tracker/ledger.tmp .tracker/ledger.tsv\n# Write context snapshot for planner to read from disk\nmkdir -p .tracker\necho \"=== Next component: $NEXT ===\" > .tracker/current_context.md\nawk -F'\\t' -v comp=\"$NEXT\" '$1==comp { printf \"component: %s\\npackage: %s\\ndescription: %s\\n\", $1, $2, $4 }' .tracker/ledger.tsv >> .tracker/current_context.md\necho '' >> .tracker/current_context.md\necho '=== Current codebase ===' >> .tracker/current_context.md\nfind . -name '*.go' -not -path './vendor/*' | sort >> .tracker/current_context.md\necho '' >> .tracker/current_context.md\necho '=== Test status ===' >> .tracker/current_context.md\ngo test ./... >> .tracker/current_context.md 2>&1 || true\necho '' >> .tracker/current_context.md\necho '=== Ledger ===' >> .tracker/current_context.md\ncat .tracker/ledger.tsv >> .tracker/current_context.md\nprintf 'has_next'"
+  ];
+
+  // Route: all done vs has work
+  CheckComplete [
+    shape=diamond,
+    label="All done?"
+  ];
+
+  // ── Phase 2: Plan ───────────────────────────────────────────────
+
+  PlanComponent [
+    shape=box,
+    label="Plan Component",
+    llm_provider="anthropic",
+    llm_model="claude-opus-4-6",
+    reasoning_effort="high",
+    prompt="You are building the Dippin toolchain. Read .tracker/current_context.md to see which component is in_progress and the current state of the codebase.\n\nRead the design spec at ../DIPPIN_DESIGN_PLAN.md — this is the authoritative specification.\n\nRead the current codebase to understand what already exists (especially ir/ types).\n\nProduce a focused implementation plan for THIS component only:\n1. List the exact files to create/modify\n2. List the types and functions to implement\n3. List 10+ test cases (happy path, error cases, edge cases)\n4. Reference the specific design spec sections that govern this component\n5. Note any dependencies on existing packages\n\nWrite the plan to .tracker/current_plan.md so implementation agents can read it.\n\nDo NOT implement yet — just plan. Be precise enough that an implementation agent can work from this plan without ambiguity."
+  ];
+
+  // ── Phase 3: Implement ──────────────────────────────────────────
+
+  ImplementParallel [shape=component, label="Implement (Parallel)"];
+
+  ImplementClaude [
+    shape=box,
+    label="Claude Implementation",
+    llm_provider="anthropic",
+    llm_model="claude-opus-4-6",
+    reasoning_effort="high",
+    fidelity="full",
+    prompt="Implement the planned component for the Dippin toolchain. Read .tracker/current_plan.md for exactly what to build and .tracker/current_context.md for the current codebase state.\n\nRead the design spec at ../DIPPIN_DESIGN_PLAN.md for exact specifications.\nRead existing code in ir/ to match types precisely.\n\nRules:\n- Write idiomatic Go. Standard library only (no external deps beyond what go.mod already has).\n- Every exported function gets a test. Test files go next to source.\n- Match the IR types in ir/ exactly. Do not modify ir/ unless the plan says to.\n- Table-driven tests with edge cases from the plan.\n- One responsibility per package.\n- Use diagnostic codes from the spec (DIP001-DIP112) where applicable.\n- Write real, complete code — no stubs, no TODOs, no placeholders.\n- Run 'go build ./...' and 'go test ./...' to verify before finishing."
+  ];
+
+  ImplementGPT [
+    shape=box,
+    label="GPT Implementation",
+    llm_provider="openai",
+    llm_model="gpt-5.4",
+    reasoning_effort="high",
+    fidelity="full",
+    prompt="Implement the planned component for the Dippin toolchain. Read .tracker/current_plan.md for exactly what to build and .tracker/current_context.md for the current codebase state.\n\nRead the design spec at ../DIPPIN_DESIGN_PLAN.md for exact specifications.\nRead existing code in ir/ to match types precisely.\n\nRules:\n- Write idiomatic Go. Standard library only (no external deps beyond what go.mod already has).\n- Every exported function gets a test. Test files go next to source.\n- Match the IR types in ir/ exactly. Do not modify ir/ unless the plan says to.\n- Table-driven tests with edge cases from the plan.\n- One responsibility per package.\n- Use diagnostic codes from the spec (DIP001-DIP112) where applicable.\n- Write real, complete code — no stubs, no TODOs, no placeholders.\n- Run 'go build ./...' and 'go test ./...' to verify before finishing."
+  ];
+
+  ImplementGemini [
+    shape=box,
+    label="Gemini Implementation",
+    llm_provider="gemini",
+    llm_model="gemini-3-flash-preview",
+    reasoning_effort="high",
+    fidelity="full",
+    prompt="Implement the planned component for the Dippin toolchain. Read .tracker/current_plan.md for exactly what to build and .tracker/current_context.md for the current codebase state.\n\nRead the design spec at ../DIPPIN_DESIGN_PLAN.md for exact specifications.\nRead existing code in ir/ to match types precisely.\n\nRules:\n- Write idiomatic Go. Standard library only (no external deps beyond what go.mod already has).\n- Every exported function gets a test. Test files go next to source.\n- Match the IR types in ir/ exactly. Do not modify ir/ unless the plan says to.\n- Table-driven tests with edge cases from the plan.\n- One responsibility per package.\n- Use diagnostic codes from the spec (DIP001-DIP112) where applicable.\n- Write real, complete code — no stubs, no TODOs, no placeholders.\n- Run 'go build ./...' and 'go test ./...' to verify before finishing."
+  ];
+
+  ImplementJoin [shape=tripleoctagon, label="Implement Join"];
+
+  // ── Phase 4: Validate ───────────────────────────────────────────
+
+  ValidateBuild [
+    shape=parallelogram,
+    label="Validate Build and Tests",
+    tool_command="set -eu\necho '=== go vet ==='\ngo vet ./... 2>&1\necho ''\necho '=== go build ==='\ngo build ./... 2>&1\necho ''\necho '=== go test -v ==='\ngo test -v -count=1 ./... 2>&1\nprintf 'validation-pass'"
+  ];
+
+  // ── Phase 5: Review ─────────────────────────────────────────────
+
+  ReviewParallel [shape=component, label="Reviews (Parallel)"];
+
+  ReviewClaude [
+    shape=box,
+    label="Claude Review",
+    llm_provider="anthropic",
+    llm_model="claude-opus-4-6",
+    reasoning_effort="high",
+    prompt="Review the implementation against the Dippin design spec (../DIPPIN_DESIGN_PLAN.md). Check:\n1. Does the code match the spec's type definitions, validation rules, and syntax?\n2. Are tests comprehensive — happy path, errors, and edge cases the spec calls out?\n3. Does the code integrate correctly with the existing ir/ package?\n4. Is the code idiomatic Go with proper error handling?\n5. Any deviations from the spec that need justification?\n\nReturn STATUS: success if solid. Return STATUS: fail with specific required fixes if not."
+  ];
+
+  ReviewGPT [
+    shape=box,
+    label="GPT Review",
+    llm_provider="openai",
+    llm_model="gpt-5.4",
+    reasoning_effort="high",
+    prompt="Review the implementation against the Dippin design spec (../DIPPIN_DESIGN_PLAN.md). Check:\n1. Correctness: does the code do what the spec says?\n2. Completeness: are all spec requirements for this component addressed?\n3. Test quality: do tests cover happy path, error cases, and edge cases?\n4. Integration: does it work with existing packages without modification?\n\nReturn STATUS: success if solid. Return STATUS: fail with specific required fixes if not."
+  ];
+
+  ReviewGemini [
+    shape=box,
+    label="Gemini Review",
+    llm_provider="gemini",
+    llm_model="gemini-3-flash-preview",
+    reasoning_effort="high",
+    prompt="Review the implementation against the Dippin design spec (../DIPPIN_DESIGN_PLAN.md). Check:\n1. Spec fidelity: does the code faithfully implement what the design doc specifies?\n2. Edge cases: are boundary conditions and error paths handled?\n3. Test coverage: do tests exercise the contract surfaces, not just happy paths?\n4. Robustness: will this code survive adversarial or malformed input?\n\nReturn STATUS: success if solid. Return STATUS: fail with specific required fixes if not."
+  ];
+
+  ReviewsJoin [shape=tripleoctagon, label="Reviews Join"];
+
+  ReviewAnalysis [
+    shape=box,
+    label="Review Synthesis",
+    llm_provider="anthropic",
+    llm_model="claude-opus-4-6",
+    reasoning_effort="high",
+    goal_gate=true,
+    retry_target="ImplementClaude",
+    prompt="Synthesize all three reviews into one verdict.\n\n- If reviewers agree the code is solid: return STATUS: success.\n- If fixes are needed and reviewers agree on what: return STATUS: retry with a clear fix list.\n- If reviewers fundamentally disagree or component is broken: return STATUS: fail to escalate.\n\nBe concrete about what needs fixing if retry."
+  ];
+
+  // ── Phase 6: Ship & Loop ────────────────────────────────────────
+
+  CommitWork [
+    shape=box,
+    label="Commit Component",
+    llm_provider="anthropic",
+    llm_model="claude-sonnet-4-6",
+    reasoning_effort="low",
+    prompt="All reviews passed. Commit the new component with a clean conventional commit message. The message should name the package and what it implements (e.g., 'feat(parser): implement lexer with indentation tracking'). Include test count in the message body."
+  ];
+
+  MarkComplete [
+    shape=parallelogram,
+    label="Mark Component Complete",
+    tool_command="set -eu\n# Find the in_progress component and mark it complete\nawk -F'\\t' 'BEGIN{OFS=\"\\t\"} $3==\"in_progress\"{$3=\"complete\"} {print}' .tracker/ledger.tsv > .tracker/ledger.tmp && mv .tracker/ledger.tmp .tracker/ledger.tsv\necho '=== Updated ledger ==='\ncat .tracker/ledger.tsv\nPENDING=$(awk -F'\\t' '$3==\"pending\"' .tracker/ledger.tsv | wc -l | tr -d ' ')\necho \"Remaining: $PENDING components\"\nprintf 'marked-complete'"
+  ];
+
+  FailureSummary [
+    shape=box,
+    label="Failure Summary",
+    llm_provider="anthropic",
+    llm_model="claude-sonnet-4-6",
+    reasoning_effort="high",
+    prompt="The component could not be built to satisfaction. Summarize what was attempted, what failed, and what the blockers are. Write this to .tracker/failure-report.md so the next run can pick up from here. Also mark the component back to 'pending' in the ledger."
+  ];
+
+  MarkFailed [
+    shape=parallelogram,
+    label="Reset Failed Component",
+    tool_command="set -eu\n# Reset in_progress back to pending\nawk -F'\\t' 'BEGIN{OFS=\"\\t\"} $3==\"in_progress\"{$3=\"pending\"} {print}' .tracker/ledger.tsv > .tracker/ledger.tmp && mv .tracker/ledger.tmp .tracker/ledger.tsv\ncat .tracker/ledger.tsv\nprintf 'reset-done'"
+  ];
+
+  // ── Edges ───────────────────────────────────────────────────────
+
+  // Setup
+  Start -> SetupWorkspace;
+  SetupWorkspace -> PickNextComponent;
+
+  // Task selection routing
+  PickNextComponent -> CheckComplete;
+  CheckComplete -> Exit [condition="context.tool_stdout=all_complete", label="all done"];
+  CheckComplete -> PlanComponent [condition="context.tool_stdout=has_next", label="has work"];
+
+  // Plan -> Implement
+  PlanComponent -> ImplementParallel;
+
+  // Parallel implementation
+  ImplementParallel -> ImplementClaude;
+  ImplementParallel -> ImplementGPT;
+  ImplementParallel -> ImplementGemini;
+  ImplementClaude -> ImplementJoin;
+  ImplementGPT -> ImplementJoin;
+  ImplementGemini -> ImplementJoin;
+
+  // Validation
+  ImplementJoin -> ValidateBuild;
+  ValidateBuild -> ReviewParallel [condition="outcome=success", label="validated"];
+  ValidateBuild -> ImplementClaude [condition="outcome=fail", label="fix_build"];
+
+  // Reviews
+  ReviewParallel -> ReviewClaude;
+  ReviewParallel -> ReviewGPT;
+  ReviewParallel -> ReviewGemini;
+  ReviewClaude -> ReviewsJoin;
+  ReviewGPT -> ReviewsJoin;
+  ReviewGemini -> ReviewsJoin;
+
+  // Synthesis and routing
+  ReviewsJoin -> ReviewAnalysis;
+  ReviewAnalysis -> CommitWork [condition="outcome=success", label="pass"];
+  ReviewAnalysis -> ImplementClaude [condition="outcome=retry", label="rework"];
+  ReviewAnalysis -> FailureSummary [condition="outcome=fail", label="escalate"];
+
+  // Ship and loop
+  CommitWork -> MarkComplete;
+  MarkComplete -> PickNextComponent [label="next component", loop_restart=true];
+
+  // Failure handling
+  FailureSummary -> MarkFailed;
+  MarkFailed -> Exit;
+}
+
+TURN 7
+TOOL CALL: bash
+INPUT:
+{"command": "sed -n '/^## 16\\. Migration Strategy/,/^## 17/p' DIPPIN_DESIGN_PLAN.md"}
+TOOL RESULT: bash
+OUTPUT:
+## 16. Migration Strategy
+
+### Phase 1: Automated conversion tool (weeks 1-2)
+
+Build `dippin migrate <input.dot> [output.dip]`:
+
+1. **Parse DOT** using existing `pipeline.ParseDOT()`
+2. **Convert to IR** using `GraphToIR()`
+3. **Emit Dippin** using a pretty-printer from IR
+
+What auto-converts cleanly:
+- Graph structure (nodes, edges)
+- Node kinds (via shape mapping)
+- Simple attributes (model, provider, label, max_retries, etc.)
+- Edge conditions (raw string preserved, with namespace prefixes added)
+- Graph-level defaults
+- Start/exit node identification
+
+What needs manual cleanup:
+- Prompts with DOT escape artifacts (`\n` → real newlines, `\"` → `"`) — the migration tool should handle most of this automatically
+- Tool commands with triple-escaped shell — same
+- Subgraph references (need import statements added manually)
+- Section comments (lost in DOT parse — need manual re-addition)
+- `reads:`/`writes:` declarations (entirely new — add incrementally)
+
+### Phase 2: Behavioral parity validation (weeks 2-3)
+
+Build `dippin validate-migration <old.dot> <new.dip>`:
+
+1. Parse both files to IR
+2. Compare graph topology (nodes, edges, conditions)
+3. Compare node configurations (model, provider, prompt content ignoring whitespace)
+4. Report differences with source locations in both files
+5. Optionally dry-run both through engine and compare execution traces
+
+### Phase 3: Gradual rollout (weeks 3-6)
+
+1. Engine accepts both `.dot` and `.dip` files (detect by extension)
+2. CI validates that migrated `.dip` files produce identical IR to original `.dot`
+3. New pipelines authored in Dippin only
+4. Existing pipelines migrated file-by-file with parity checks
+5. DOT parser kept but deprecated; eventually removed from authoring path (kept for import)
+
+### Migration order (by risk)
+
+1. `tracker/pipeline/testdata/*.dot` — smallest, good for validating the tool
+2. `tracker/examples/vulnerability_analyzer.dot` — smallest real pipeline (48 lines)
+3. `tracker/examples/semport.dot` — small, tests tool nodes and conditions
+4. `tracker/examples/consensus_task.dot` — tests parallel patterns
+5. `tracker/examples/ask_and_execute.dot` — tests full lifecycle
+6. `tracker/examples/megaplan.dot` — tests complex parallel + cross-critique
+7. `dotpowers/dotpowers-simple.dot` — first large migration
+8. `dotpowers/dotpowers.dot` — the big one (1,199 lines)
+
+---
+
+## 17. Bootstrap / Self-Hosting Strategy
+
+TOOL CALL: bash
+INPUT:
+{"command": "cat ir/ir.go"}
+TOOL RESULT: bash
 OUTPUT:
 // Package ir defines the canonical intermediate representation for Dippin workflows.
 //
@@ -741,10 +903,10 @@ type NodeIO struct {
 	Writes []string // Context keys this node produces
 }
 
-TOOL CALL: read
+TOOL CALL: bash
 INPUT:
-{"path": "ir/edge.go"}
-TOOL RESULT: read
+{"command": "cat ir/edge.go"}
+TOOL RESULT: bash
 OUTPUT:
 package ir
 
@@ -801,10 +963,11 @@ type CondCompare struct {
 
 func (CondCompare) conditionExpr() {}
 
-TOOL CALL: read
+TURN 8
+TOOL CALL: bash
 INPUT:
-{"path": "ir/lookup.go"}
-TOOL RESULT: read
+{"command": "cat ir/lookup.go"}
+TOOL RESULT: bash
 OUTPUT:
 package ir
 
@@ -849,10 +1012,10 @@ func (w *Workflow) NodeIDs() []string {
 	return ids
 }
 
-TOOL CALL: read
+TOOL CALL: bash
 INPUT:
-{"path": "ir/source.go"}
-TOOL RESULT: read
+{"command": "cat ir/source.go"}
+TOOL RESULT: bash
 OUTPUT:
 package ir
 
@@ -877,503 +1040,2111 @@ type SourceMapEntry struct {
 	Location  SourceLocation
 }
 
-TOOL CALL: read
+TOOL CALL: bash
 INPUT:
-{"path": "ir/ir_test.go"}
-TOOL RESULT: read
+{"command": "cat formatter/format.go"}
+TOOL RESULT: bash
 OUTPUT:
-package ir_test
+// Package formatter implements canonical Dippin source formatting.
+// Given an ir.Workflow, it produces deterministic .dip source text.
+// The output is idempotent: Format(w) always produces the same string
+// for the same IR state.
+package formatter
 
 import (
-	"testing"
+	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/2389/dippin/ir"
 )
 
-// Fixture: minimal valid workflow (two nodes, one edge).
-func minimalWorkflow() *ir.Workflow {
-	return &ir.Workflow{
-		Name:    "minimal",
-		Version: "1",
-		Start:   "Begin",
-		Exit:    "End",
-		Nodes: []*ir.Node{
-			{ID: "Begin", Kind: ir.NodeHuman, Config: ir.HumanConfig{Mode: "freeform"}},
-			{ID: "End", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Done."}},
-		},
-		Edges: []*ir.Edge{
-			{From: "Begin", To: "End"},
-		},
+// Format renders a workflow to canonical Dippin source text.
+// The output always ends with exactly one trailing newline.
+func Format(w *ir.Workflow) string {
+	wr := &writer{}
+
+	writeWorkflowHeader(wr, w)
+
+	if !isDefaultsZero(w.Defaults) {
+		wr.blank()
+		writeDefaults(wr, w.Defaults)
 	}
+
+	for _, n := range w.Nodes {
+		wr.blank()
+		writeNode(wr, n)
+	}
+
+	if len(w.Edges) > 0 {
+		wr.blank()
+		writeEdges(wr, w.Edges)
+	}
+
+	return wr.String()
 }
 
-// Fixture: ask-and-execute (the canonical example from the design doc).
-func askAndExecuteWorkflow() *ir.Workflow {
-	return &ir.Workflow{
-		Name:    "ask_and_execute",
-		Version: "1",
-		Goal:    "Ask user for a task, implement it, review, ship",
-		Start:   "AskUser",
-		Exit:    "Done",
-		Defaults: ir.WorkflowDefaults{
-			Model:       "claude-opus-4-6",
-			Provider:    "anthropic",
-			RetryPolicy: "standard",
-			Fidelity:    "summary:high",
-			MaxRestarts: 5,
-		},
-		Nodes: []*ir.Node{
-			{ID: "AskUser", Kind: ir.NodeHuman, Config: ir.HumanConfig{Mode: "freeform"}},
-			{
-				ID: "Interpret", Kind: ir.NodeAgent,
-				IO: ir.NodeIO{Reads: []string{"human_response"}, Writes: []string{"plan"}},
-				Config: ir.AgentConfig{
-					Prompt: "You are a senior software architect.\n\nRead the user's request below and produce a clear,\nactionable implementation plan.\n\n## User Request\n${ctx.human_response}",
-				},
-			},
-			{ID: "ImplementFanOut", Kind: ir.NodeParallel, Config: ir.ParallelConfig{Targets: []string{"ImplementClaude", "ImplementCodex"}}},
-			{
-				ID: "ImplementClaude", Kind: ir.NodeAgent,
-				Config: ir.AgentConfig{Prompt: "Implement the plan.", Model: "gpt-5.4", Provider: "openai"},
-			},
-			{
-				ID: "ImplementCodex", Kind: ir.NodeAgent,
-				Config: ir.AgentConfig{Prompt: "Implement the plan.", Model: "gpt-5.3-codex", Provider: "openai"},
-			},
-			{ID: "ImplementJoin", Kind: ir.NodeFanIn, Config: ir.FanInConfig{Sources: []string{"ImplementClaude", "ImplementCodex"}}},
-			{
-				ID: "Validate", Kind: ir.NodeAgent,
-				Config: ir.AgentConfig{
-					Prompt:     "Review the implementations. Run tests.\nRespond with STATUS: success or STATUS: fail.",
-					AutoStatus: true,
-					GoalGate:   true,
-				},
-				Retry: ir.RetryConfig{MaxRetries: 2},
-			},
-			{ID: "Approve", Kind: ir.NodeHuman, Config: ir.HumanConfig{Mode: "choice", Default: "Yes"}},
-			{ID: "Done", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Ship it."}},
-		},
-		Edges: []*ir.Edge{
-			{From: "AskUser", To: "Interpret"},
-			{From: "Interpret", To: "ImplementFanOut"},
-			{From: "ImplementJoin", To: "Validate"},
-			{From: "Validate", To: "Approve", Condition: &ir.Condition{
-				Raw:    "ctx.outcome = success",
-				Parsed: ir.CondCompare{Variable: "ctx.outcome", Op: "=", Value: "success"},
-			}},
-			{From: "Validate", To: "Interpret", Label: "retry", Restart: true, Condition: &ir.Condition{
-				Raw:    "ctx.outcome = fail",
-				Parsed: ir.CondCompare{Variable: "ctx.outcome", Op: "=", Value: "fail"},
-			}},
-			{From: "Approve", To: "Done"},
-		},
-	}
+// writer wraps a strings.Builder with indentation tracking.
+type writer struct {
+	buf    strings.Builder
+	indent int // current indent level (each level = 2 spaces)
 }
 
-// Fixture: tool node with multiline command.
-func toolWorkflow() *ir.Workflow {
-	return &ir.Workflow{
-		Name:    "tool_test",
-		Version: "1",
-		Start:   "Check",
-		Exit:    "Report",
-		Nodes: []*ir.Node{
-			{
-				ID: "Check", Kind: ir.NodeTool,
-				IO: ir.NodeIO{Writes: []string{"test_result"}},
-				Config: ir.ToolConfig{
-					Command: "#!/bin/sh\nset -eu\nif pytest --tb=short 2>&1; then\n  printf 'pass'\nelse\n  printf 'fail'\n  exit 1\nfi",
-					Timeout: 60 * time.Second,
-				},
-			},
-			{ID: "Report", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Report results."}},
-		},
-		Edges: []*ir.Edge{
-			{From: "Check", To: "Report"},
-		},
-	}
+// line writes a single indented line followed by a newline.
+func (wr *writer) line(format string, args ...any) {
+	content := fmt.Sprintf(format, args...)
+	content = strings.TrimRight(content, " \t")
+	prefix := strings.Repeat("  ", wr.indent)
+	wr.buf.WriteString(prefix)
+	wr.buf.WriteString(content)
+	wr.buf.WriteByte('\n')
 }
 
-// Fixture: subgraph composition.
-func subgraphWorkflow() *ir.Workflow {
-	return &ir.Workflow{
-		Name:    "with_subgraph",
-		Version: "1",
-		Start:   "Build",
-		Exit:    "Done",
-		Nodes: []*ir.Node{
-			{ID: "Build", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Build the feature."}},
-			{
-				ID: "Review", Kind: ir.NodeSubgraph,
-				Config: ir.SubgraphConfig{
-					Ref:    "./review.dip",
-					Params: map[string]string{"model": "gpt-5.4", "strict": "true"},
-				},
-			},
-			{ID: "Done", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Done."}},
-		},
-		Edges: []*ir.Edge{
-			{From: "Build", To: "Review"},
-			{From: "Review", To: "Done", Condition: &ir.Condition{
-				Raw:    "ctx.outcome = success",
-				Parsed: ir.CondCompare{Variable: "ctx.outcome", Op: "=", Value: "success"},
-			}},
-			{From: "Review", To: "Build", Restart: true, Condition: &ir.Condition{
-				Raw:    "ctx.outcome = fail",
-				Parsed: ir.CondCompare{Variable: "ctx.outcome", Op: "=", Value: "fail"},
-			}},
-		},
-	}
+// blank writes an empty line.
+func (wr *writer) blank() {
+	wr.buf.WriteByte('\n')
 }
 
-// Fixture: complex conditions with AND/OR/NOT.
-func complexConditionWorkflow() *ir.Workflow {
-	return &ir.Workflow{
-		Name:    "complex_conditions",
-		Version: "1",
-		Start:   "Check",
-		Exit:    "Done",
-		Nodes: []*ir.Node{
-			{ID: "Check", Kind: ir.NodeTool, Config: ir.ToolConfig{Command: "echo check"}},
-			{ID: "PathA", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Path A."}},
-			{ID: "PathB", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Path B."}},
-			{ID: "Done", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Done."}},
-		},
-		Edges: []*ir.Edge{
-			{From: "Check", To: "PathA", Condition: &ir.Condition{
-				Raw: "ctx.outcome = success and ctx.tool_stdout != empty",
-				Parsed: ir.CondAnd{
-					Left:  ir.CondCompare{Variable: "ctx.outcome", Op: "=", Value: "success"},
-					Right: ir.CondCompare{Variable: "ctx.tool_stdout", Op: "!=", Value: "empty"},
-				},
-			}},
-			{From: "Check", To: "PathB", Condition: &ir.Condition{
-				Raw: "not ctx.outcome = success",
-				Parsed: ir.CondNot{
-					Inner: ir.CondCompare{Variable: "ctx.outcome", Op: "=", Value: "success"},
-				},
-			}},
-			{From: "PathA", To: "Done"},
-			{From: "PathB", To: "Done"},
-		},
-	}
+// push increases the indentation level by one.
+func (wr *writer) push() {
+	wr.indent++
 }
 
-func TestWorkflowNodeLookup(t *testing.T) {
-	w := minimalWorkflow()
-
-	if n := w.Node("Begin"); n == nil {
-		t.Fatal("expected to find node Begin")
-	} else if n.Kind != ir.NodeHuman {
-		t.Errorf("Begin kind = %q, want %q", n.Kind, ir.NodeHuman)
-	}
-
-	if n := w.Node("Nonexistent"); n != nil {
-		t.Errorf("expected nil for nonexistent node, got %+v", n)
-	}
+// pop decreases the indentation level by one.
+func (wr *writer) pop() {
+	wr.indent--
 }
 
-func TestWorkflowEdgesFrom(t *testing.T) {
-	w := askAndExecuteWorkflow()
-
-	edges := w.EdgesFrom("Validate")
-	if len(edges) != 2 {
-		t.Fatalf("EdgesFrom(Validate) = %d edges, want 2", len(edges))
+// multilineBlock emits a multiline field in the canonical form:
+//
+//	key:
+//	  <line1>
+//	  <line2>
+func (wr *writer) multilineBlock(key, content string) {
+	wr.line("%s:", key)
+	content = strings.TrimRight(content, " \t\n\r")
+	if content == "" {
+		return
 	}
-
-	targets := map[string]bool{}
-	for _, e := range edges {
-		targets[e.To] = true
-	}
-	if !targets["Approve"] || !targets["Interpret"] {
-		t.Errorf("unexpected edge targets: %v", targets)
-	}
-}
-
-func TestWorkflowEdgesTo(t *testing.T) {
-	w := askAndExecuteWorkflow()
-
-	edges := w.EdgesTo("Interpret")
-	if len(edges) != 2 {
-		t.Fatalf("EdgesTo(Interpret) = %d edges, want 2", len(edges))
-	}
-
-	sources := map[string]bool{}
-	for _, e := range edges {
-		sources[e.From] = true
-	}
-	if !sources["AskUser"] || !sources["Validate"] {
-		t.Errorf("unexpected edge sources: %v", sources)
-	}
-}
-
-func TestRestartEdge(t *testing.T) {
-	w := askAndExecuteWorkflow()
-
-	edges := w.EdgesFrom("Validate")
-	var restartEdge *ir.Edge
-	for _, e := range edges {
-		if e.Restart {
-			restartEdge = e
-			break
+	wr.push()
+	for _, l := range strings.Split(content, "\n") {
+		l = strings.TrimRight(l, " \t\r")
+		if l == "" {
+			wr.blank()
+		} else {
+			wr.line("%s", l)
 		}
 	}
-
-	if restartEdge == nil {
-		t.Fatal("expected a restart edge from Validate")
-	}
-	if restartEdge.To != "Interpret" {
-		t.Errorf("restart edge target = %q, want Interpret", restartEdge.To)
-	}
-	if restartEdge.Label != "retry" {
-		t.Errorf("restart edge label = %q, want retry", restartEdge.Label)
-	}
+	wr.pop()
 }
 
-func TestNodeKinds(t *testing.T) {
-	w := askAndExecuteWorkflow()
+// String returns the final output with exactly one trailing newline.
+func (wr *writer) String() string {
+	s := wr.buf.String()
+	s = strings.TrimRight(s, "\n\r \t")
+	return s + "\n"
+}
 
-	expected := map[string]ir.NodeKind{
-		"AskUser":          ir.NodeHuman,
-		"Interpret":        ir.NodeAgent,
-		"ImplementFanOut":  ir.NodeParallel,
-		"ImplementClaude":  ir.NodeAgent,
-		"ImplementCodex":   ir.NodeAgent,
-		"ImplementJoin":    ir.NodeFanIn,
-		"Validate":         ir.NodeAgent,
-		"Approve":          ir.NodeHuman,
-		"Done":             ir.NodeAgent,
+// --- Section emitters ---
+
+func writeWorkflowHeader(wr *writer, w *ir.Workflow) {
+	wr.line("workflow %s", w.Name)
+	wr.push()
+	if w.Goal != "" {
+		wr.line("goal: %s", quoteValue(w.Goal))
 	}
+	wr.line("start: %s", w.Start)
+	wr.line("exit: %s", w.Exit)
+	// We keep the indent at 1 for the rest of the top-level sections
+}
 
-	for id, wantKind := range expected {
-		n := w.Node(id)
-		if n == nil {
-			t.Errorf("node %q not found", id)
-			continue
+func writeDefaults(wr *writer, d ir.WorkflowDefaults) {
+	wr.line("defaults")
+	wr.push()
+	if d.Model != "" {
+		wr.line("model: %s", quoteValue(d.Model))
+	}
+	if d.Provider != "" {
+		wr.line("provider: %s", quoteValue(d.Provider))
+	}
+	if d.RetryPolicy != "" {
+		wr.line("retry_policy: %s", quoteValue(d.RetryPolicy))
+	}
+	if d.MaxRetries != 0 {
+		wr.line("max_retries: %d", d.MaxRetries)
+	}
+	if d.Fidelity != "" {
+		wr.line("fidelity: %s", quoteValue(d.Fidelity))
+	}
+	if d.MaxRestarts != 0 {
+		wr.line("max_restarts: %d", d.MaxRestarts)
+	}
+	if d.RestartTarget != "" {
+		wr.line("restart_target: %s", d.RestartTarget)
+	}
+	if d.CacheTools {
+		wr.line("cache_tools: true")
+	}
+	if d.Compaction != "" {
+		wr.line("compaction: %s", quoteValue(d.Compaction))
+	}
+	wr.pop()
+}
+
+func writeNode(wr *writer, n *ir.Node) {
+	switch cfg := n.Config.(type) {
+	case ir.ParallelConfig:
+		wr.line("parallel %s -> %s", n.ID, strings.Join(cfg.Targets, ", "))
+	case ir.FanInConfig:
+		wr.line("fan_in %s <- %s", n.ID, strings.Join(cfg.Sources, ", "))
+	default:
+		wr.line("%s %s", n.Kind, n.ID)
+		wr.push()
+		switch cfg := n.Config.(type) {
+		case ir.AgentConfig:
+			writeAgentFields(wr, n, cfg)
+		case ir.HumanConfig:
+			writeHumanFields(wr, n, cfg)
+		case ir.ToolConfig:
+			writeToolFields(wr, n, cfg)
+		case ir.SubgraphConfig:
+			writeSubgraphFields(wr, n, cfg)
 		}
-		if n.Kind != wantKind {
-			t.Errorf("node %q kind = %q, want %q", id, n.Kind, wantKind)
+		wr.pop()
+	}
+}
+
+func writeAgentFields(wr *writer, n *ir.Node, cfg ir.AgentConfig) {
+	if n.Label != "" {
+		wr.line("label: %s", quoteValue(n.Label))
+	}
+	if len(n.Classes) > 0 {
+		wr.line("class: %s", strings.Join(n.Classes, ", "))
+	}
+	if cfg.Model != "" {
+		wr.line("model: %s", quoteValue(cfg.Model))
+	}
+	if cfg.Provider != "" {
+		wr.line("provider: %s", quoteValue(cfg.Provider))
+	}
+	if cfg.ReasoningEffort != "" {
+		wr.line("reasoning_effort: %s", quoteValue(cfg.ReasoningEffort))
+	}
+	if cfg.Fidelity != "" {
+		wr.line("fidelity: %s", quoteValue(cfg.Fidelity))
+	}
+	if cfg.GoalGate {
+		wr.line("goal_gate: true")
+	}
+	if cfg.AutoStatus {
+		wr.line("auto_status: true")
+	}
+	if cfg.MaxTurns != 0 {
+		wr.line("max_turns: %d", cfg.MaxTurns)
+	}
+	if n.Retry.Policy != "" {
+		wr.line("retry_policy: %s", quoteValue(n.Retry.Policy))
+	}
+	if n.Retry.MaxRetries != 0 {
+		wr.line("max_retries: %d", n.Retry.MaxRetries)
+	}
+	if n.Retry.RetryTarget != "" {
+		wr.line("retry_target: %s", n.Retry.RetryTarget)
+	}
+	if n.Retry.FallbackTarget != "" {
+		wr.line("fallback_target: %s", n.Retry.FallbackTarget)
+	}
+	if len(n.IO.Reads) > 0 {
+		wr.line("reads: %s", strings.Join(n.IO.Reads, ", "))
+	}
+	if len(n.IO.Writes) > 0 {
+		wr.line("writes: %s", strings.Join(n.IO.Writes, ", "))
+	}
+	if cfg.Prompt != "" {
+		wr.multilineBlock("prompt", cfg.Prompt)
+	}
+}
+
+func writeHumanFields(wr *writer, n *ir.Node, cfg ir.HumanConfig) {
+	if n.Label != "" {
+		wr.line("label: %s", quoteValue(n.Label))
+	}
+	if cfg.Mode != "" {
+		wr.line("mode: %s", quoteValue(cfg.Mode))
+	}
+	if cfg.Default != "" {
+		wr.line("default: %s", quoteValue(cfg.Default))
+	}
+	if len(n.IO.Reads) > 0 {
+		wr.line("reads: %s", strings.Join(n.IO.Reads, ", "))
+	}
+	if len(n.IO.Writes) > 0 {
+		wr.line("writes: %s", strings.Join(n.IO.Writes, ", "))
+	}
+}
+
+func writeToolFields(wr *writer, n *ir.Node, cfg ir.ToolConfig) {
+	if n.Label != "" {
+		wr.line("label: %s", quoteValue(n.Label))
+	}
+	if cfg.Timeout != 0 {
+		wr.line("timeout: %s", formatDuration(cfg.Timeout))
+	}
+	if len(n.IO.Reads) > 0 {
+		wr.line("reads: %s", strings.Join(n.IO.Reads, ", "))
+	}
+	if len(n.IO.Writes) > 0 {
+		wr.line("writes: %s", strings.Join(n.IO.Writes, ", "))
+	}
+	if cfg.Command != "" {
+		wr.multilineBlock("command", cfg.Command)
+	}
+}
+
+func writeSubgraphFields(wr *writer, n *ir.Node, cfg ir.SubgraphConfig) {
+	if n.Label != "" {
+		wr.line("label: %s", quoteValue(n.Label))
+	}
+	if cfg.Ref != "" {
+		wr.line("ref: %s", quoteValue(cfg.Ref))
+	}
+	if len(cfg.Params) > 0 {
+		wr.line("params:")
+		wr.push()
+		keys := make([]string, 0, len(cfg.Params))
+		for k := range cfg.Params {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			wr.line("%s: %s", k, quoteValue(cfg.Params[k]))
+		}
+		wr.pop()
+	}
+}
+
+func writeEdges(wr *writer, edges []*ir.Edge) {
+	wr.line("edges")
+	wr.push()
+	for _, e := range edges {
+		writeEdge(wr, e)
+	}
+	wr.pop()
+}
+
+func writeEdge(wr *writer, e *ir.Edge) {
+	var parts []string
+	parts = append(parts, fmt.Sprintf("%s -> %s", e.From, e.To))
+
+	if e.Condition != nil && e.Condition.Parsed != nil {
+		parts = append(parts, fmt.Sprintf("when %s", formatCondition(e.Condition.Parsed)))
+	}
+	if e.Label != "" {
+		parts = append(parts, fmt.Sprintf("label: %s", quoteValue(e.Label)))
+	}
+	if e.Weight != 0 {
+		parts = append(parts, fmt.Sprintf("weight: %d", e.Weight))
+	}
+	if e.Restart {
+		parts = append(parts, "restart: true")
+	}
+
+	wr.line("%s", strings.Join(parts, "  "))
+}
+
+// --- Condition formatting ---
+
+const (
+	precOr  = 1
+	precAnd = 2
+	precNot = 3
+)
+
+func formatCondition(expr ir.ConditionExpr) string {
+	return formatConditionExpr(expr, 0)
+}
+
+func formatConditionExpr(expr ir.ConditionExpr, parentPrec int) string {
+	switch e := expr.(type) {
+	case ir.CondCompare:
+		return fmt.Sprintf("%s %s %s", e.Variable, e.Op, e.Value)
+	case ir.CondAnd:
+		s := fmt.Sprintf("%s and %s",
+			formatConditionExpr(e.Left, precAnd),
+			formatConditionExpr(e.Right, precAnd))
+		// Parenthesize if parent is a different compound operator (OR wrapping AND,
+		// NOT wrapping AND). parentPrec==0 means top-level, no parens needed.
+		if parentPrec != 0 && parentPrec != precAnd {
+			return "(" + s + ")"
+		}
+		return s
+	case ir.CondOr:
+		s := fmt.Sprintf("%s or %s",
+			formatConditionExpr(e.Left, precOr),
+			formatConditionExpr(e.Right, precOr))
+		// Parenthesize if parent is a different compound operator (AND wrapping OR,
+		// NOT wrapping OR).
+		if parentPrec != 0 && parentPrec != precOr {
+			return "(" + s + ")"
+		}
+		return s
+	case ir.CondNot:
+		inner := formatConditionExpr(e.Inner, precNot)
+		return "not " + inner
+	default:
+		return ""
+	}
+}
+
+func quoteValue(s string) string {
+	if s == "" {
+		return `""`
+	}
+	if needsQuoting(s) {
+		return `"` + s + `"`
+	}
+	return s
+}
+
+// needsQuoting returns true if the value needs to be enclosed in double quotes.
+// Simple identifiers (alphanumeric, underscore, dash, dot, slash, colon) are unquoted.
+func needsQuoting(s string) bool {
+	for _, ch := range s {
+		switch {
+		case ch >= 'a' && ch <= 'z':
+		case ch >= 'A' && ch <= 'Z':
+		case ch >= '0' && ch <= '9':
+		case ch == '_', ch == '-', ch == '.', ch == '/', ch == ':':
+		default:
+			return true
 		}
 	}
+	return false
 }
 
-func TestNodeConfigTypes(t *testing.T) {
-	w := askAndExecuteWorkflow()
-
-	// Agent node should have AgentConfig
-	interpret := w.Node("Interpret")
-	if _, ok := interpret.Config.(ir.AgentConfig); !ok {
-		t.Errorf("Interpret config type = %T, want AgentConfig", interpret.Config)
+// formatDuration renders a time.Duration as a compact human-readable string
+// suitable for Dippin source: "30s", "5m", "1h30m".
+func formatDuration(d time.Duration) string {
+	if d == 0 {
+		return "0s"
 	}
-
-	// Human node should have HumanConfig
-	ask := w.Node("AskUser")
-	if _, ok := ask.Config.(ir.HumanConfig); !ok {
-		t.Errorf("AskUser config type = %T, want HumanConfig", ask.Config)
+	var parts []string
+	if h := int(d.Hours()); h > 0 {
+		parts = append(parts, fmt.Sprintf("%dh", h))
+		d -= time.Duration(h) * time.Hour
 	}
-
-	// Parallel node should have ParallelConfig
-	fanOut := w.Node("ImplementFanOut")
-	if pc, ok := fanOut.Config.(ir.ParallelConfig); !ok {
-		t.Errorf("ImplementFanOut config type = %T, want ParallelConfig", fanOut.Config)
-	} else if len(pc.Targets) != 2 {
-		t.Errorf("ParallelConfig targets = %d, want 2", len(pc.Targets))
+	if m := int(d.Minutes()); m > 0 {
+		parts = append(parts, fmt.Sprintf("%dm", m))
+		d -= time.Duration(m) * time.Minute
 	}
+	if s := int(d.Seconds()); s > 0 {
+		parts = append(parts, fmt.Sprintf("%ds", s))
+	}
+	if len(parts) == 0 {
+		// Sub-second durations.
+		return d.String()
+	}
+	return strings.Join(parts, "")
 }
 
-func TestToolConfig(t *testing.T) {
-	w := toolWorkflow()
-
-	check := w.Node("Check")
-	tc, ok := check.Config.(ir.ToolConfig)
-	if !ok {
-		t.Fatalf("Check config type = %T, want ToolConfig", check.Config)
-	}
-	if tc.Timeout != 60*time.Second {
-		t.Errorf("timeout = %v, want 60s", tc.Timeout)
-	}
-	if tc.Command == "" {
-		t.Error("command should not be empty")
-	}
+func isDefaultsZero(d ir.WorkflowDefaults) bool {
+	return d == ir.WorkflowDefaults{}
 }
 
-func TestSubgraphConfig(t *testing.T) {
-	w := subgraphWorkflow()
-
-	review := w.Node("Review")
-	sc, ok := review.Config.(ir.SubgraphConfig)
-	if !ok {
-		t.Fatalf("Review config type = %T, want SubgraphConfig", review.Config)
-	}
-	if sc.Ref != "./review.dip" {
-		t.Errorf("ref = %q, want ./review.dip", sc.Ref)
-	}
-	if sc.Params["model"] != "gpt-5.4" {
-		t.Errorf("params[model] = %q, want gpt-5.4", sc.Params["model"])
-	}
-}
-
-func TestNodeIO(t *testing.T) {
-	w := askAndExecuteWorkflow()
-
-	interpret := w.Node("Interpret")
-	if len(interpret.IO.Reads) != 1 || interpret.IO.Reads[0] != "human_response" {
-		t.Errorf("Interpret reads = %v, want [human_response]", interpret.IO.Reads)
-	}
-	if len(interpret.IO.Writes) != 1 || interpret.IO.Writes[0] != "plan" {
-		t.Errorf("Interpret writes = %v, want [plan]", interpret.IO.Writes)
-	}
-}
-
-func TestConditionAST(t *testing.T) {
-	w := complexConditionWorkflow()
-
-	edges := w.EdgesFrom("Check")
-	if len(edges) != 2 {
-		t.Fatalf("EdgesFrom(Check) = %d, want 2", len(edges))
-	}
-
-	// First edge: AND condition
-	andEdge := edges[0]
-	if andEdge.Condition == nil {
-		t.Fatal("expected condition on first edge")
-	}
-	if _, ok := andEdge.Condition.Parsed.(ir.CondAnd); !ok {
-		t.Errorf("first edge condition type = %T, want CondAnd", andEdge.Condition.Parsed)
-	}
-
-	// Second edge: NOT condition
-	notEdge := edges[1]
-	if notEdge.Condition == nil {
-		t.Fatal("expected condition on second edge")
-	}
-	if _, ok := notEdge.Condition.Parsed.(ir.CondNot); !ok {
-		t.Errorf("second edge condition type = %T, want CondNot", notEdge.Condition.Parsed)
-	}
-}
-
-func TestNodeIDs(t *testing.T) {
-	w := minimalWorkflow()
-	ids := w.NodeIDs()
-	if len(ids) != 2 {
-		t.Fatalf("NodeIDs() = %d, want 2", len(ids))
-	}
-	if ids[0] != "Begin" || ids[1] != "End" {
-		t.Errorf("NodeIDs() = %v, want [Begin End]", ids)
-	}
-}
-
-TURN 5
-TOOL CALL: glob
+TURN 9
+TOOL CALL: bash
 INPUT:
-{"pattern": "**/*.go"}
-TOOL RESULT: glob
+{"command": "cat export/dot.go"}
+TOOL RESULT: bash
 OUTPUT:
-ir/edge.go
-ir/ir.go
-ir/ir_test.go
-ir/lookup.go
-ir/source.go
-TURN 6
-TOOL CALL: read
-INPUT:
-{"path": "cmd/dippin/main.go"}
-TOOL RESULT: read
-OUTPUT:
-package main
+// Package export provides DOT graph format export for Dippin workflows.
+//
+// The primary function ExportDOT converts an ir.Workflow into a valid DOT
+// language string suitable for rendering with Graphviz. The mapping is
+// documented in §15 of the Dippin design spec.
+package export
 
 import (
 	"fmt"
-	"os"
+	"strings"
+	"time"
+
+	"github.com/2389/dippin/ir"
 )
 
-func main() {
-	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: dippin <command> [args]")
-		fmt.Fprintln(os.Stderr, "commands: parse, validate, lint, fmt, export-dot, migrate")
-		os.Exit(1)
+// ExportOptions controls the DOT output format.
+type ExportOptions struct {
+	// IncludePrompts includes full prompt/command text as node attributes.
+	// Default (zero value) is false; set to true for full-fidelity export.
+	IncludePrompts bool
+
+	// RankDir controls the graph layout direction: "LR" (left-to-right)
+	// or "TB" (top-to-bottom). Defaults to "TB" when empty.
+	RankDir string
+
+	// HighlightGoalGates applies a distinct fill color to nodes with
+	// GoalGate: true.
+	HighlightGoalGates bool
+}
+
+// ExportDOT renders a workflow as a DOT language string.
+// The output is a valid digraph that can be processed by Graphviz tools.
+func ExportDOT(w *ir.Workflow, opts ExportOptions) string {
+	var b strings.Builder
+
+	rankDir := opts.RankDir
+	if rankDir == "" {
+		rankDir = "TB"
 	}
 
-	switch os.Args[1] {
+	graphName := w.Name
+	if graphName == "" {
+		graphName = "workflow"
+	}
+
+	b.WriteString(fmt.Sprintf("digraph %s {\n", dotID(graphName)))
+	b.WriteString(fmt.Sprintf("  rankdir=%s;\n", rankDir))
+	b.WriteString("  node [fontname=\"Helvetica\"];\n")
+	b.WriteString("  edge [fontname=\"Helvetica\"];\n")
+
+	// Emit nodes.
+	for _, n := range w.Nodes {
+		writeNodeDOT(&b, n, w, opts)
+	}
+
+	b.WriteByte('\n')
+
+	// Emit edges.
+	for _, e := range w.Edges {
+		writeEdgeDOT(&b, e)
+	}
+
+	b.WriteString("}\n")
+	return b.String()
+}
+
+// nodeShape maps a NodeKind to the corresponding DOT shape attribute.
+// Per §15: agent→box, human→hexagon, tool→parallelogram,
+// parallel→component, fan_in→tripleoctagon, subgraph→tab.
+// Start and exit nodes override to Mdiamond and Msquare respectively.
+func nodeShape(kind ir.NodeKind) string {
+	switch kind {
+	case ir.NodeAgent:
+		return "box"
+	case ir.NodeHuman:
+		return "hexagon"
+	case ir.NodeTool:
+		return "parallelogram"
+	case ir.NodeParallel:
+		return "component"
+	case ir.NodeFanIn:
+		return "tripleoctagon"
+	case ir.NodeSubgraph:
+		return "tab"
 	default:
-		fmt.Fprintf(os.Stderr, "unknown command: %s\n", os.Args[1])
-		os.Exit(1)
+		return "box"
 	}
 }
 
+// writeNodeDOT emits a single DOT node statement.
+func writeNodeDOT(b *strings.Builder, n *ir.Node, w *ir.Workflow, opts ExportOptions) {
+	attrs := make(map[string]string)
+
+	// Shape: start and exit override the kind-based shape.
+	if n.ID == w.Start {
+		attrs["shape"] = "Mdiamond"
+	} else if n.ID == w.Exit {
+		attrs["shape"] = "Msquare"
+	} else {
+		attrs["shape"] = nodeShape(n.Kind)
+	}
+
+	// Label: use the human-readable label if set, otherwise the node ID.
+	if n.Label != "" {
+		attrs["label"] = n.Label
+	} else {
+		attrs["label"] = n.ID
+	}
+
+	// Goal gate highlighting.
+	if opts.HighlightGoalGates {
+		if ac, ok := n.Config.(ir.AgentConfig); ok && ac.GoalGate {
+			attrs["style"] = "filled"
+			attrs["fillcolor"] = "#ffcccc"
+		}
+	}
+
+	// Include prompts/commands as attributes for full-fidelity export.
+	if opts.IncludePrompts {
+		switch cfg := n.Config.(type) {
+		case ir.AgentConfig:
+			if cfg.Prompt != "" {
+				attrs["prompt"] = escapeNewlines(cfg.Prompt)
+			}
+			if cfg.Model != "" {
+				attrs["model"] = cfg.Model
+			}
+			if cfg.Provider != "" {
+				attrs["provider"] = cfg.Provider
+			}
+		case ir.ToolConfig:
+			if cfg.Command != "" {
+				attrs["tool_command"] = escapeNewlines(cfg.Command)
+			}
+			if cfg.Timeout != 0 {
+				attrs["timeout"] = formatDuration(cfg.Timeout)
+			}
+		case ir.HumanConfig:
+			if cfg.Mode != "" {
+				attrs["mode"] = cfg.Mode
+			}
+			if cfg.Default != "" {
+				attrs["default"] = cfg.Default
+			}
+		case ir.SubgraphConfig:
+			if cfg.Ref != "" {
+				attrs["ref"] = cfg.Ref
+			}
+		case ir.ParallelConfig:
+			if len(cfg.Targets) > 0 {
+				attrs["targets"] = strings.Join(cfg.Targets, ",")
+			}
+		case ir.FanInConfig:
+			if len(cfg.Sources) > 0 {
+				attrs["sources"] = strings.Join(cfg.Sources, ",")
+			}
+		}
+	}
+
+	b.WriteString(fmt.Sprintf("  %s %s;\n", dotID(n.ID), formatDOTAttrs(attrs)))
+}
+
+// writeEdgeDOT emits a single DOT edge statement.
+func writeEdgeDOT(b *strings.Builder, e *ir.Edge) {
+	attrs := make(map[string]string)
+
+	if e.Label != "" {
+		attrs["label"] = e.Label
+	}
+
+	if e.Condition != nil && e.Condition.Parsed != nil {
+		condStr := formatCondition(e.Condition.Parsed)
+		// If there's no separate label, use the condition text as the edge label.
+		if e.Label == "" {
+			attrs["label"] = condStr
+		}
+		attrs["condition"] = condStr
+	}
+
+	if e.Weight != 0 {
+		attrs["weight"] = fmt.Sprintf("%d", e.Weight)
+	}
+
+	if e.Restart {
+		attrs["restart"] = "true"
+		// Visual hint: restart edges are dashed.
+		attrs["style"] = "dashed"
+	}
+
+	b.WriteString(fmt.Sprintf("  %s -> %s", dotID(e.From), dotID(e.To)))
+	if len(attrs) > 0 {
+		b.WriteString(" ")
+		b.WriteString(formatDOTAttrs(attrs))
+	}
+	b.WriteString(";\n")
+}
+
+// formatDOTAttrs renders a map of DOT attributes as a bracketed list,
+// with keys in sorted order for deterministic output.
+func formatDOTAttrs(attrs map[string]string) string {
+	if len(attrs) == 0 {
+		return ""
+	}
+
+	// Sort keys for deterministic output.
+	keys := make([]string, 0, len(attrs))
+	for k := range attrs {
+		keys = append(keys, k)
+	}
+	sortStrings(keys)
+
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, fmt.Sprintf("%s=%s", k, dotQuote(attrs[k])))
+	}
+	return "[" + strings.Join(parts, ", ") + "]"
+}
+
+// dotID formats a string as a valid DOT identifier.
+// If the string is a simple identifier (alphanumeric + underscore, not starting
+// with a digit), it is returned as-is. Otherwise it is double-quoted.
+func dotID(s string) string {
+	if s == "" {
+		return `""`
+	}
+	if isSimpleDOTID(s) {
+		return s
+	}
+	return dotQuote(s)
+}
+
+// isSimpleDOTID returns true if s is a valid unquoted DOT identifier.
+func isSimpleDOTID(s string) bool {
+	if len(s) == 0 {
+		return false
+	}
+	// Must not start with a digit.
+	if s[0] >= '0' && s[0] <= '9' {
+		return false
+	}
+	for _, ch := range s {
+		if !((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_') {
+			return false
+		}
+	}
+	return true
+}
+
+// dotQuote wraps a string in double quotes, escaping internal quotes and
+// backslashes. Preserves DOT escape sequences like \n, \l, \r.
+func dotQuote(s string) string {
+	var b strings.Builder
+	b.WriteByte('"')
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		switch ch {
+		case '"':
+			b.WriteString(`\"`)
+		case '\\':
+			// Check if this backslash is part of a DOT escape sequence.
+			if i+1 < len(s) {
+				next := s[i+1]
+				if next == 'n' || next == 'l' || next == 'r' {
+					// Preserve DOT escape sequences.
+					b.WriteByte('\\')
+					b.WriteByte(next)
+					i++
+					continue
+				}
+			}
+			b.WriteString(`\\`)
+		default:
+			b.WriteByte(ch)
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
+}
+
+// escapeNewlines replaces literal newlines with the DOT \n escape for
+// multi-line attribute values.
+func escapeNewlines(s string) string {
+	return strings.ReplaceAll(s, "\n", `\n`)
+}
+
+// --- Condition formatting ---
+// Replicates the formatter's condition serialization for DOT attribute values.
+
+const (
+	precOr  = 1
+	precAnd = 2
+	precNot = 3
+)
+
+func formatCondition(expr ir.ConditionExpr) string {
+	return formatConditionExpr(expr, 0)
+}
+
+func formatConditionExpr(expr ir.ConditionExpr, parentPrec int) string {
+	switch e := expr.(type) {
+	case ir.CondCompare:
+		return fmt.Sprintf("%s %s %s", e.Variable, e.Op, e.Value)
+	case ir.CondAnd:
+		s := fmt.Sprintf("%s and %s",
+			formatConditionExpr(e.Left, precAnd),
+			formatConditionExpr(e.Right, precAnd))
+		if parentPrec != 0 && parentPrec != precAnd {
+			return "(" + s + ")"
+		}
+		return s
+	case ir.CondOr:
+		s := fmt.Sprintf("%s or %s",
+			formatConditionExpr(e.Left, precOr),
+			formatConditionExpr(e.Right, precOr))
+		if parentPrec != 0 && parentPrec != precOr {
+			return "(" + s + ")"
+		}
+		return s
+	case ir.CondNot:
+		inner := formatConditionExpr(e.Inner, precNot)
+		return "not " + inner
+	default:
+		return ""
+	}
+}
+
+// --- Duration formatting ---
+
+func formatDuration(d time.Duration) string {
+	if d == 0 {
+		return "0s"
+	}
+	var parts []string
+	if h := int(d.Hours()); h > 0 {
+		parts = append(parts, fmt.Sprintf("%dh", h))
+		d -= time.Duration(h) * time.Hour
+	}
+	if m := int(d.Minutes()); m > 0 {
+		parts = append(parts, fmt.Sprintf("%dm", m))
+		d -= time.Duration(m) * time.Minute
+	}
+	if s := int(d.Seconds()); s > 0 {
+		parts = append(parts, fmt.Sprintf("%ds", s))
+	}
+	if len(parts) == 0 {
+		return d.String()
+	}
+	return strings.Join(parts, "")
+}
+
+// sortStrings sorts a string slice in place. Avoids importing sort for this
+// single use.
+func sortStrings(s []string) {
+	for i := 1; i < len(s); i++ {
+		for j := i; j > 0 && s[j] < s[j-1]; j-- {
+			s[j], s[j-1] = s[j-1], s[j]
+		}
+	}
+}
+
+TURN 10
 TOOL CALL: bash
 INPUT:
-{"command": "cat go.mod 2>/dev/null || echo \"no go.mod\""}
+{"command": "sed -n '/^## 15/,/^## 16/p' DIPPIN_DESIGN_PLAN.md"}
+TOOL RESULT: bash
+OUTPUT:
+## 15. DOT Export Strategy
+
+### Lossless mappings
+
+| Dippin concept | DOT representation |
+|---------------|-------------------|
+| Node ID | Node name |
+| Node kind → DOT shape | `agent`→`box`, `human`→`hexagon`, `tool`→`parallelogram`, `parallel`→`component`, `fan_in`→`tripleoctagon`, `subgraph`→`tab` |
+| Node label | `label` attribute |
+| Edge from/to | Edge endpoints |
+| Edge label | `label` attribute |
+| Edge condition | `condition` attribute (serialized from AST) |
+| Edge weight | `weight` attribute |
+| Start/exit | `Mdiamond`/`Msquare` shape nodes |
+
+### Lossy but acceptable
+
+| Dippin concept | DOT handling |
+|---------------|-------------|
+| Multiline prompts | Serialized with `\n` escapes in `prompt` attribute |
+| Multiline tool commands | Serialized with `\n` escapes in `tool_command` attribute |
+| Import/module structure | Expanded inline; module boundaries lost |
+| Source locations | Not representable in DOT |
+| Parsed condition AST | Serialized back to string expression |
+| Parameter defaults | Not representable; resolved values exported |
+| Comments/sections | Lost (DOT has no comment attachment) |
+| `reads:`/`writes:` contracts | Not represented |
+| `route` sugar (post-v1) | Would expand to conditional edges; not in v1 |
+| Restart edge annotation | Exported as custom attribute `restart=true` on the edge (e.g., `A -> B [restart=true]`). Old Tracker ignores unknown attrs, but the exported DOT preserves the semantic for round-tripping. |
+| Variable namespaces | Stripped back to flat names |
+
+### Intentionally omitted
+
+| Dippin concept | Why omitted from DOT |
+|---------------|---------------------|
+| Validation diagnostics | Not a graph concept |
+| Formatter state | Not a graph concept |
+| Import resolution log | Build artifact, not graph data |
+
+### Implementation
+
+```go
+// dippin/export/dot.go
+func ExportDOT(w *ir.Workflow, opts ExportOptions) string
+```
+
+Options:
+- `IncludePrompts bool` — include full prompts (default true; false for clean topology view)
+- `RankDir string` — "LR" or "TB"
+- `HighlightGoalGates bool` — color goal gate nodes
+
+---
+
+## 16. Migration Strategy
+
+TOOL CALL: bash
+INPUT:
+{"command": "sed -n '/^## 6/,/^## 7/p' DIPPIN_DESIGN_PLAN.md"}
+TOOL RESULT: bash
+OUTPUT:
+## 6. Recommended Architecture
+
+```
+┌──────────────┐     ┌──────────────┐     ┌──────────────────┐
+│  .dip file   │────▶│   Parser     │────▶│  Canonical IR    │
+│  (Dippin)    │     │  (Go pkg)    │     │  (Go structs)    │
+└──────────────┘     └──────────────┘     └────────┬─────────┘
+                                                   │
+                          ┌────────────────────────┼────────────────┐
+                          │                        │                │
+                          ▼                        ▼                ▼
+                   ┌──────────────┐     ┌──────────────┐   ┌──────────────┐
+                   │  Validator   │     │   Engine      │   │ DOT Exporter │
+                   │  Linter      │     │  (existing)   │   │              │
+                   └──────────────┘     └──────────────┘   └──────────────┘
+```
+
+**Key property**: The existing engine (`pipeline.Engine`) continues to operate on the IR. The parser is a new frontend. The DOT exporter is a new backend. The engine itself needs minimal changes — mainly accepting IR structs instead of (or in addition to) DOT-parsed structs.
+
+### Migration bridge
+
+During migration, both paths exist:
+- `.dip` → Dippin Parser → IR → Engine
+- `.dot` → DOT Parser (existing) → IR adapter → Engine
+
+The IR adapter is a thin function that converts `pipeline.Graph` to the new IR types.
+
+---
+
+## 7. Canonical IR Proposal
+
+TURN 11
+TOOL CALL: bash
+INPUT:
+{"command": "sed -n '/^## 4/,/^## 5/p' DIPPIN_DESIGN_PLAN.md | head -200"}
+TOOL RESULT: bash
+OUTPUT:
+## 4. Semantic Model That Must Survive
+
+These are the **true semantics** extracted from the codebase — things Dippin must represent:
+
+### 4.1 Node kinds (handler semantics)
+
+| Kind | What it does | Must survive |
+|------|-------------|-------------|
+| `agent` (codergen) | LLM call with tools, agentic loop | Yes — core value |
+| `human` (wait.human) | Pause for human input (choice or freeform) | Yes — core value |
+| `tool` | Execute shell command | Yes — core value |
+| `conditional` | No-op decision point; engine evaluates outgoing edges | No — deferred from v1. Routing handled by conditional edges directly. See §8.3. |
+| `parallel` | Fan-out to concurrent branches | Yes |
+| `fan_in` | Join parallel branches | Yes |
+| `start` / `exit` | Entry/exit terminals | Yes, but explicit declaration, not shape-based |
+| `subgraph` | Embed sub-pipeline | Yes — needs improvement |
+| `manager_loop` | Placeholder (currently no-op) | No — remove until real semantics exist |
+
+### 4.2 Edge semantics
+
+- **Unconditional**: default flow
+- **Conditional**: boolean expression evaluated against context
+- **Labeled**: human-readable name, used for human gate choices and edge selection
+- **Weighted**: priority hint for edge selection among unconditional edges
+- **Restart**: back-edge that triggers downstream clearing and re-execution (see §4.3)
+
+### 4.3 Execution semantics
+
+- **Sequential by default**: one node at a time, walk the graph
+- **Parallel via explicit fan-out/fan-in**: component → branches → tripleoctagon
+- **Retry with policy**: named policies (standard, aggressive, patient, linear, none), per-node or graph-level max, backoff functions, retry targets, fallback targets
+- **Loop restart**: when an edge targets an already-completed node, clear downstream and restart (bounded by `max_restarts`)
+- **Goal gates**: certain nodes are "goal gates" — if they fail, the pipeline fails even at exit
+- **Checkpoint/resume**: serialize full state after each node, restore with fidelity degradation
+
+#### Loop/restart runtime semantics (precise specification)
+
+This is one of the most implementation-critical behaviors and must be brutally explicit:
+
+1. **Back-edge detection**: When `selectEdge()` resolves to a target node that is already in the checkpoint's `completedSet`, the engine treats this as a loop restart.
+
+2. **Restart counter**: The engine increments `cp.RestartCount` (global, not per-edge). If `RestartCount >= max_restarts` (graph attr, default 5), the pipeline fails with `EventPipelineFailed`.
+
+3. **Downstream clearing**: The engine calls `clearDownstream(targetNode)` which:
+   - BFS from target node through all outgoing edges
+   - Removes each reachable node from `cp.CompletedNodes`
+   - Clears retry counts for each removed node (fresh budgets)
+   - Does NOT clear context — all context key-values survive
+
+4. **Context preservation**: Context is fully preserved across restarts. The restarting node sees all context from the previous iteration. This is intentional — it enables iterative refinement (e.g., review feedback feeds back into implementation).
+
+5. **Restart target override**: If `graph.Attrs["restart_target"]` is set, the engine jumps there instead of the edge's target.
+
+6. **Checkpoint behavior**: After clearing downstream, the engine saves a checkpoint at the new current position. If the process crashes during restart, it resumes from the restart point, not the original edge source.
+
+7. **Subgraph interaction (current Tracker behavior)**: In the current engine, subgraph engines have their own `RestartCount`, independent from the parent. **In Dippin v1**, subgraphs are expanded inline at compile time (see §12), so there are no runtime subgraph boundaries. Restart counters are global within the expanded workflow. If runtime subgraph isolation becomes a real need post-v1, it can be added as an execution mode later.
+
+8. **Stats**: Node-local `SessionStats` (turns, tool calls, etc.) are NOT preserved across restarts. Each re-execution of a node produces fresh stats. The trace accumulates entries for every execution (including re-executions).
+
+### 4.4 Context model
+
+- `map[string]string` shared state
+- Handlers write via `ContextUpdates`
+- Reserved keys for outcome, responses, tool output
+- Graph-level attrs auto-injected with `graph.` prefix
+- Prompt variable expansion (`$goal`)
+- Context injection (append prior outputs to prompts)
+- Fidelity-based compaction for long-running pipelines
+
+### 4.5 LLM configuration
+
+- Per-node model and provider override
+- Graph-level defaults
+- CSS-like stylesheet with selectors (*, shape, .class, #id)
+- Reasoning effort levels
+- System prompts
+- Max turns, command timeout, cache, compaction settings
+
+---
+
+## 5. Legacy Hacks That Should Die
+
+TOOL CALL: bash
+INPUT:
+{"command": "cat .tracker/current_plan.md 2>/dev/null | head -20"}
+TOOL RESULT: bash
+OUTPUT:
+# Plan: Formatter (`formatter/`)
+
+## Component
+
+**Canonical Formatter**: `ir.Workflow` → Dippin source text (`.dip` format)
+
+This is the inverse of the parser. Given a fully populated IR, emit canonical Dippin syntax that is deterministic and idempotent.
+
+## Design Spec References
+
+- **§8 "Dippin Syntax Proposal A"** — full syntax example and all 15 syntax rules
+- **§8.1 "Multiline content"** — prompt/command indented block rules
+- **§8.2 "Context variable namespaces"** — `${ns.var}` in prompts (formatter must preserve these as-is)
+- **§14 "Formatter"** (under Tooling) — canonical formatting rules:
+  - 2-space indentation
+  - One blank line between nodes
+  - Section comments preserved (NOTE: we don't have comment IR, so this is N/A for v1)
+  - Trailing whitespace removed
+  - Single trailing newline
+  - Canonical field ordering per node kind
+
+TURN 12
+TOOL CALL: bash
+INPUT:
+{"command": "sed -n '/^## 8/,/^## 9/p' DIPPIN_DESIGN_PLAN.md | head -250"}
+TOOL RESULT: bash
+OUTPUT:
+## 8. Dippin Syntax Proposal A: "Indented Graph"
+
+Design principles: graph-native, indentation-structured, minimal punctuation, multiline blocks with heredoc-style delimiters.
+
+### Example: ask-and-execute pipeline
+
+```dippin
+workflow ask_and_execute
+  goal: "Ask user for a task, implement it, review, ship"
+  start: AskUser
+  exit: Done
+
+  defaults
+    model: claude-opus-4-6
+    provider: anthropic
+    retry_policy: standard
+    fidelity: summary:high
+
+  # ── Phase 1: Gather ──────────────────────────────
+
+  human AskUser
+    label: "What would you like to build?"
+    mode: freeform
+
+  agent Interpret
+    label: "Interpret the request"
+    reads: human_response
+    writes: plan
+    prompt:
+      You are a senior software architect.
+
+      Read the user's request below and produce a clear,
+      actionable implementation plan.
+
+      ## User Request
+      ${ctx.human_response}
+
+  # ── Phase 2: Implement (parallel) ────────────────
+
+  parallel ImplementFanOut -> ImplementClaude, ImplementCodex, ImplementGemini
+
+  agent ImplementClaude
+    label: "Implement (Claude)"
+    model: gpt-5.4
+    provider: openai
+    reads: last_response
+    prompt:
+      Implement the plan from the previous step.
+      ${ctx.last_response}
+
+  agent ImplementCodex
+    label: "Implement (Codex)"
+    model: gpt-5.3-codex
+    provider: openai
+    reads: last_response
+    prompt:
+      Implement the plan from the previous step.
+      ${ctx.last_response}
+
+  agent ImplementGemini
+    label: "Implement (Gemini)"
+    model: gemini-3.5-flash
+    provider: gemini
+    reads: last_response
+    prompt:
+      Implement the plan from the previous step.
+      ${ctx.last_response}
+
+  fan_in ImplementJoin <- ImplementClaude, ImplementCodex, ImplementGemini
+
+  # ── Phase 3: Review ──────────────────────────────
+
+  agent Validate
+    label: "Validate implementation"
+    goal_gate: true
+    auto_status: true
+    max_retries: 2
+    reads: last_response
+    prompt:
+      Review the implementations. Run tests.
+      Respond with STATUS: success or STATUS: fail.
+
+  human Approve
+    label: "Ship it?"
+    default: "Yes"
+
+  # ── Edges ─────────────────────────────────────────
+
+  edges
+    AskUser -> Interpret
+    Interpret -> ImplementFanOut
+    ImplementJoin -> Validate
+    Validate -> Approve          when ctx.outcome = success
+    Validate -> Interpret        when ctx.outcome = fail     label: "retry"  restart: true
+    Approve -> Done
+```
+
+### Syntax rules
+
+1. **Workflow declaration**: `workflow <name>` at top level
+2. **Explicit entry/exit**: `start: <NodeID>` and `exit: <NodeID>` are required fields on the workflow. No inference from declaration order.
+3. **Blocks**: `defaults`, `edges` are top-level sections
+4. **Nodes**: `<kind> <ID>` starts a node block; indented lines are fields
+5. **Fields**: `key: value` — simple values on one line
+6. **Multiline values**: `key:` followed by indented block (no quotes needed)
+7. **Edges**: `A -> B` with optional `when <condition>`, `label: "text"`, and `restart: true`
+8. **Parallel**: `parallel <ID> -> target1, target2, ...`
+9. **Fan-in**: `fan_in <ID> <- source1, source2, ...`
+10. **Comments**: `#` line comments
+11. **Section headers**: `# ── text ──` for visual grouping (ignored by parser)
+12. **Variables**: `${namespace.key}` in prompts for context interpolation (see §8.2)
+13. **Conditions**: `when <expr>` on edges using namespaced variables
+14. **I/O declarations**: `reads:` and `writes:` for advisory context contracts
+15. **Route sugar**: Deferred from v1. See §8.3.
+
+### 8.1 Multiline content
+
+Prompts are just indented text blocks after `prompt:`. No escaping needed:
+
+```dippin
+  agent MyNode
+    prompt:
+      You are a code reviewer.
+
+      ## Rules
+      - Check for bugs
+      - Check for security issues
+      - Run `pytest` to validate
+
+      ## Context
+      ${ctx.last_response}
+```
+
+The indentation of the first content line sets the baseline. All content is dedented by that amount. Empty lines are preserved. No quotes. No escaping. Diffable line-by-line.
+
+Tool command blocks work identically:
+
+```dippin
+  tool CheckTests
+    label: "Run test suite"
+    timeout: 60s
+    command:
+      #!/bin/sh
+      set -eu
+      if pytest --tb=short 2>&1; then
+        printf 'pass'
+      else
+        printf 'fail'
+        exit 1
+      fi
+```
+
+### 8.2 Context variable namespaces
+
+All variable references use explicit namespaces, even though the engine still uses a flat `map[string]string` underneath. This makes authoring clearer and diagnostics much better.
+
+| Namespace | What it contains | Examples |
+|-----------|-----------------|----------|
+| `ctx.` | Runtime context (handler outputs, reserved keys) | `ctx.outcome`, `ctx.last_response`, `ctx.tool_stdout` |
+| `graph.` | Workflow-level attributes | `graph.goal` |
+| `params.` | Module parameters (composition) | `params.model`, `params.strict` |
+
+**Lowering**: At IR → engine boundary, namespaces are stripped to flat keys. `ctx.outcome` → `outcome`, `graph.goal` → `graph.goal` (already prefixed in current engine), `params.strict` → substituted at expansion time.
+
+**Validation tiers**:
+- **Always-known variables** (`ctx.outcome`, `ctx.last_response`, `ctx.human_response`, `ctx.tool_stdout`, `ctx.tool_stderr`, `graph.goal`): validated at parse time, error if misspelled.
+- **Declared outputs** (from `writes:` on upstream nodes): validated as warnings if referenced but not declared.
+- **Dynamic variables** (everything else): warning-only. Never an error unless it matches no known pattern at all.
+
+### 8.3 Route syntax sugar (deferred from v1)
+
+Route sugar is **deferred from v1**. In v1, all conditional routing is expressed as conditional edges in the `edges` block:
+
+```dippin
+  edges
+    Validate -> Approve     when ctx.outcome = success
+    Validate -> Interpret   when ctx.outcome = fail     restart: true
+    Validate -> HumanHelp   when ctx.outcome = retry
+```
+
+This avoids ambiguity about whether `route Validate` attaches routing to an existing node, declares a new node, or replaces edge declarations. If route sugar is added post-v1, it should use unambiguous syntax like `route after <NodeID>` to make clear it decorates an existing node's outgoing edges. The IR does not include a `NodeCondition` kind — there is no intermediate condition node, just edges with conditions.
+
+---
+
+## 9. Dippin Syntax Proposal B: "Declarative YAML-Adjacent"
+
+TURN 13
+TOOL CALL: bash
+INPUT:
+{"command": "sed -n '/^## 5/,/^## 6/p' DIPPIN_DESIGN_PLAN.md"}
+TOOL RESULT: bash
+OUTPUT:
+## 5. Legacy Hacks That Should Die
+
+| Current behavior | Why it's a hack | What should replace it |
+|-----------------|-----------------|----------------------|
+| Shape → handler mapping | Couples visuals to semantics | Explicit `kind:` field |
+| Diamond + tool_command → tool handler | Special-case dispatch | Explicit kind |
+| Diamond + prompt → codergen + auto_status | Invisible behavior change | Explicit kind + explicit auto_status |
+| `\n` encoding in prompts | DOT string limitation | Multiline block syntax |
+| Shell scripts in `tool_command` attribute | Unreadable, triple-escaping | Heredoc-style blocks or file references |
+| `model_stylesheet` as DOT attribute string | CSS-in-a-string-in-a-string | Top-level stylesheet block (v1.5) or explicit per-node fields (v1) |
+| `manager_loop` handler | No-op placeholder | Remove; re-add when designed |
+| `Mdiamond`/`Msquare` as start/exit | DOT shape convention | Explicit `start:` / `exit:` declaration |
+| Attribute-bag node config | No schema, no validation | Typed fields per node kind |
+| `context.tool_stdout` in conditions | Magic variable names, no namespace | Namespaced references: `ctx.tool_stdout` |
+| `parallel.results` as JSON in context string | Structured data in flat string map | First-class parallel result model |
+| First-node-is-start convention | Reordering file changes semantics | Explicit `start:` declaration |
+
+---
+
+## 6. Recommended Architecture
+
+TOOL CALL: bash
+INPUT:
+{"command": "# Look at the existing DOT pipeline files referenced in the spec to understand what DOT input format looks like\ncat build_dippin.dot | head -50"}
+TOOL RESULT: bash
+OUTPUT:
+digraph BuildDippin {
+  graph [
+    goal="Build the Dippin toolchain (parser, validator, formatter, DOT exporter, migration tool) by reading the design spec and iteratively implementing components into the dippin-lang Go module. Ledger-driven: picks the next uncompleted component automatically and loops until all are done.",
+    rankdir=LR,
+    default_max_retry=3,
+    default_fidelity="summary:high",
+    max_restarts=7
+  ];
+
+  Start [shape=Mdiamond, label="Start"];
+  Exit [shape=Msquare, label="Exit"];
+
+  // ── Phase 0: Setup ──────────────────────────────────────────────
+
+  SetupWorkspace [
+    shape=parallelogram,
+    label="Setup Workspace & Ledger",
+    tool_command="set -eu\nmkdir -p .tracker/runs\nif [ ! -f go.mod ]; then\n  echo 'ERROR: must run from dippin-lang directory with go.mod'\n  exit 1\nfi\n# Initialize ledger if it doesn't exist\nif [ ! -f .tracker/ledger.tsv ]; then\n  printf 'component\\tpackage\\tstatus\\tdescription\\n' > .tracker/ledger.tsv\n  printf 'ir\\tir/\\tcomplete\\tCanonical IR types (Workflow, Node, Edge, Condition)\\n' >> .tracker/ledger.tsv\n  printf 'parser-lexer\\tparser/\\tpending\\tLine-based indentation-aware lexer\\n' >> .tracker/ledger.tsv\n  printf 'parser-core\\tparser/\\tpending\\tParser: .dip source to IR with error recovery\\n' >> .tracker/ledger.tsv\n  printf 'parser-conditions\\tparser/\\tpending\\tCondition expression parser (and/or/not/compare)\\n' >> .tracker/ledger.tsv\n  printf 'validator\\tvalidator/\\tpending\\tGraph structure validation (DIP001-DIP009)\\n' >> .tracker/ledger.tsv\n  printf 'linter\\tvalidator/\\tpending\\tSemantic quality warnings (DIP101-DIP112)\\n' >> .tracker/ledger.tsv\n  printf 'formatter\\tformatter/\\tpending\\tCanonical formatter: IR to .dip source\\n' >> .tracker/ledger.tsv\n  printf 'dot-exporter\\texport/\\tpending\\tDOT exporter: IR to DOT string\\n' >> .tracker/ledger.tsv\n  printf 'migration\\tmigrate/\\tpending\\tMigration tool: DOT to IR to .dip\\n' >> .tracker/ledger.tsv\n  printf 'cli\\tcmd/dippin/\\tpending\\tCLI subcommands: parse, validate, lint, fmt, export-dot, migrate\\n' >> .tracker/ledger.tsv\nfi\ncat .tracker/ledger.tsv\nprintf 'workspace-ready'"
+  ];
+
+  // ── Phase 1: Pick next task from ledger ─────────────────────────
+
+  PickNextComponent [
+    shape=parallelogram,
+    label="Pick Next Component",
+    tool_command="set -eu\n# Find first pending component\nNEXT=$(awk -F'\\t' '$3==\"pending\" { print $1; exit }' .tracker/ledger.tsv)\nif [ -z \"$NEXT\" ]; then\n  printf 'all_complete'\n  exit 0\nfi\n# Mark it in-progress\nawk -F'\\t' -v comp=\"$NEXT\" 'BEGIN{OFS=\"\\t\"} $1==comp{$3=\"in_progress\"} {print}' .tracker/ledger.tsv > .tracker/ledger.tmp && mv .tracker/ledger.tmp .tracker/ledger.tsv\n# Write context snapshot for planner to read from disk\nmkdir -p .tracker\necho \"=== Next component: $NEXT ===\" > .tracker/current_context.md\nawk -F'\\t' -v comp=\"$NEXT\" '$1==comp { printf \"component: %s\\npackage: %s\\ndescription: %s\\n\", $1, $2, $4 }' .tracker/ledger.tsv >> .tracker/current_context.md\necho '' >> .tracker/current_context.md\necho '=== Current codebase ===' >> .tracker/current_context.md\nfind . -name '*.go' -not -path './vendor/*' | sort >> .tracker/current_context.md\necho '' >> .tracker/current_context.md\necho '=== Test status ===' >> .tracker/current_context.md\ngo test ./... >> .tracker/current_context.md 2>&1 || true\necho '' >> .tracker/current_context.md\necho '=== Ledger ===' >> .tracker/current_context.md\ncat .tracker/ledger.tsv >> .tracker/current_context.md\nprintf 'has_next'"
+  ];
+
+  // Route: all done vs has work
+  CheckComplete [
+    shape=diamond,
+    label="All done?"
+  ];
+
+  // ── Phase 2: Plan ───────────────────────────────────────────────
+
+  PlanComponent [
+    shape=box,
+    label="Plan Component",
+    llm_provider="anthropic",
+    llm_model="claude-opus-4-6",
+    reasoning_effort="high",
+    prompt="You are building the Dippin toolchain. Read .tracker/current_context.md to see which component is in_progress and the current state of the codebase.\n\nRead the design spec at ../DIPPIN_DESIGN_PLAN.md — this is the authoritative specification.\n\nRead the current codebase to understand what already exists (especially ir/ types).\n\nProduce a focused implementation plan for THIS component only:\n1. List the exact files to create/modify\n2. List the types and functions to implement\n3. List 10+ test cases (happy path, error cases, edge cases)\n4. Reference the specific design spec sections that govern this component\n5. Note any dependencies on existing packages\n\nWrite the plan to .tracker/current_plan.md so implementation agents can read it.\n\nDo NOT implement yet — just plan. Be precise enough that an implementation agent can work from this plan without ambiguity."
+  ];
+
+  // ── Phase 3: Implement ──────────────────────────────────────────
+
+  ImplementParallel [shape=component, label="Implement (Parallel)"];
+
+  ImplementClaude [
+
+TURN 14
+TOOL CALL: bash
+INPUT:
+{"command": "wc -l build_dippin.dot"}
+TOOL RESULT: bash
+OUTPUT:
+     214 build_dippin.dot
+
+TOOL CALL: bash
+INPUT:
+{"command": "# Look at the go.mod to see what packages are available\ncat go.mod"}
 TOOL RESULT: bash
 OUTPUT:
 module github.com/2389/dippin
 
 go 1.25.4
 
-TURN 7
-TOOL CALL: write
-INPUT:
-{"path": ".tracker/current_plan.md", "content": "# Implementation Plan: Validator (DIP001–DIP009)\n\n## Component Summary\n\n**Package**: `validator/`\n**Purpose**: Graph structure validation over `*ir.Workflow`. Implements checks DIP001 through DIP009 from the design spec §\"Validation layers — Layer 3: Graph structure (IR)\".\n\nThis is a **pure IR consumer** — it takes a `*ir.Workflow` and returns a list of diagnostics. It has no dependency on parsing, formatting, or any syntax-level concepts. It operates entirely on the canonical IR types defined in `ir/`.\n\n---\n\n## Design Spec References\n\n- **§ Validation layers — Layer 3: Graph structure (IR)** — the nine rules\n- **§ Diagnostic output** — diagnostic shape (file/line/column, codes, help/fix)\n- **§ ADR 1 (DAG-plus-loops)** — `restart: true` edges are excluded from cycle detection\n- **§ \"Acceptance Criteria\"** — #10 \"Diagnostics are actionable\", #11 \"Multi-diagnostic collection\"\n\n### Rules (verbatim from spec)\n\n| Code    | Rule                                                                                          |\n|---------|-----------------------------------------------------------------------------------------------|\n| DIP001  | `start:` node exists                                                                          |\n| DIP002  | `exit:` node exists                                                                           |\n| DIP003  | All edge endpoints exist                                                                      |\n| DIP004  | All nodes reachable from start                                                                |\n| DIP005  | No unconditional cycles after excluding edges marked `restart: true`                          |\n| DIP006  | Exit node has no outgoing edges                                                               |\n| DIP007  | Parallel fan-out has matching fan-in                                                          |\n| DIP008  | No duplicate node IDs                                                                         |\n| DIP009  | No duplicate edges                                                                            |\n\n---\n\n## Dependencies\n\n- **`ir/`** — all types: `Workflow`, `Node`, `Edge`, `NodeKind`, `SourceLocation`, `ParallelConfig`, `FanInConfig`\n- **No other packages** — the validator is self-contained. It imports only `ir/` and stdlib.\n\n---\n\n## Files to Create\n\n### 1. `validator/diagnostic.go`\n\nDiagnostic types shared by validator and (later) linter.\n\n**Types:**\n\n```go\n// Severity levels for diagnostics.\ntype Severity int\n\nconst (\n    SeverityError   Severity = iota // Must fix — workflow cannot execute\n    SeverityWarning                 // Should fix — likely a bug (used by linter, not this component)\n    SeverityInfo                    // Informational\n    SeverityHint                    // Suggestion\n)\n\n// Diagnostic represents a single validation finding.\ntype Diagnostic struct {\n    Code     string             // \"DIP001\", \"DIP002\", etc.\n    Severity Severity\n    Message  string             // Human-readable explanation\n    Location ir.SourceLocation  // Where in the source (may be zero-value if unavailable)\n    Help     string             // Optional \"did you mean X?\" or explanation\n    Fix      string             // Optional suggested replacement text\n}\n\n// String returns a formatted diagnostic string matching the spec example format:\n//   error[DIP003]: unknown node reference \"InterpretX\" in edge\n//     --> pipeline.dip:45:5\nfunc (d Diagnostic) String() string\n\n// Result holds the outcome of a validation pass.\ntype Result struct {\n    Diagnostics []Diagnostic\n}\n\n// Errors returns only error-severity diagnostics.\nfunc (r Result) Errors() []Diagnostic\n\n// HasErrors returns true if any error-severity diagnostics exist.\nfunc (r Result) HasErrors() bool\n```\n\n### 2. `validator/codes.go`\n\nError code registry — constants and human descriptions.\n\n```go\nconst (\n    DIP001 = \"DIP001\" // start node missing\n    DIP002 = \"DIP002\" // exit node missing\n    DIP003 = \"DIP003\" // unknown node reference in edge\n    DIP004 = \"DIP004\" // unreachable node(s) from start\n    DIP005 = \"DIP005\" // unconditional cycle detected\n    DIP006 = \"DIP006\" // exit node has outgoing edges\n    DIP007 = \"DIP007\" // parallel/fan_in mismatch\n    DIP008 = \"DIP008\" // duplicate node ID\n    DIP009 = \"DIP009\" // duplicate edge\n)\n\n// CodeDescription maps each code to a short human-readable description.\nvar CodeDescription = map[string]string{\n    DIP001: \"start node does not exist\",\n    DIP002: \"exit node does not exist\",\n    DIP003: \"unknown node reference in edge\",\n    DIP004: \"node unreachable from start\",\n    DIP005: \"unconditional cycle detected\",\n    DIP006: \"exit node has outgoing edges\",\n    DIP007: \"parallel fan-out/fan-in mismatch\",\n    DIP008: \"duplicate node ID\",\n    DIP009: \"duplicate edge\",\n}\n```\n\n### 3. `validator/validate.go`\n\nThe main validation entry point and all nine check functions.\n\n**Public API:**\n\n```go\n// Validate runs all graph-structure checks (DIP001–DIP009) on the workflow\n// and returns all diagnostics found. It always runs all checks — never\n// short-circuits — so that a single pass reports everything.\nfunc Validate(w *ir.Workflow) Result\n```\n\n**Internal check functions** (each appends to a shared `[]Diagnostic`):\n\n```go\nfunc checkStartExists(w *ir.Workflow) []Diagnostic        // DIP001\nfunc checkExitExists(w *ir.Workflow) []Diagnostic          // DIP002\nfunc checkEdgeEndpoints(w *ir.Workflow) []Diagnostic       // DIP003\nfunc checkReachability(w *ir.Workflow) []Diagnostic         // DIP004\nfunc checkNoCycles(w *ir.Workflow) []Diagnostic             // DIP005\nfunc checkExitNoOutgoing(w *ir.Workflow) []Diagnostic       // DIP006\nfunc checkParallelFanIn(w *ir.Workflow) []Diagnostic        // DIP007\nfunc checkNoDuplicateNodes(w *ir.Workflow) []Diagnostic     // DIP008\nfunc checkNoDuplicateEdges(w *ir.Workflow) []Diagnostic     // DIP009\n```\n\n**Algorithm notes:**\n\n- **DIP001**: Check `w.Start != \"\"` AND `w.Node(w.Start) != nil`.\n- **DIP002**: Check `w.Exit != \"\"` AND `w.Node(w.Exit) != nil`.\n- **DIP003**: For each edge, check `w.Node(e.From) != nil` and `w.Node(e.To) != nil`. Include the dangling reference name in the message. If a close match exists in node IDs (Levenshtein ≤ 2), add it as `Help: \"did you mean X?\"`.\n- **DIP004**: BFS/DFS from `w.Start` along all edges (including restart edges). Any node not visited is unreachable. Report each unreachable node individually with its source location.\n- **DIP005**: Build the subgraph of edges where `e.Restart == false`. Run a standard cycle detection (DFS with gray/black coloring). If a cycle is found, report the cycle path (list of node IDs forming the cycle).\n- **DIP006**: Check `len(w.EdgesFrom(w.Exit)) == 0`. Report each offending edge.\n- **DIP007**: For each `NodeParallel` node, verify there exists exactly one `NodeFanIn` node whose `FanInConfig.Sources` matches the `ParallelConfig.Targets`. For each `NodeFanIn`, verify a corresponding `NodeParallel` exists. Report orphaned parallel or fan_in nodes.\n- **DIP008**: Build `map[string]int` counting node IDs. Any ID with count > 1 is reported, with source locations of both declarations.\n- **DIP009**: Build `map[[2]string]int` keyed on `(From, To)` pairs. Edges with identical `(From, To)` are duplicates. Note: two edges with the same endpoints but *different conditions* are NOT duplicates — they are conditional branches. So the dedup key is `(From, To, Condition.Raw)` where `Condition.Raw == \"\"` for unconditional edges. Actually, re-reading the spec: \"No duplicate edges\" — this should mean truly identical edges (same From, To, and same condition raw text). Two edges `A -> B when X` and `A -> B when Y` are distinct. Two unconditional edges `A -> B` are duplicates.\n\n**Fuzzy matching helper** (for DIP003 help text):\n\n```go\n// closestNodeID returns the node ID most similar to the given name,\n// or \"\" if no node is within edit distance 2.\nfunc closestNodeID(w *ir.Workflow, name string) string\n```\n\nThis uses a simple Levenshtein distance function (no external deps needed — implement inline, ~20 lines).\n\n### 4. `validator/validate_test.go`\n\nComprehensive tests. See test plan below.\n\n---\n\n## Test Plan (15 cases)\n\n### Happy Path\n\n1. **Valid minimal workflow** — Two nodes (start + exit), one edge. `Validate()` returns zero diagnostics.\n2. **Valid complex workflow** — `askAndExecuteWorkflow()` fixture from `ir/ir_test.go`. Has restart edges, parallel/fan_in, conditions. Zero diagnostics.\n3. **Valid workflow with restart back-edge** — Has a cycle through a `restart: true` edge. DIP005 should NOT trigger.\n4. **Valid parallel/fan_in pair** — ParallelConfig.Targets matches FanInConfig.Sources exactly. Zero diagnostics for DIP007.\n\n### Error Cases — One Diagnostic Each\n\n5. **DIP001: Missing start node** — `w.Start = \"Nonexistent\"`. Expect exactly one DIP001 diagnostic.\n6. **DIP002: Missing exit node** — `w.Exit = \"Nonexistent\"`. Expect exactly one DIP002 diagnostic.\n7. **DIP003: Dangling edge reference** — Edge `From: \"A\", To: \"Nonexistent\"`. Expect DIP003 with the dangling name in the message.\n8. **DIP003 with fuzzy match** — Edge references \"Interpet\" (typo for \"Interpret\"). Expect DIP003 with `Help` containing \"did you mean \\\"Interpret\\\"?\".\n9. **DIP004: Unreachable node** — A node exists in `Nodes` but has no incoming edge from any reachable node. Expect DIP004.\n10. **DIP005: Unconditional cycle** — `A -> B -> C -> A` with no restart edges. Expect DIP005 listing the cycle.\n11. **DIP006: Exit has outgoing** — Exit node has an edge going somewhere. Expect DIP006.\n12. **DIP007: Orphaned parallel** — A `NodeParallel` with targets `[X, Y]` but no corresponding `NodeFanIn`. Expect DIP007.\n13. **DIP007: Orphaned fan_in** — A `NodeFanIn` with sources `[X, Y]` but no corresponding `NodeParallel`. Expect DIP007.\n14. **DIP008: Duplicate node ID** — Two nodes with same ID. Expect DIP008.\n15. **DIP009: Duplicate edge** — Two unconditional edges with same `(From, To)`. Expect DIP009.\n\n### Edge Cases\n\n16. **Multiple errors at once** — Workflow has DIP001 + DIP003 + DIP008 simultaneously. Verify all three are reported (multi-diagnostic).\n17. **Empty workflow** — Zero nodes, zero edges. Should report DIP001, DIP002 (no start/exit). Should NOT panic.\n18. **DIP005: Cycle through restart edge is OK** — `A -> B -> C -> A [restart: true]` is valid (restart edges excluded from cycle detection). Zero DIP005 diagnostics.\n19. **DIP003: Both endpoints dangling** — Edge where both From and To are nonexistent. Expect two DIP003 diagnostics (one per endpoint).\n20. **DIP009: Same endpoints, different conditions = NOT duplicate** — Two edges `A -> B when X` and `A -> B when Y`. Should NOT trigger DIP009.\n21. **DIP004: Start node unreachable from itself** — Start is declared but `w.Start` points to it; it IS reachable (it's the starting point). Other disconnected nodes ARE unreachable.\n22. **Diagnostic formatting** — Verify `Diagnostic.String()` output matches the spec format with code, message, and location.\n\n---\n\n## Implementation Order\n\n1. `validator/diagnostic.go` — types first (Diagnostic, Severity, Result)\n2. `validator/codes.go` — constants\n3. `validator/validate.go` — implement checks in order DIP008 → DIP001 → DIP002 → DIP003 → DIP006 → DIP009 → DIP004 → DIP005 → DIP007\n   - DIP008 first because duplicate detection is needed before graph traversal\n   - DIP004/DIP005 require graph traversal algorithms (BFS, DFS cycle detection)\n   - DIP007 requires matching parallel/fan_in semantics\n4. `validator/validate_test.go` — tests alongside implementation\n\n**Rationale for check order in `Validate()`**: All checks run unconditionally. However, DIP008 (duplicate nodes) logically comes first because later checks might produce confusing results on workflows with duplicate IDs. The public `Validate()` function runs all checks and concatenates results.\n\n---\n\n## Non-Goals (explicitly out of scope)\n\n- **Layer 2 (Schema validation)** — known fields, required fields, type checking. That's a separate component.\n- **Layer 4 (Semantic warnings / linter: DIP101–DIP112)** — separate `linter` component per the ledger.\n- **Parser integration** — the validator takes `*ir.Workflow`, not `.dip` source text.\n- **JSON diagnostic output** — will be added when CLI is implemented. The `Diagnostic` type should be JSON-serializable but we don't build the JSON formatter here.\n- **Autofix** — diagnostics include `Fix` text for human/tooling consumption, but no automated rewriting.\n\n---\n\n## Open Design Decisions\n\n1. **DIP007 matching semantics**: The spec says \"Parallel fan-out has matching fan-in.\" The strictest reading: for each `NodeParallel` with `Targets: [X, Y]`, there must exist exactly one `NodeFanIn` with `Sources: [X, Y]` (same set, order-insensitive). The implementation should use set comparison (sort both slices, compare).\n\n2. **DIP009 dedup key**: The spec says \"No duplicate edges.\" Two edges with the same `(From, To)` but different conditions are NOT duplicates — they represent conditional branching. The dedup key is `(From, To, conditionKey)` where `conditionKey` is `Condition.Raw` if the condition exists, or `\"\"` if unconditional.\n\n3. **DIP005 cycle reporting**: When a cycle is found, the diagnostic should include the cycle path (e.g., \"cycle: A → B → C → A\") so the user knows which edges to fix. The DFS algorithm should record the path of gray nodes when a back-edge is encountered.\n\n---\n\n## Example Usage (for implementation agent reference)\n\n```go\nimport (\n    \"fmt\"\n    \"github.com/2389/dippin/ir\"\n    \"github.com/2389/dippin/validator\"\n)\n\nfunc example() {\n    w := &ir.Workflow{\n        Name:  \"broken\",\n        Start: \"Begin\",\n        Exit:  \"End\",\n        Nodes: []*ir.Node{\n            {ID: \"Begin\", Kind: ir.NodeHuman, Config: ir.HumanConfig{}},\n            // \"End\" is missing!\n        },\n        Edges: []*ir.Edge{\n            {From: \"Begin\", To: \"End\"},\n        },\n    }\n\n    result := validator.Validate(w)\n    for _, d := range result.Diagnostics {\n        fmt.Println(d.String())\n    }\n    // Output:\n    // error[DIP002]: exit node \"End\" is declared but does not exist in the node list\n    //   --> :0:0\n    //   = help: add a node with ID \"End\" to the workflow\n    // error[DIP003]: edge references unknown node \"End\"\n    //   --> :0:0\n    //   = help: declare a node with ID \"End\" or fix the edge target\n}\n```\n"}
-TOOL RESULT: write
-OUTPUT:
-wrote 14510 bytes to .tracker/current_plan.md
-TURN 8
 TOOL CALL: bash
 INPUT:
-{"command": "wc -l .tracker/current_plan.md && echo \"---\" && head -5 .tracker/current_plan.md"}
+{"command": "# Let's also check the existing validator to understand diagnostic types\ncat validator/diagnostic.go"}
 TOOL RESULT: bash
 OUTPUT:
-     278 .tracker/current_plan.md
----
-# Implementation Plan: Validator (DIP001–DIP009)
+// Package validator performs graph structure validation on Dippin IR workflows.
+//
+// It implements checks DIP001 through DIP009, covering structural correctness
+// of the workflow graph: start/exit existence, edge validity, reachability,
+// cycle detection, parallel/fan-in pairing, and duplicate detection.
+//
+// The validator is a pure IR consumer — it takes a *ir.Workflow and returns
+// a Result containing all diagnostics found. It always runs all checks and
+// never short-circuits, so a single pass reports everything.
+package validator
 
-## Component Summary
+import (
+	"fmt"
+	"strings"
 
-**Package**: `validator/`
+	"github.com/2389/dippin/ir"
+)
 
-TURN 9
+// Severity levels for diagnostics.
+type Severity int
+
+const (
+	SeverityError   Severity = iota // Must fix — workflow cannot execute
+	SeverityWarning                 // Should fix — likely a bug (used by linter, not this component)
+	SeverityInfo                    // Informational
+	SeverityHint                    // Suggestion
+)
+
+// String returns a human-readable severity label.
+func (s Severity) String() string {
+	switch s {
+	case SeverityError:
+		return "error"
+	case SeverityWarning:
+		return "warning"
+	case SeverityInfo:
+		return "info"
+	case SeverityHint:
+		return "hint"
+	default:
+		return "unknown"
+	}
+}
+
+// Diagnostic represents a single validation finding.
+type Diagnostic struct {
+	Code     string            // "DIP001", "DIP002", etc.
+	Severity Severity          // Error, warning, etc.
+	Message  string            // Human-readable explanation
+	Location ir.SourceLocation // Where in the source (may be zero-value if unavailable)
+	Help     string            // Optional "did you mean X?" or explanation
+	Fix      string            // Optional suggested replacement text
+}
+
+// String returns a formatted diagnostic string matching the spec format:
+//
+//	error[DIP003]: unknown node reference "InterpretX" in edge
+//	  --> pipeline.dip:45:5
+//	  = help: did you mean "Interpret"?
+func (d Diagnostic) String() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s[%s]: %s", d.Severity, d.Code, d.Message)
+
+	file := d.Location.File
+	if file == "" {
+		file = "<unknown>"
+	}
+	fmt.Fprintf(&b, "\n  --> %s:%d:%d", file, d.Location.Line, d.Location.Column)
+
+	if d.Help != "" {
+		fmt.Fprintf(&b, "\n  = help: %s", d.Help)
+	}
+	if d.Fix != "" {
+		fmt.Fprintf(&b, "\n  = fix: %s", d.Fix)
+	}
+	return b.String()
+}
+
+// Result holds the outcome of a validation pass.
+type Result struct {
+	Diagnostics []Diagnostic
+}
+
+// Errors returns only error-severity diagnostics.
+func (r Result) Errors() []Diagnostic {
+	var out []Diagnostic
+	for _, d := range r.Diagnostics {
+		if d.Severity == SeverityError {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// HasErrors returns true if any error-severity diagnostics exist.
+func (r Result) HasErrors() bool {
+	for _, d := range r.Diagnostics {
+		if d.Severity == SeverityError {
+			return true
+		}
+	}
+	return false
+}
+
+TURN 15
+TOOL CALL: write
+INPUT:
+{"path": ".tracker/current_plan.md", "content": "# Plan: Migration Tool (`migrate/`)\n\n## Component\n\n**Migration Tool**: Parse DOT graph files → `ir.Workflow` → canonical `.dip` source text.\n\nThis is the DOT-to-Dippin converter described in §16 of the design spec. It parses a DOT `digraph` into an IR, applies post-migration cleanup (un-escaping prompts, reformatting commands, adding namespace prefixes to conditions), and emits canonical `.dip` output via the existing `formatter.Format()`.\n\nA secondary function provides structural parity checking: given two `*ir.Workflow` values (one from DOT, one from `.dip`), report topology/config differences.\n\n## Design Spec References\n\n- **§16 \"Migration Strategy\"** — Phase 1 (automated conversion) and Phase 2 (behavioral parity validation)\n- **§15 \"DOT Export Strategy\"** — The lossless/lossy tables define the reverse mapping (DOT → IR)\n- **§5 \"Legacy Hacks That Should Die\"** — Shape→handler mapping, `\\n` encoding, escape conventions\n- **§4.1 \"Node kinds\"** — shape-to-kind mapping: `box`→`agent`, `hexagon`→`human`, `parallelogram`→`tool`, `component`→`parallel`, `tripleoctagon`→`fan_in`, `tab`→`subgraph`, `diamond`→varies (see below)\n- **§4.2 \"Edge semantics\"** — conditions, labels, weights, restart\n- **§8.2 \"Context variable namespaces\"** — migration must add `ctx.` prefix to bare condition variables\n- **ADR 1** — `restart=true` edge attribute maps to `Edge.Restart`\n- **Appendix A** — `migrate/migrate.go`, `migrate/parity.go`, `migrate/migrate_test.go`\n\n## Files to Create\n\n| File | Purpose |\n|------|---------|\n| `migrate/dot_parser.go` | DOT lexer + parser (DOT language subset) |\n| `migrate/migrate.go` | `Migrate(dotSource string) (*ir.Workflow, error)` — DOT string → IR with cleanup |\n| `migrate/parity.go` | `CheckParity(a, b *ir.Workflow) []Difference` — structural comparison |\n| `migrate/migrate_test.go` | Comprehensive tests |\n\n## Dependencies\n\n- `ir/` — IR types (`Workflow`, `Node`, `Edge`, `Condition`, all config types)\n- `formatter/` — `Format(*ir.Workflow) string` for producing final `.dip` output\n- `validator/` — Optional; can validate the produced IR, but NOT a hard dependency for the migrate package itself\n- **No external dependencies** — DOT parser is hand-written (the DOT language subset we need is small)\n\n## Architecture\n\n### DOT Parser (`dot_parser.go`)\n\nWe need a minimal DOT parser that handles the subset of DOT used by Tracker pipelines. This is NOT a full Graphviz DOT parser — it handles:\n\n- `digraph <name> { ... }` wrapper\n- Graph-level attributes: `graph [ key=value, ... ];`\n- Node statements: `NodeID [ key=value, ... ];`\n- Edge statements: `NodeID -> NodeID [ key=value, ... ];`\n- C-style comments (`// ...`) and block comments (`/* ... */`)\n- Double-quoted strings with escape sequences (`\\\"`, `\\\\`, `\\n`)\n- Semicolons (optional in real DOT, but our files use them)\n- Attributes: `key=value` or `key=\"value\"` \n\n**NOT supported** (not used in our DOT files):\n- `subgraph` blocks (these are expanded inline in our files)\n- Port syntax (`:port`)\n- HTML labels (`<...>`)\n- Multiple edge targets in one statement (`A -> B -> C`)\n\nTypes:\n```go\n// dotGraph holds the parsed DOT structure before IR conversion.\ntype dotGraph struct {\n    Name       string\n    GraphAttrs map[string]string\n    NodeAttrs  map[string]string   // default node attrs\n    EdgeAttrs  map[string]string   // default edge attrs  \n    Nodes      []dotNode\n    Edges      []dotEdge\n}\n\ntype dotNode struct {\n    ID    string\n    Attrs map[string]string\n}\n\ntype dotEdge struct {\n    From  string\n    To    string\n    Attrs map[string]string\n}\n\nfunc parseDOT(input string) (*dotGraph, error)\n```\n\n### Migrator (`migrate.go`)\n\nThe core conversion pipeline:\n\n```go\n// Migrate parses a DOT digraph string and produces a Dippin IR workflow.\n// It applies all post-migration cleanup automatically:\n// - Shape → node kind mapping\n// - \\n and \\\" un-escaping in prompts and commands\n// - Namespace prefixing for condition variables (bare \"outcome\" → \"ctx.outcome\")\n// - Start/exit identification from Mdiamond/Msquare shapes\n// - Graph-level attribute extraction to WorkflowDefaults\nfunc Migrate(dotSource string) (*ir.Workflow, error)\n\n// MigrateToSource parses DOT and returns canonical .dip source text.\n// Convenience function equivalent to: formatter.Format(Migrate(dotSource))\nfunc MigrateToSource(dotSource string) (string, error)\n```\n\n#### Shape → Kind Mapping (reverse of §15 table)\n\n| DOT shape | IR NodeKind | Notes |\n|-----------|-------------|-------|\n| `box` | `agent` | Default if no shape |\n| `hexagon` | `human` | |\n| `parallelogram` | `tool` | |\n| `component` | `parallel` | |\n| `tripleoctagon` | `fan_in` | |\n| `tab` | `subgraph` | |\n| `Mdiamond` | — | Identifies `start` node (not a real kind) |\n| `Msquare` | — | Identifies `exit` node (not a real kind) |\n| `diamond` | Special handling | Per §5: if has `tool_command` → `tool`; if has `prompt` + `auto_status` → `agent`; otherwise ignore (deferred condition node) |\n| (missing) | `agent` | Default when shape not specified |\n\n#### Post-Migration Cleanup Steps\n\n1. **Un-escape DOT strings**: `\\n` → real newline, `\\\"` → `\"`, `\\\\` → `\\`\n2. **Condition namespace prefixing**: Parse condition strings and prefix bare variable names:\n   - Known context vars (`outcome`, `last_response`, `human_response`, `tool_stdout`, `tool_stderr`) → `ctx.` prefix\n   - `graph.` prefixed vars → keep as-is\n   - Other bare vars → `ctx.` prefix (best guess for migration)\n3. **Graph attribute mapping**:\n   - `goal` → `Workflow.Goal`\n   - `rankdir` → ignored (presentation-only)\n   - `default_max_retry` / `max_retries` → `Defaults.MaxRetries`\n   - `max_restarts` → `Defaults.MaxRestarts`\n   - `default_fidelity` / `fidelity` → `Defaults.Fidelity`\n   - `model` → `Defaults.Model`\n   - `provider` → `Defaults.Provider`\n4. **Node attribute mapping**:\n   - `label` → `Node.Label`\n   - `prompt` → `AgentConfig.Prompt` (with un-escaping)\n   - `tool_command` → `ToolConfig.Command` (with un-escaping)\n   - `model` → `AgentConfig.Model`\n   - `provider` → `AgentConfig.Provider`\n   - `max_retries` → `RetryConfig.MaxRetries`\n   - `retry_policy` → `RetryConfig.Policy`\n   - `retry_target` → `RetryConfig.RetryTarget`\n   - `fallback_target` → `RetryConfig.FallbackTarget`\n   - `goal_gate` (true) → `AgentConfig.GoalGate`\n   - `auto_status` (true) → `AgentConfig.AutoStatus`\n   - `reasoning_effort` → `AgentConfig.ReasoningEffort`\n   - `fidelity` → `AgentConfig.Fidelity`\n   - `timeout` → `ToolConfig.Timeout` (parse duration string)\n   - `mode` → `HumanConfig.Mode`\n   - `default` → `HumanConfig.Default`\n   - `targets` → `ParallelConfig.Targets` (comma-separated)\n   - `sources` → `FanInConfig.Sources` (comma-separated)\n   - `ref` → `SubgraphConfig.Ref`\n   - `max_turns` → `AgentConfig.MaxTurns`\n   - `cmd_timeout` → `AgentConfig.CmdTimeout`\n   - `cache_tools` → `AgentConfig.CacheTools`\n   - `compaction` → `AgentConfig.Compaction`\n   - `system_prompt` → `AgentConfig.SystemPrompt`\n5. **Edge attribute mapping**:\n   - `label` → `Edge.Label`\n   - `condition` → `Edge.Condition` (parse + add namespaces)\n   - `weight` → `Edge.Weight`\n   - `restart` (true) → `Edge.Restart`\n6. **Parallel/fan_in inference**: If a node has shape `component`, detect targets from outgoing edges. If a node has shape `tripleoctagon`, detect sources from incoming edges.\n\n#### Condition Parsing for Migration\n\nConditions in DOT are raw strings like `outcome=success`, `tool_stdout contains pass`, `outcome=success && tool_stdout contains done`. We need a minimal parser that:\n\n1. Splits on `&&` and `||` (with proper precedence)\n2. Handles `not` / `!` prefix\n3. Handles comparison operators: `=`, `!=`, `contains`, `startswith`, `endswith`, `in`\n4. Adds namespace prefixes to bare variable names\n5. Produces `ir.Condition` with both `Raw` and `Parsed` fields\n\n```go\nfunc parseCondition(raw string) (*ir.Condition, error)\nfunc addNamespacePrefix(variable string) string\n```\n\n### Parity Checker (`parity.go`)\n\n```go\n// Difference describes a structural difference between two workflows.\ntype Difference struct {\n    Kind    string // \"node_missing\", \"edge_missing\", \"config_mismatch\", \"topology_diff\", etc.\n    Message string // Human-readable description\n    PathA   string // Location in workflow A (e.g., \"node:Validate\")\n    PathB   string // Location in workflow B (may be empty)\n}\n\n// CheckParity compares two workflows for structural equivalence.\n// It checks:\n// - Same node IDs and kinds\n// - Same edges (from/to/conditions)\n// - Same start/exit\n// - Compatible node configurations (prompt content modulo whitespace)\n// - Same graph-level defaults\nfunc CheckParity(a, b *ir.Workflow) []Difference\n```\n\n## Test Cases (22+ cases)\n\n### DOT Parser Tests\n\n1. **Simple digraph** — `digraph G { A -> B; }` → 2 nodes, 1 edge\n2. **Node with attributes** — `A [shape=box, label=\"My Agent\"];` → correct attrs\n3. **Edge with attributes** — `A -> B [label=\"yes\", condition=\"outcome=success\"];` → correct attrs\n4. **Graph attributes** — `graph [goal=\"test\", rankdir=LR];` → correct extraction\n5. **Quoted strings with escapes** — `label=\"line1\\nline2\\\"quoted\\\"\"` → proper un-escaping\n6. **Comments** — `// comment` and `/* block */` correctly skipped\n7. **Empty graph** — `digraph G {}` → no nodes, no edges\n8. **Multiple edges** — `A -> B; A -> C; B -> C;` → 3 edges\n9. **Missing semicolons** — `A -> B` without `;` should still parse (DOT allows it)\n10. **Malformed DOT** — returns descriptive error (unclosed quote, missing brace, etc.)\n\n### Migration Tests\n\n11. **Full pipeline migration** — `build_dippin.dot`-style input → correct IR with all node kinds, edges, conditions\n12. **Shape to kind mapping** — each DOT shape maps to the correct `ir.NodeKind`\n13. **Start/exit identification** — `Mdiamond` → `Workflow.Start`, `Msquare` → `Workflow.Exit`\n14. **Prompt un-escaping** — `\"line1\\nline2\\n\\\"code\\\"\"` → `\"line1\\nline2\\n\\\"code\\\"\"` (real newlines, unquoted)\n15. **Tool command un-escaping** — `tool_command=\"set -eu\\necho hello\"` → multiline command\n16. **Condition namespace prefixing** — `outcome=success` → `ctx.outcome = success`; `graph.goal` stays\n17. **Complex condition** — `outcome=success && tool_stdout contains pass` → `CondAnd{CondCompare{ctx.outcome, =, success}, CondCompare{ctx.tool_stdout, contains, pass}}`\n18. **Condition with negation** — `not outcome=fail` → `CondNot{CondCompare{ctx.outcome, =, fail}}`\n19. **Restart edge** — `A -> B [restart=true]` → `Edge.Restart = true`\n20. **Graph defaults extraction** — `graph [model=\"claude-opus-4-6\", max_restarts=7]` → `WorkflowDefaults`\n21. **Parallel node inference** — `component` shape node with outgoing edges → `ParallelConfig.Targets`\n22. **Fan-in node inference** — `tripleoctagon` shape node with incoming edges → `FanInConfig.Sources`\n23. **Diamond disambiguation** — diamond with `tool_command` → tool; diamond with `prompt` → agent\n24. **Weight on edge** — `A -> B [weight=10]` → `Edge.Weight = 10`\n25. **Duration parsing** — `timeout=\"30s\"` → `30 * time.Second`, `timeout=\"1h30m\"` → `90 * time.Minute`\n26. **Empty/nil handling** — Node with no attributes → agent with empty config (default kind)\n27. **MigrateToSource round-trip** — DOT → IR → `.dip` source; verify output is valid Dippin format\n\n### Parity Checker Tests\n\n28. **Identical workflows** — returns empty differences\n29. **Missing node** — workflow B missing a node → reports `node_missing`\n30. **Extra node** — workflow B has an extra node → reports `node_extra`\n31. **Different start/exit** — reports `start_mismatch` / `exit_mismatch`\n32. **Edge missing** — reports `edge_missing`\n33. **Config mismatch** — different prompt text → reports `config_mismatch`\n34. **Kind mismatch** — same node ID, different kind → reports `kind_mismatch`\n35. **Whitespace-tolerant prompt comparison** — prompts that differ only in whitespace → no difference\n\n### Integration Test\n\n36. **build_dippin.dot migration** — Parse the actual `build_dippin.dot` file in the repo, migrate it, verify the IR has all expected nodes/edges/attributes. This is the real-world integration test.\n\n## Implementation Notes\n\n### DOT String Un-escaping\n\nDOT uses `\\n` for newline, `\\\"` for quote, `\\\\` for backslash. During migration:\n- `\\n` → literal newline character (`\\n`)\n- `\\\"` → literal quote (`\"`)\n- `\\\\` → literal backslash (`\\`)\n- `\\l` → literal newline (DOT left-justified line break)\n- `\\r` → ignore (DOT carriage return, not meaningful)\n\n### Workflow Name Extraction\n\nThe DOT `digraph <name>` becomes `Workflow.Name`. If the name is quoted, strip quotes.\n\n### Node Ordering\n\nPreserve the declaration order from the DOT file for `Workflow.Nodes`. This ensures deterministic output and maintains the author's intended reading order.\n\n### Edge Ordering\n\nPreserve edge declaration order from the DOT file for `Workflow.Edges`.\n\n### Start/Exit Node Handling\n\nNodes with `shape=Mdiamond` or `shape=Msquare` are terminal markers:\n- They are NOT added as real nodes in `Workflow.Nodes` (they are syntactic, not semantic)\n- Instead, if `Mdiamond` node has edges pointing TO a real node, that real node becomes `Workflow.Start`\n- If real nodes have edges pointing TO the `Msquare` node, the `Msquare` determines `Workflow.Exit`\n- If `Mdiamond` has a label other than \"Start\", use it for the workflow name if graph name is generic\n- **Alternative approach (simpler)**: Include Start/Exit as agent nodes in the IR with the ID from DOT. Set `Workflow.Start` and `Workflow.Exit` to those IDs. The formatter and other consumers already handle start/exit by ID. This approach is simpler and matches how `build_dippin.dot` works (Start and Exit are real nodes with edges).\n\n**Decision**: Use the simpler approach — keep Start/Exit as nodes in the IR. Their kind will be `agent` (the default when shape doesn't map to another kind, since Mdiamond/Msquare don't have a kind mapping). The formatter knows to emit them because `Workflow.Start`/`.Exit` point to them. The validator requires them to exist.\n\nActually, re-examining: Start/Exit with `Mdiamond`/`Msquare` are terminal markers with no handler logic. They should be `agent` nodes with empty configs. The important thing is `Workflow.Start` and `Workflow.Exit` point to them.\n\n### Parallel/Fan-in Target/Source Inference\n\nFor `component` (parallel) nodes:\n- If the node has a `targets` attribute, use it directly (comma-split)\n- Otherwise, infer targets from outgoing edges of that node\n\nFor `tripleoctagon` (fan_in) nodes:\n- If the node has a `sources` attribute, use it directly (comma-split)\n- Otherwise, infer sources from incoming edges to that node\n\n### Known Context Variables for Namespace Prefixing\n\nPer §8.2, these bare names get `ctx.` prefix:\n- `outcome`\n- `last_response`\n- `human_response`\n- `tool_stdout`\n- `tool_stderr`\n\nVariables already containing a `.` (like `graph.goal`) are left as-is.\n\nThe prefix `context.` in DOT conditions (e.g., `context.tool_stdout`) should be normalized to `ctx.` (per §8.2 namespace table).\n\n### Condition Operator Mapping\n\nDOT conditions use `=` for equality. Dippin IR uses `=` as well. Operators:\n- `=` → `=`\n- `!=` → `!=`\n- `contains` → `contains`\n- `startswith` → `startswith`\n- `endswith` → `endswith`\n- `in` → `in`\n- `&&` → `CondAnd`\n- `||` → `CondOr`\n- `not` / `!` → `CondNot`\n"}
+TOOL RESULT: write
+OUTPUT:
+wrote 15546 bytes to .tracker/current_plan.md
+TURN 16
+TOOL CALL: bash
+INPUT:
+{"command": "wc -l .tracker/current_plan.md"}
+TOOL RESULT: bash
+OUTPUT:
+     322 .tracker/current_plan.md
+
+TOOL CALL: bash
+INPUT:
+{"command": "# Also let's check if there's a parser package we should know about (listed as complete in ledger but no files visible)\nfind . -name '*.go' -path '*/parser/*' 2>/dev/null"}
+TOOL RESULT: bash
+OUTPUT:
+(no output)
+TOOL CALL: bash
+INPUT:
+{"command": "# Verify the existing test suite still passes\ncd /Users/clint/dippin-lang && go test ./... 2>&1"}
+TOOL RESULT: bash
+OUTPUT:
+stderr: sh: line 1: cd: /Users/clint/dippin-lang: No such file or directory
+
+exit code: 1
+TURN 17
+TOOL CALL: bash
+INPUT:
+{"command": "go test ./... 2>&1"}
+TOOL RESULT: bash
+OUTPUT:
+?   	github.com/2389/dippin/cmd/dippin	[no test files]
+ok  	github.com/2389/dippin/export	(cached)
+ok  	github.com/2389/dippin/formatter	(cached)
+ok  	github.com/2389/dippin/ir	(cached)
+ok  	github.com/2389/dippin/validator	(cached)
+
+TURN 18
+TOOL CALL: bash
+INPUT:
+{"command": "# Show the variety of node/edge patterns in the real DOT file\ngrep -E '^\\s*(Start|Exit|\\w+)\\s*\\[' build_dippin.dot | head -20"}
+TOOL RESULT: bash
+OUTPUT:
+  graph [
+  Start [shape=Mdiamond, label="Start"];
+  Exit [shape=Msquare, label="Exit"];
+  SetupWorkspace [
+  PickNextComponent [
+  CheckComplete [
+  PlanComponent [
+  ImplementParallel [shape=component, label="Implement (Parallel)"];
+  ImplementClaude [
+  ImplementGPT [
+  ImplementGemini [
+  ImplementJoin [shape=tripleoctagon, label="Implement Join"];
+  ValidateBuild [
+  ReviewParallel [shape=component, label="Reviews (Parallel)"];
+  ReviewClaude [
+  ReviewGPT [
+  ReviewGemini [
+  ReviewsJoin [shape=tripleoctagon, label="Reviews Join"];
+  ReviewAnalysis [
+  CommitWork [
+
+TOOL CALL: bash
+INPUT:
+{"command": "# Show edge patterns\ngrep -E '^\\s*\\w+\\s*->' build_dippin.dot | head -20"}
+TOOL RESULT: bash
+OUTPUT:
+  Start -> SetupWorkspace;
+  SetupWorkspace -> PickNextComponent;
+  PickNextComponent -> CheckComplete;
+  CheckComplete -> Exit [condition="context.tool_stdout=all_complete", label="all done"];
+  CheckComplete -> PlanComponent [condition="context.tool_stdout=has_next", label="has work"];
+  PlanComponent -> ImplementParallel;
+  ImplementParallel -> ImplementClaude;
+  ImplementParallel -> ImplementGPT;
+  ImplementParallel -> ImplementGemini;
+  ImplementClaude -> ImplementJoin;
+  ImplementGPT -> ImplementJoin;
+  ImplementGemini -> ImplementJoin;
+  ImplementJoin -> ValidateBuild;
+  ValidateBuild -> ReviewParallel [condition="outcome=success", label="validated"];
+  ValidateBuild -> ImplementClaude [condition="outcome=fail", label="fix_build"];
+  ReviewParallel -> ReviewClaude;
+  ReviewParallel -> ReviewGPT;
+  ReviewParallel -> ReviewGemini;
+  ReviewClaude -> ReviewsJoin;
+  ReviewGPT -> ReviewsJoin;
+
+TURN 19
+TOOL CALL: bash
+INPUT:
+{"command": "grep -E '^\\s*\\w+\\s*->' build_dippin.dot | tail -10"}
+TOOL RESULT: bash
+OUTPUT:
+  ReviewGPT -> ReviewsJoin;
+  ReviewGemini -> ReviewsJoin;
+  ReviewsJoin -> ReviewAnalysis;
+  ReviewAnalysis -> CommitWork [condition="outcome=success", label="pass"];
+  ReviewAnalysis -> ImplementClaude [condition="outcome=retry", label="rework"];
+  ReviewAnalysis -> FailureSummary [condition="outcome=fail", label="escalate"];
+  CommitWork -> MarkComplete;
+  MarkComplete -> PickNextComponent [label="next component", loop_restart=true];
+  FailureSummary -> MarkFailed;
+  MarkFailed -> Exit;
+
+TOOL CALL: bash
+INPUT:
+{"command": "# Check for multiline attributes (prompt, tool_command) and their escaping patterns\ngrep -c 'tool_command=' build_dippin.dot\ngrep -c 'prompt=' build_dippin.dot\ngrep -c 'loop_restart=' build_dippin.dot\ngrep -c 'restart=' build_dippin.dot"}
+TOOL RESULT: bash
+OUTPUT:
+5
+10
+1
+1
+
+TURN 20
+TOOL CALL: bash
+INPUT:
+{"command": "# Check all attribute names used in edges\ngrep -oP '\\[\\K[^\\]]+' build_dippin.dot | grep -oP '\\w+=' | sort -u"}
+TOOL RESULT: bash
+OUTPUT:
+stderr: grep: invalid option -- P
+usage: grep [-abcdDEFGHhIiJLlMmnOopqRSsUVvwXxZz] [-A num] [-B num] [-C[num]]
+	[-e pattern] [-f file] [--binary-files=value] [--color=when]
+	[--context[=num]] [--directories=action] [--label] [--line-buffered]
+	[--null] [pattern] [file ...]
+grep: invalid option -- P
+usage: grep [-abcdDEFGHhIiJLlMmnOopqRSsUVvwXxZz] [-A num] [-B num] [-C[num]]
+	[-e pattern] [-f file] [--binary-files=value] [--color=when]
+	[--context[=num]] [--directories=action] [--label] [--line-buffered]
+	[--null] [pattern] [file ...]
+
+TOOL CALL: bash
+INPUT:
+{"command": "# Check all attribute names used in nodes\ngrep -E '^\\s*\\w+\\s*\\[' build_dippin.dot | grep -oP '\\w+=' | sort -u"}
+TOOL RESULT: bash
+OUTPUT:
+stderr: grep: invalid option -- P
+usage: grep [-abcdDEFGHhIiJLlMmnOopqRSsUVvwXxZz] [-A num] [-B num] [-C[num]]
+	[-e pattern] [-f file] [--binary-files=value] [--color=when]
+	[--context[=num]] [--directories=action] [--label] [--line-buffered]
+	[--null] [pattern] [file ...]
+
+TURN 21
+TOOL CALL: bash
+INPUT:
+{"command": "# macOS grep doesn't have -P, use awk/sed instead\ngrep '\\[' build_dippin.dot | sed 's/.*\\[//; s/\\].*//; s/,/\\n/g' | sed 's/^ *//; s/=.*//' | sort -u | grep -v '^$'"}
+TOOL RESULT: bash
+OUTPUT:
+-z \"$NEXT\" 
+! -f .tracker/ledger.tsv 
+condition
+label
+loop_restart
+shape
+
+TURN 22
+TOOL CALL: bash
+INPUT:
+{"command": "# Let's see all the node attributes more precisely\n# Check full node declarations\ngrep -E 'shape=' build_dippin.dot | head -20"}
+TOOL RESULT: bash
+OUTPUT:
+  Start [shape=Mdiamond, label="Start"];
+  Exit [shape=Msquare, label="Exit"];
+    shape=parallelogram,
+    shape=parallelogram,
+    shape=diamond,
+    shape=box,
+  ImplementParallel [shape=component, label="Implement (Parallel)"];
+    shape=box,
+    shape=box,
+    shape=box,
+  ImplementJoin [shape=tripleoctagon, label="Implement Join"];
+    shape=parallelogram,
+  ReviewParallel [shape=component, label="Reviews (Parallel)"];
+    shape=box,
+    shape=box,
+    shape=box,
+  ReviewsJoin [shape=tripleoctagon, label="Reviews Join"];
+    shape=box,
+    shape=box,
+    shape=parallelogram,
+
+TOOL CALL: bash
+INPUT:
+{"command": "# What other attrs do nodes have? Look at multi-line node declarations\nawk '/^\\s*\\w+\\s*\\[/{found=1} found{print} /\\];/{found=0}' build_dippin.dot | grep -E '^\\s+\\w+=' | sed 's/=.*//' | sed 's/^ *//' | sort -u"}
+TOOL RESULT: bash
+OUTPUT:
+(no output)
+TURN 23
+TOOL CALL: bash
+INPUT:
+{"command": "# Get all attribute keys from multi-line node blocks\nawk '/^\\s*\\w+\\s*\\[/{found=1; next} /\\];/{found=0} found' build_dippin.dot | grep -E '^\\s+\\w+' | sed 's/^\\s*//' | sed 's/=.*//' | sort -u"}
+TOOL RESULT: bash
+OUTPUT:
+(no output)
+TURN 24
+TOOL CALL: bash
+INPUT:
+{"command": "# Let me look at the raw format of multiline node attributes\nsed -n '/ImplementClaude \\[/,/\\];/p' build_dippin.dot"}
+TOOL RESULT: bash
+OUTPUT:
+  ImplementClaude [
+    shape=box,
+    label="Claude Implementation",
+    llm_provider="anthropic",
+    llm_model="claude-opus-4-6",
+    reasoning_effort="high",
+    fidelity="full",
+    prompt="Implement the planned component for the Dippin toolchain. Read .tracker/current_plan.md for exactly what to build and .tracker/current_context.md for the current codebase state.\n\nRead the design spec at ../DIPPIN_DESIGN_PLAN.md for exact specifications.\nRead existing code in ir/ to match types precisely.\n\nRules:\n- Write idiomatic Go. Standard library only (no external deps beyond what go.mod already has).\n- Every exported function gets a test. Test files go next to source.\n- Match the IR types in ir/ exactly. Do not modify ir/ unless the plan says to.\n- Table-driven tests with edge cases from the plan.\n- One responsibility per package.\n- Use diagnostic codes from the spec (DIP001-DIP112) where applicable.\n- Write real, complete code — no stubs, no TODOs, no placeholders.\n- Run 'go build ./...' and 'go test ./...' to verify before finishing."
+  ];
+  ValidateBuild -> ImplementClaude [condition="outcome=fail", label="fix_build"];
+
+  // Reviews
+  ReviewParallel -> ReviewClaude;
+  ReviewParallel -> ReviewGPT;
+  ReviewParallel -> ReviewGemini;
+  ReviewClaude -> ReviewsJoin;
+  ReviewGPT -> ReviewsJoin;
+  ReviewGemini -> ReviewsJoin;
+
+  // Synthesis and routing
+  ReviewsJoin -> ReviewAnalysis;
+  ReviewAnalysis -> CommitWork [condition="outcome=success", label="pass"];
+  ReviewAnalysis -> ImplementClaude [condition="outcome=retry", label="rework"];
+  ReviewAnalysis -> FailureSummary [condition="outcome=fail", label="escalate"];
+
+TURN 25
+TOOL CALL: bash
+INPUT:
+{"command": "# Get all unique attribute names in the DOT file\nsed -n '/\\[/,/\\]/p' build_dippin.dot | grep -oE '[a-z_]+=' | sort -u"}
+TOOL RESULT: bash
+OUTPUT:
+comp=
+condition=
+count=
+default_fidelity=
+default_max_retry=
+fidelity=
+goal_gate=
+goal=
+label=
+llm_model=
+llm_provider=
+loop_restart=
+max_restarts=
+outcome=
+prompt=
+rankdir=
+reasoning_effort=
+retry_target=
+shape=
+tool_command=
+tool_stdout=
+
+TURN 26
+TOOL CALL: edit
+INPUT:
+{"path": ".tracker/current_plan.md", "old_string": "5. **Edge attribute mapping**:\n   - `label` → `Edge.Label`\n   - `condition` → `Edge.Condition` (parse + add namespaces)\n   - `weight` → `Edge.Weight`\n   - `restart` (true) → `Edge.Restart`", "new_string": "5. **Edge attribute mapping**:\n   - `label` → `Edge.Label`\n   - `condition` → `Edge.Condition` (parse + add namespaces)\n   - `weight` → `Edge.Weight`\n   - `restart` (true) → `Edge.Restart`\n   - `loop_restart` (true) → `Edge.Restart` (legacy alias used in real DOT files)"}
+TOOL RESULT: edit
+OUTPUT:
+edited .tracker/current_plan.md
+TURN 27
+TOOL CALL: edit
+INPUT:
+{"new_string": "   - `model` / `llm_model` → `AgentConfig.Model` (both forms accepted; `llm_model` is the legacy DOT convention)\n   - `provider` / `llm_provider` → `AgentConfig.Provider` (both forms accepted; `llm_provider` is the legacy DOT convention)", "old_string": "   - `model` → `AgentConfig.Model`\n   - `provider` → `AgentConfig.Provider`", "path": ".tracker/current_plan.md"}
+TOOL RESULT: edit
+OUTPUT:
+edited .tracker/current_plan.md
+TURN 28
+TOOL CALL: edit
+INPUT:
+{"new_string": "The prefix `context.` in DOT conditions (e.g., `context.tool_stdout`) should be normalized to `ctx.` (per §8.2 namespace table).\n\nThe prefix `graph.` is kept as-is.\n\n**Real-world example from `build_dippin.dot`**:\n- `condition=\"context.tool_stdout=all_complete\"` → `ctx.tool_stdout = all_complete`\n- `condition=\"outcome=success\"` → `ctx.outcome = success`\n- `condition=\"outcome=fail\"` → `ctx.outcome = fail`\n- `condition=\"outcome=retry\"` → `ctx.outcome = retry`\n\nNote: DOT conditions use `=` with no spaces around the operator. The condition parser should handle both `outcome=success` and `outcome = success`.\n\n### Real-World DOT Attribute Names\n\nFrom examining `build_dippin.dot`, these are the actual attribute names used:\n\n**Node attributes**: `shape`, `label`, `llm_provider`, `llm_model`, `reasoning_effort`, `fidelity`, `prompt`, `tool_command`, `goal_gate`, `retry_target`\n\n**Edge attributes**: `condition`, `label`, `loop_restart`\n\n**Graph attributes**: `goal`, `rankdir`, `default_max_retry`, `default_fidelity`, `max_restarts`\n\nThe migration tool MUST handle these legacy names:\n- `llm_model` → maps to `model` in IR\n- `llm_provider` → maps to `provider` in IR\n- `loop_restart` → maps to `restart` in IR\n- `default_max_retry` → maps to `max_retries` in IR defaults\n- `default_fidelity` → maps to `fidelity` in IR defaults\n- `context.` prefix in conditions → maps to `ctx.` prefix in IR", "old_string": "The prefix `context.` in DOT conditions (e.g., `context.tool_stdout`) should be normalized to `ctx.` (per §8.2 namespace table).", "path": ".tracker/current_plan.md"}
+TOOL RESULT: edit
+OUTPUT:
+edited .tracker/current_plan.md
+TURN 29
+TOOL CALL: read
+INPUT:
+{"path": ".tracker/current_plan.md"}
+TOOL RESULT: read
+OUTPUT:
+# Plan: Migration Tool (`migrate/`)
+
+## Component
+
+**Migration Tool**: Parse DOT graph files → `ir.Workflow` → canonical `.dip` source text.
+
+This is the DOT-to-Dippin converter described in §16 of the design spec. It parses a DOT `digraph` into an IR, applies post-migration cleanup (un-escaping prompts, reformatting commands, adding namespace prefixes to conditions), and emits canonical `.dip` output via the existing `formatter.Format()`.
+
+A secondary function provides structural parity checking: given two `*ir.Workflow` values (one from DOT, one from `.dip`), report topology/config differences.
+
+## Design Spec References
+
+- **§16 "Migration Strategy"** — Phase 1 (automated conversion) and Phase 2 (behavioral parity validation)
+- **§15 "DOT Export Strategy"** — The lossless/lossy tables define the reverse mapping (DOT → IR)
+- **§5 "Legacy Hacks That Should Die"** — Shape→handler mapping, `\n` encoding, escape conventions
+- **§4.1 "Node kinds"** — shape-to-kind mapping: `box`→`agent`, `hexagon`→`human`, `parallelogram`→`tool`, `component`→`parallel`, `tripleoctagon`→`fan_in`, `tab`→`subgraph`, `diamond`→varies (see below)
+- **§4.2 "Edge semantics"** — conditions, labels, weights, restart
+- **§8.2 "Context variable namespaces"** — migration must add `ctx.` prefix to bare condition variables
+- **ADR 1** — `restart=true` edge attribute maps to `Edge.Restart`
+- **Appendix A** — `migrate/migrate.go`, `migrate/parity.go`, `migrate/migrate_test.go`
+
+## Files to Create
+
+| File | Purpose |
+|------|---------|
+| `migrate/dot_parser.go` | DOT lexer + parser (DOT language subset) |
+| `migrate/migrate.go` | `Migrate(dotSource string) (*ir.Workflow, error)` — DOT string → IR with cleanup |
+| `migrate/parity.go` | `CheckParity(a, b *ir.Workflow) []Difference` — structural comparison |
+| `migrate/migrate_test.go` | Comprehensive tests |
+
+## Dependencies
+
+- `ir/` — IR types (`Workflow`, `Node`, `Edge`, `Condition`, all config types)
+- `formatter/` — `Format(*ir.Workflow) string` for producing final `.dip` output
+- `validator/` — Optional; can validate the produced IR, but NOT a hard dependency for the migrate package itself
+- **No external dependencies** — DOT parser is hand-written (the DOT language subset we need is small)
+
+## Architecture
+
+### DOT Parser (`dot_parser.go`)
+
+We need a minimal DOT parser that handles the subset of DOT used by Tracker pipelines. This is NOT a full Graphviz DOT parser — it handles:
+
+- `digraph <name> { ... }` wrapper
+- Graph-level attributes: `graph [ key=value, ... ];`
+- Node statements: `NodeID [ key=value, ... ];`
+- Edge statements: `NodeID -> NodeID [ key=value, ... ];`
+- C-style comments (`// ...`) and block comments (`/* ... */`)
+- Double-quoted strings with escape sequences (`\"`, `\\`, `\n`)
+- Semicolons (optional in real DOT, but our files use them)
+- Attributes: `key=value` or `key="value"` 
+
+**NOT supported** (not used in our DOT files):
+- `subgraph` blocks (these are expanded inline in our files)
+- Port syntax (`:port`)
+- HTML labels (`<...>`)
+- Multiple edge targets in one statement (`A -> B -> C`)
+
+Types:
+```go
+// dotGraph holds the parsed DOT structure before IR conversion.
+type dotGraph struct {
+    Name       string
+    GraphAttrs map[string]string
+    NodeAttrs  map[string]string   // default node attrs
+    EdgeAttrs  map[string]string   // default edge attrs  
+    Nodes      []dotNode
+    Edges      []dotEdge
+}
+
+type dotNode struct {
+    ID    string
+    Attrs map[string]string
+}
+
+type dotEdge struct {
+    From  string
+    To    string
+    Attrs map[string]string
+}
+
+func parseDOT(input string) (*dotGraph, error)
+```
+
+### Migrator (`migrate.go`)
+
+The core conversion pipeline:
+
+```go
+// Migrate parses a DOT digraph string and produces a Dippin IR workflow.
+// It applies all post-migration cleanup automatically:
+// - Shape → node kind mapping
+// - \n and \" un-escaping in prompts and commands
+// - Namespace prefixing for condition variables (bare "outcome" → "ctx.outcome")
+// - Start/exit identification from Mdiamond/Msquare shapes
+// - Graph-level attribute extraction to WorkflowDefaults
+func Migrate(dotSource string) (*ir.Workflow, error)
+
+// MigrateToSource parses DOT and returns canonical .dip source text.
+// Convenience function equivalent to: formatter.Format(Migrate(dotSource))
+func MigrateToSource(dotSource string) (string, error)
+```
+
+#### Shape → Kind Mapping (reverse of §15 table)
+
+| DOT shape | IR NodeKind | Notes |
+|-----------|-------------|-------|
+| `box` | `agent` | Default if no shape |
+| `hexagon` | `human` | |
+| `parallelogram` | `tool` | |
+| `component` | `parallel` | |
+| `tripleoctagon` | `fan_in` | |
+| `tab` | `subgraph` | |
+| `Mdiamond` | — | Identifies `start` node (not a real kind) |
+| `Msquare` | — | Identifies `exit` node (not a real kind) |
+| `diamond` | Special handling | Per §5: if has `tool_command` → `tool`; if has `prompt` + `auto_status` → `agent`; otherwise ignore (deferred condition node) |
+| (missing) | `agent` | Default when shape not specified |
+
+#### Post-Migration Cleanup Steps
+
+1. **Un-escape DOT strings**: `\n` → real newline, `\"` → `"`, `\\` → `\`
+2. **Condition namespace prefixing**: Parse condition strings and prefix bare variable names:
+   - Known context vars (`outcome`, `last_response`, `human_response`, `tool_stdout`, `tool_stderr`) → `ctx.` prefix
+   - `graph.` prefixed vars → keep as-is
+   - Other bare vars → `ctx.` prefix (best guess for migration)
+3. **Graph attribute mapping**:
+   - `goal` → `Workflow.Goal`
+   - `rankdir` → ignored (presentation-only)
+   - `default_max_retry` / `max_retries` → `Defaults.MaxRetries`
+   - `max_restarts` → `Defaults.MaxRestarts`
+   - `default_fidelity` / `fidelity` → `Defaults.Fidelity`
+   - `model` → `Defaults.Model`
+   - `provider` → `Defaults.Provider`
+4. **Node attribute mapping**:
+   - `label` → `Node.Label`
+   - `prompt` → `AgentConfig.Prompt` (with un-escaping)
+   - `tool_command` → `ToolConfig.Command` (with un-escaping)
+   - `model` / `llm_model` → `AgentConfig.Model` (both forms accepted; `llm_model` is the legacy DOT convention)
+   - `provider` / `llm_provider` → `AgentConfig.Provider` (both forms accepted; `llm_provider` is the legacy DOT convention)
+   - `max_retries` → `RetryConfig.MaxRetries`
+   - `retry_policy` → `RetryConfig.Policy`
+   - `retry_target` → `RetryConfig.RetryTarget`
+   - `fallback_target` → `RetryConfig.FallbackTarget`
+   - `goal_gate` (true) → `AgentConfig.GoalGate`
+   - `auto_status` (true) → `AgentConfig.AutoStatus`
+   - `reasoning_effort` → `AgentConfig.ReasoningEffort`
+   - `fidelity` → `AgentConfig.Fidelity`
+   - `timeout` → `ToolConfig.Timeout` (parse duration string)
+   - `mode` → `HumanConfig.Mode`
+   - `default` → `HumanConfig.Default`
+   - `targets` → `ParallelConfig.Targets` (comma-separated)
+   - `sources` → `FanInConfig.Sources` (comma-separated)
+   - `ref` → `SubgraphConfig.Ref`
+   - `max_turns` → `AgentConfig.MaxTurns`
+   - `cmd_timeout` → `AgentConfig.CmdTimeout`
+   - `cache_tools` → `AgentConfig.CacheTools`
+   - `compaction` → `AgentConfig.Compaction`
+   - `system_prompt` → `AgentConfig.SystemPrompt`
+5. **Edge attribute mapping**:
+   - `label` → `Edge.Label`
+   - `condition` → `Edge.Condition` (parse + add namespaces)
+   - `weight` → `Edge.Weight`
+   - `restart` (true) → `Edge.Restart`
+   - `loop_restart` (true) → `Edge.Restart` (legacy alias used in real DOT files)
+6. **Parallel/fan_in inference**: If a node has shape `component`, detect targets from outgoing edges. If a node has shape `tripleoctagon`, detect sources from incoming edges.
+
+#### Condition Parsing for Migration
+
+Conditions in DOT are raw strings like `outcome=success`, `tool_stdout contains pass`, `outcome=success && tool_stdout contains done`. We need a minimal parser that:
+
+1. Splits on `&&` and `||` (with proper precedence)
+2. Handles `not` / `!` prefix
+3. Handles comparison operators: `=`, `!=`, `contains`, `startswith`, `endswith`, `in`
+4. Adds namespace prefixes to bare variable names
+5. Produces `ir.Condition` with both `Raw` and `Parsed` fields
+
+```go
+func parseCondition(raw string) (*ir.Condition, error)
+func addNamespacePrefix(variable string) string
+```
+
+### Parity Checker (`parity.go`)
+
+```go
+// Difference describes a structural difference between two workflows.
+type Difference struct {
+    Kind    string // "node_missing", "edge_missing", "config_mismatch", "topology_diff", etc.
+    Message string // Human-readable description
+    PathA   string // Location in workflow A (e.g., "node:Validate")
+    PathB   string // Location in workflow B (may be empty)
+}
+
+// CheckParity compares two workflows for structural equivalence.
+// It checks:
+// - Same node IDs and kinds
+// - Same edges (from/to/conditions)
+// - Same start/exit
+// - Compatible node configurations (prompt content modulo whitespace)
+// - Same graph-level defaults
+func CheckParity(a, b *ir.Workflow) []Difference
+```
+
+## Test Cases (22+ cases)
+
+### DOT Parser Tests
+
+1. **Simple digraph** — `digraph G { A -> B; }` → 2 nodes, 1 edge
+2. **Node with attributes** — `A [shape=box, label="My Agent"];` → correct attrs
+3. **Edge with attributes** — `A -> B [label="yes", condition="outcome=success"];` → correct attrs
+4. **Graph attributes** — `graph [goal="test", rankdir=LR];` → correct extraction
+5. **Quoted strings with escapes** — `label="line1\nline2\"quoted\""` → proper un-escaping
+6. **Comments** — `// comment` and `/* block */` correctly skipped
+7. **Empty graph** — `digraph G {}` → no nodes, no edges
+8. **Multiple edges** — `A -> B; A -> C; B -> C;` → 3 edges
+9. **Missing semicolons** — `A -> B` without `;` should still parse (DOT allows it)
+10. **Malformed DOT** — returns descriptive error (unclosed quote, missing brace, etc.)
+
+### Migration Tests
+
+11. **Full pipeline migration** — `build_dippin.dot`-style input → correct IR with all node kinds, edges, conditions
+12. **Shape to kind mapping** — each DOT shape maps to the correct `ir.NodeKind`
+13. **Start/exit identification** — `Mdiamond` → `Workflow.Start`, `Msquare` → `Workflow.Exit`
+14. **Prompt un-escaping** — `"line1\nline2\n\"code\""` → `"line1\nline2\n\"code\""` (real newlines, unquoted)
+15. **Tool command un-escaping** — `tool_command="set -eu\necho hello"` → multiline command
+16. **Condition namespace prefixing** — `outcome=success` → `ctx.outcome = success`; `graph.goal` stays
+17. **Complex condition** — `outcome=success && tool_stdout contains pass` → `CondAnd{CondCompare{ctx.outcome, =, success}, CondCompare{ctx.tool_stdout, contains, pass}}`
+18. **Condition with negation** — `not outcome=fail` → `CondNot{CondCompare{ctx.outcome, =, fail}}`
+19. **Restart edge** — `A -> B [restart=true]` → `Edge.Restart = true`
+20. **Graph defaults extraction** — `graph [model="claude-opus-4-6", max_restarts=7]` → `WorkflowDefaults`
+21. **Parallel node inference** — `component` shape node with outgoing edges → `ParallelConfig.Targets`
+22. **Fan-in node inference** — `tripleoctagon` shape node with incoming edges → `FanInConfig.Sources`
+23. **Diamond disambiguation** — diamond with `tool_command` → tool; diamond with `prompt` → agent
+24. **Weight on edge** — `A -> B [weight=10]` → `Edge.Weight = 10`
+25. **Duration parsing** — `timeout="30s"` → `30 * time.Second`, `timeout="1h30m"` → `90 * time.Minute`
+26. **Empty/nil handling** — Node with no attributes → agent with empty config (default kind)
+27. **MigrateToSource round-trip** — DOT → IR → `.dip` source; verify output is valid Dippin format
+
+### Parity Checker Tests
+
+28. **Identical workflows** — returns empty differences
+29. **Missing node** — workflow B missing a node → reports `node_missing`
+30. **Extra node** — workflow B has an extra node → reports `node_extra`
+31. **Different start/exit** — reports `start_mismatch` / `exit_mismatch`
+32. **Edge missing** — reports `edge_missing`
+33. **Config mismatch** — different prompt text → reports `config_mismatch`
+34. **Kind mismatch** — same node ID, different kind → reports `kind_mismatch`
+35. **Whitespace-tolerant prompt comparison** — prompts that differ only in whitespace → no difference
+
+### Integration Test
+
+36. **build_dippin.dot migration** — Parse the actual `build_dippin.dot` file in the repo, migrate it, verify the IR has all expected nodes/edges/attributes. This is the real-world integration test.
+
+## Implementation Notes
+
+### DOT String Un-escaping
+
+DOT uses `\n` for newline, `\"` for quote, `\\` for backslash. During migration:
+- `\n` → literal newline character (`\n`)
+- `\"` → literal quote (`"`)
+- `\\` → literal backslash (`\`)
+- `\l` → literal newline (DOT left-justified line break)
+- `\r` → ignore (DOT carriage return, not meaningful)
+
+### Workflow Name Extraction
+
+The DOT `digraph <name>` becomes `Workflow.Name`. If the name is quoted, strip quotes.
+
+### Node Ordering
+
+Preserve the declaration order from the DOT file for `Workflow.Nodes`. This ensures deterministic output and maintains the author's intended reading order.
+
+### Edge Ordering
+
+Preserve edge declaration order from the DOT file for `Workflow.Edges`.
+
+### Start/Exit Node Handling
+
+Nodes with `shape=Mdiamond` or `shape=Msquare` are terminal markers:
+- They are NOT added as real nodes in `Workflow.Nodes` (they are syntactic, not semantic)
+- Instead, if `Mdiamond` node has edges pointing TO a real node, that real node becomes `Workflow.Start`
+- If real nodes have edges pointing TO the `Msquare` node, the `Msquare` determines `Workflow.Exit`
+- If `Mdiamond` has a label other than "Start", use it for the workflow name if graph name is generic
+- **Alternative approach (simpler)**: Include Start/Exit as agent nodes in the IR with the ID from DOT. Set `Workflow.Start` and `Workflow.Exit` to those IDs. The formatter and other consumers already handle start/exit by ID. This approach is simpler and matches how `build_dippin.dot` works (Start and Exit are real nodes with edges).
+
+**Decision**: Use the simpler approach — keep Start/Exit as nodes in the IR. Their kind will be `agent` (the default when shape doesn't map to another kind, since Mdiamond/Msquare don't have a kind mapping). The formatter knows to emit them because `Workflow.Start`/`.Exit` point to them. The validator requires them to exist.
+
+Actually, re-examining: Start/Exit with `Mdiamond`/`Msquare` are terminal markers with no handler logic. They should be `agent` nodes with empty configs. The important thing is `Workflow.Start` and `Workflow.Exit` point to them.
+
+### Parallel/Fan-in Target/Source Inference
+
+For `component` (parallel) nodes:
+- If the node has a `targets` attribute, use it directly (comma-split)
+- Otherwise, infer targets from outgoing edges of that node
+
+For `tripleoctagon` (fan_in) nodes:
+- If the node has a `sources` attribute, use it directly (comma-split)
+- Otherwise, infer sources from incoming edges to that node
+
+### Known Context Variables for Namespace Prefixing
+
+Per §8.2, these bare names get `ctx.` prefix:
+- `outcome`
+- `last_response`
+- `human_response`
+- `tool_stdout`
+- `tool_stderr`
+
+Variables already containing a `.` (like `graph.goal`) are left as-is.
+
+The prefix `context.` in DOT conditions (e.g., `context.tool_stdout`) should be normalized to `ctx.` (per §8.2 namespace table).
+
+The prefix `graph.` is kept as-is.
+
+**Real-world example from `build_dippin.dot`**:
+- `condition="context.tool_stdout=all_complete"` → `ctx.tool_stdout = all_complete`
+- `condition="outcome=success"` → `ctx.outcome = success`
+- `condition="outcome=fail"` → `ctx.outcome = fail`
+- `condition="outcome=retry"` → `ctx.outcome = retry`
+
+Note: DOT conditions use `=` with no spaces around the operator. The condition parser should handle both `outcome=success` and `outcome = success`.
+
+### Real-World DOT Attribute Names
+
+From examining `build_dippin.dot`, these are the actual attribute names used:
+
+**Node attributes**: `shape`, `label`, `llm_provider`, `llm_model`, `reasoning_effort`, `fidelity`, `prompt`, `tool_command`, `goal_gate`, `retry_target`
+
+**Edge attributes**: `condition`, `label`, `loop_restart`
+
+**Graph attributes**: `goal`, `rankdir`, `default_max_retry`, `default_fidelity`, `max_restarts`
+
+The migration tool MUST handle these legacy names:
+- `llm_model` → maps to `model` in IR
+- `llm_provider` → maps to `provider` in IR
+- `loop_restart` → maps to `restart` in IR
+- `default_max_retry` → maps to `max_retries` in IR defaults
+- `default_fidelity` → maps to `fidelity` in IR defaults
+- `context.` prefix in conditions → maps to `ctx.` prefix in IR
+
+### Condition Operator Mapping
+
+DOT conditions use `=` for equality. Dippin IR uses `=` as well. Operators:
+- `=` → `=`
+- `!=` → `!=`
+- `contains` → `contains`
+- `startswith` → `startswith`
+- `endswith` → `endswith`
+- `in` → `in`
+- `&&` → `CondAnd`
+- `||` → `CondOr`
+- `not` / `!` → `CondNot`
+
+TURN 30
+TOOL CALL: bash
+INPUT:
+{"command": "# Check if the CheckComplete/diamond node in build_dippin.dot has special handling needs\nsed -n '/CheckComplete/,/\\];/p' build_dippin.dot"}
+TOOL RESULT: bash
+OUTPUT:
+  CheckComplete [
+    shape=diamond,
+    label="All done?"
+  ];
+  PickNextComponent -> CheckComplete;
+  CheckComplete -> Exit [condition="context.tool_stdout=all_complete", label="all done"];
+  CheckComplete -> PlanComponent [condition="context.tool_stdout=has_next", label="has work"];
+
+  // Plan -> Implement
+  PlanComponent -> ImplementParallel;
+
+  // Parallel implementation
+  ImplementParallel -> ImplementClaude;
+  ImplementParallel -> ImplementGPT;
+  ImplementParallel -> ImplementGemini;
+  ImplementClaude -> ImplementJoin;
+  ImplementGPT -> ImplementJoin;
+  ImplementGemini -> ImplementJoin;
+
+  // Validation
+  ImplementJoin -> ValidateBuild;
+  ValidateBuild -> ReviewParallel [condition="outcome=success", label="validated"];
+
+TURN 31
+TOOL CALL: edit
+INPUT:
+{"new_string": "| `diamond` | Special handling | Per §5: if has `tool_command` → `tool`; if has `prompt` + `auto_status` → `agent`; if has `prompt` only → `agent`; otherwise → `agent` with no config (routing-only decision node — the engine evaluates outgoing edge conditions, the node itself is a no-op). In v1 Dippin there's no `conditional` kind, so diamond nodes become `agent` nodes. |", "old_string": "| `diamond` | Special handling | Per §5: if has `tool_command` → `tool`; if has `prompt` + `auto_status` → `agent`; otherwise ignore (deferred condition node) |", "path": ".tracker/current_plan.md"}
+TOOL RESULT: edit
+OUTPUT:
+edited .tracker/current_plan.md
+TURN 32
+TOOL CALL: bash
+INPUT:
+{"command": "wc -l .tracker/current_plan.md"}
+TOOL RESULT: bash
+OUTPUT:
+     351 .tracker/current_plan.md
+
+TURN 33
 TEXT:
-The plan is written to `.tracker/current_plan.md`. Here's a summary of what it covers:
+The plan is written to `.tracker/current_plan.md` (351 lines). Here's a summary of what it covers:
 
-## Plan Summary
+## Plan Summary: Migration Tool (`migrate/`)
 
-**Component**: `validator/` — Graph structure validation (DIP001–DIP009)
+### Component
+DOT → IR → `.dip` conversion pipeline (§16 of design spec)
 
 ### Files to Create (4 files)
 | File | Purpose |
 |------|---------|
-| `validator/diagnostic.go` | `Diagnostic`, `Severity`, `Result` types — shared diagnostic infrastructure |
-| `validator/codes.go` | Constants `DIP001`–`DIP009` with human-readable descriptions |
-| `validator/validate.go` | `Validate(w *ir.Workflow) Result` entry point + 9 check functions + Levenshtein helper |
-| `validator/validate_test.go` | 22 test cases |
+| `migrate/dot_parser.go` | Minimal DOT lexer + parser for the subset used by Tracker |
+| `migrate/migrate.go` | `Migrate()` and `MigrateToSource()` — DOT string → IR with all cleanup |
+| `migrate/parity.go` | `CheckParity()` — structural comparison of two workflows |
+| `migrate/migrate_test.go` | 36+ test cases |
 
-### The 9 Checks
-| Code | Check | Algorithm |
-|------|-------|-----------|
-| DIP001 | Start node exists | Field + lookup |
-| DIP002 | Exit node exists | Field + lookup |
-| DIP003 | All edge endpoints exist | Iterate edges, lookup nodes, fuzzy-match for "did you mean?" |
-| DIP004 | All nodes reachable from start | BFS from start, report unvisited |
-| DIP005 | No unconditional cycles | DFS with gray/black coloring on non-restart edges |
-| DIP006 | Exit has no outgoing edges | `EdgesFrom(exit)` check |
-| DIP007 | Parallel/fan_in pairing | Set-compare targets↔sources |
-| DIP008 | No duplicate node IDs | Count map |
-| DIP009 | No duplicate edges | Keyed on `(From, To, Condition.Raw)` |
+### Key Design Decisions
+1. **Hand-written DOT parser** — only parses the subset we actually use (no subgraphs, no ports, no HTML labels)
+2. **Shape → kind mapping** — reverse of the §15 export table, with special handling for `diamond` and `Mdiamond`/`Msquare`
+3. **Legacy attribute names** — `llm_model`→`model`, `llm_provider`→`provider`, `loop_restart`→`restart`, `default_max_retry`→`max_retries`, `context.`→`ctx.`
+4. **Condition parsing** — handles `=`/`!=`/`contains`/`&&`/`||`/`not` with namespace prefixing
+5. **Start/Exit as agent nodes** — simpler approach, consistent with how the rest of the toolchain works
 
-### Test Coverage: 22 cases
-- 4 happy-path (valid workflows including restart edges and parallel/fan_in)
-- 11 individual error cases (one per rule + fuzzy match)
-- 7 edge cases (empty workflow, multiple simultaneous errors, both endpoints dangling, same-endpoint-different-conditions, diagnostic formatting)
+### Test Coverage (36 cases)
+- 10 DOT parser tests (parsing, escapes, comments, errors)
+- 17 migration tests (shape mapping, un-escaping, conditions, parallel inference, round-trip)
+- 8 parity checker tests (identical, missing, extra, mismatch)
+- 1 integration test against real `build_dippin.dot`
 
-### Key Design Decisions Documented
-- Restart edges excluded from cycle detection (per ADR 1)
-- DIP009 dedup key includes condition raw text (conditional branches are not duplicates)
-- DIP007 uses order-insensitive set matching for targets↔sources
-- All checks run unconditionally (multi-diagnostic collection)
-- Levenshtein ≤ 2 for "did you mean?" suggestions in DIP003
-
-Session 0a8d6774 completed in 2m1s
-Turns: 9 | Tool calls: 16 (bash: 2, glob: 4, read: 9, write: 1)
-Tokens: 11601 (in: 5850, out: 5751) | Cost: $0.52
-Longest turn: 1m20s
+Session 455945f7 completed in 4m16s
+Turns: 33 | Tool calls: 51 (bash: 45, edit: 4, read: 1, write: 1)
+Tokens: 14611 (in: 4111, out: 10500) | Cost: $0.85
+Longest turn: 1m30s

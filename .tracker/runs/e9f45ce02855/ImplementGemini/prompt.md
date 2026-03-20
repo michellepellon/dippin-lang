@@ -17,41 +17,30 @@ Rules:
 # Context from Prior Pipeline Stages
 
 ## Previous Node Output
-The plan is written to `.tracker/current_plan.md`. Here's a summary of what it covers:
+The plan is written to `.tracker/current_plan.md` (351 lines). Here's a summary of what it covers:
 
-## Plan Summary
+## Plan Summary: Migration Tool (`migrate/`)
 
-**Component**: `validator/` — Graph structure validation (DIP001–DIP009)
+### Component
+DOT → IR → `.dip` conversion pipeline (§16 of design spec)
 
 ### Files to Create (4 files)
 | File | Purpose |
 |------|---------|
-| `validator/diagnostic.go` | `Diagnostic`, `Severity`, `Result` types — shared diagnostic infrastructure |
-| `validator/codes.go` | Constants `DIP001`–`DIP009` with human-readable descriptions |
-| `validator/validate.go` | `Validate(w *ir.Workflow) Result` entry point + 9 check functions + Levenshtein helper |
-| `validator/validate_test.go` | 22 test cases |
+| `migrate/dot_parser.go` | Minimal DOT lexer + parser for the subset used by Tracker |
+| `migrate/migrate.go` | `Migrate()` and `MigrateToSource()` — DOT string → IR with all cleanup |
+| `migrate/parity.go` | `CheckParity()` — structural comparison of two workflows |
+| `migrate/migrate_test.go` | 36+ test cases |
 
-### The 9 Checks
-| Code | Check | Algorithm |
-|------|-------|-----------|
-| DIP001 | Start node exists | Field + lookup |
-| DIP002 | Exit node exists | Field + lookup |
-| DIP003 | All edge endpoints exist | Iterate edges, lookup nodes, fuzzy-match for "did you mean?" |
-| DIP004 | All nodes reachable from start | BFS from start, report unvisited |
-| DIP005 | No unconditional cycles | DFS with gray/black coloring on non-restart edges |
-| DIP006 | Exit has no outgoing edges | `EdgesFrom(exit)` check |
-| DIP007 | Parallel/fan_in pairing | Set-compare targets↔sources |
-| DIP008 | No duplicate node IDs | Count map |
-| DIP009 | No duplicate edges | Keyed on `(From, To, Condition.Raw)` |
+### Key Design Decisions
+1. **Hand-written DOT parser** — only parses the subset we actually use (no subgraphs, no ports, no HTML labels)
+2. **Shape → kind mapping** — reverse of the §15 export table, with special handling for `diamond` and `Mdiamond`/`Msquare`
+3. **Legacy attribute names** — `llm_model`→`model`, `llm_provider`→`provider`, `loop_restart`→`restart`, `default_max_retry`→`max_retries`, `context.`→`ctx.`
+4. **Condition parsing** — handles `=`/`!=`/`contains`/`&&`/`||`/`not` with namespace prefixing
+5. **Start/Exit as agent nodes** — simpler approach, consistent with how the rest of the toolchain works
 
-### Test Coverage: 22 cases
-- 4 happy-path (valid workflows including restart edges and parallel/fan_in)
-- 11 individual error cases (one per rule + fuzzy match)
-- 7 edge cases (empty workflow, multiple simultaneous errors, both endpoints dangling, same-endpoint-different-conditions, diagnostic formatting)
-
-### Key Design Decisions Documented
-- Restart edges excluded from cycle detection (per ADR 1)
-- DIP009 dedup key includes condition raw text (conditional branches are not duplicates)
-- DIP007 uses order-insensitive set matching for targets↔sources
-- All checks run unconditionally (multi-diagnostic collection)
-- Levenshtein ≤ 2 for "did you mean?" suggestions in DIP003
+### Test Coverage (36 cases)
+- 10 DOT parser tests (parsing, escapes, comments, errors)
+- 17 migration tests (shape mapping, un-escaping, conditions, parallel inference, round-trip)
+- 8 parity checker tests (identical, missing, extra, mismatch)
+- 1 integration test against real `build_dippin.dot`

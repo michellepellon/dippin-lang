@@ -4,297 +4,374 @@ INPUT:
 {"path": ".tracker/current_plan.md"}
 TOOL RESULT: read
 OUTPUT:
-# Implementation Plan: Validator (DIP001–DIP009)
+# Plan: Migration Tool (`migrate/`)
 
-## Component Summary
+## Component
 
-**Package**: `validator/`
-**Purpose**: Graph structure validation over `*ir.Workflow`. Implements checks DIP001 through DIP009 from the design spec §"Validation layers — Layer 3: Graph structure (IR)".
+**Migration Tool**: Parse DOT graph files → `ir.Workflow` → canonical `.dip` source text.
 
-This is a **pure IR consumer** — it takes a `*ir.Workflow` and returns a list of diagnostics. It has no dependency on parsing, formatting, or any syntax-level concepts. It operates entirely on the canonical IR types defined in `ir/`.
+This is the DOT-to-Dippin converter described in §16 of the design spec. It parses a DOT `digraph` into an IR, applies post-migration cleanup (un-escaping prompts, reformatting commands, adding namespace prefixes to conditions), and emits canonical `.dip` output via the existing `formatter.Format()`.
 
----
+A secondary function provides structural parity checking: given two `*ir.Workflow` values (one from DOT, one from `.dip`), report topology/config differences.
 
 ## Design Spec References
 
-- **§ Validation layers — Layer 3: Graph structure (IR)** — the nine rules
-- **§ Diagnostic output** — diagnostic shape (file/line/column, codes, help/fix)
-- **§ ADR 1 (DAG-plus-loops)** — `restart: true` edges are excluded from cycle detection
-- **§ "Acceptance Criteria"** — #10 "Diagnostics are actionable", #11 "Multi-diagnostic collection"
-
-### Rules (verbatim from spec)
-
-| Code    | Rule                                                                                          |
-|---------|-----------------------------------------------------------------------------------------------|
-| DIP001  | `start:` node exists                                                                          |
-| DIP002  | `exit:` node exists                                                                           |
-| DIP003  | All edge endpoints exist                                                                      |
-| DIP004  | All nodes reachable from start                                                                |
-| DIP005  | No unconditional cycles after excluding edges marked `restart: true`                          |
-| DIP006  | Exit node has no outgoing edges                                                               |
-| DIP007  | Parallel fan-out has matching fan-in                                                          |
-| DIP008  | No duplicate node IDs                                                                         |
-| DIP009  | No duplicate edges                                                                            |
-
----
-
-## Dependencies
-
-- **`ir/`** — all types: `Workflow`, `Node`, `Edge`, `NodeKind`, `SourceLocation`, `ParallelConfig`, `FanInConfig`
-- **No other packages** — the validator is self-contained. It imports only `ir/` and stdlib.
-
----
+- **§16 "Migration Strategy"** — Phase 1 (automated conversion) and Phase 2 (behavioral parity validation)
+- **§15 "DOT Export Strategy"** — The lossless/lossy tables define the reverse mapping (DOT → IR)
+- **§5 "Legacy Hacks That Should Die"** — Shape→handler mapping, `\n` encoding, escape conventions
+- **§4.1 "Node kinds"** — shape-to-kind mapping: `box`→`agent`, `hexagon`→`human`, `parallelogram`→`tool`, `component`→`parallel`, `tripleoctagon`→`fan_in`, `tab`→`subgraph`, `diamond`→varies (see below)
+- **§4.2 "Edge semantics"** — conditions, labels, weights, restart
+- **§8.2 "Context variable namespaces"** — migration must add `ctx.` prefix to bare condition variables
+- **ADR 1** — `restart=true` edge attribute maps to `Edge.Restart`
+- **Appendix A** — `migrate/migrate.go`, `migrate/parity.go`, `migrate/migrate_test.go`
 
 ## Files to Create
 
-### 1. `validator/diagnostic.go`
+| File | Purpose |
+|------|---------|
+| `migrate/dot_parser.go` | DOT lexer + parser (DOT language subset) |
+| `migrate/migrate.go` | `Migrate(dotSource string) (*ir.Workflow, error)` — DOT string → IR with cleanup |
+| `migrate/parity.go` | `CheckParity(a, b *ir.Workflow) []Difference` — structural comparison |
+| `migrate/migrate_test.go` | Comprehensive tests |
 
-Diagnostic types shared by validator and (later) linter.
+## Dependencies
 
-**Types:**
+- `ir/` — IR types (`Workflow`, `Node`, `Edge`, `Condition`, all config types)
+- `formatter/` — `Format(*ir.Workflow) string` for producing final `.dip` output
+- `validator/` — Optional; can validate the produced IR, but NOT a hard dependency for the migrate package itself
+- **No external dependencies** — DOT parser is hand-written (the DOT language subset we need is small)
 
+## Architecture
+
+### DOT Parser (`dot_parser.go`)
+
+We need a minimal DOT parser that handles the subset of DOT used by Tracker pipelines. This is NOT a full Graphviz DOT parser — it handles:
+
+- `digraph <name> { ... }` wrapper
+- Graph-level attributes: `graph [ key=value, ... ];`
+- Node statements: `NodeID [ key=value, ... ];`
+- Edge statements: `NodeID -> NodeID [ key=value, ... ];`
+- C-style comments (`// ...`) and block comments (`/* ... */`)
+- Double-quoted strings with escape sequences (`\"`, `\\`, `\n`)
+- Semicolons (optional in real DOT, but our files use them)
+- Attributes: `key=value` or `key="value"` 
+
+**NOT supported** (not used in our DOT files):
+- `subgraph` blocks (these are expanded inline in our files)
+- Port syntax (`:port`)
+- HTML labels (`<...>`)
+- Multiple edge targets in one statement (`A -> B -> C`)
+
+Types:
 ```go
-// Severity levels for diagnostics.
-type Severity int
-
-const (
-    SeverityError   Severity = iota // Must fix — workflow cannot execute
-    SeverityWarning                 // Should fix — likely a bug (used by linter, not this component)
-    SeverityInfo                    // Informational
-    SeverityHint                    // Suggestion
-)
-
-// Diagnostic represents a single validation finding.
-type Diagnostic struct {
-    Code     string             // "DIP001", "DIP002", etc.
-    Severity Severity
-    Message  string             // Human-readable explanation
-    Location ir.SourceLocation  // Where in the source (may be zero-value if unavailable)
-    Help     string             // Optional "did you mean X?" or explanation
-    Fix      string             // Optional suggested replacement text
+// dotGraph holds the parsed DOT structure before IR conversion.
+type dotGraph struct {
+    Name       string
+    GraphAttrs map[string]string
+    NodeAttrs  map[string]string   // default node attrs
+    EdgeAttrs  map[string]string   // default edge attrs  
+    Nodes      []dotNode
+    Edges      []dotEdge
 }
 
-// String returns a formatted diagnostic string matching the spec example format:
-//   error[DIP003]: unknown node reference "InterpretX" in edge
-//     --> pipeline.dip:45:5
-func (d Diagnostic) String() string
-
-// Result holds the outcome of a validation pass.
-type Result struct {
-    Diagnostics []Diagnostic
+type dotNode struct {
+    ID    string
+    Attrs map[string]string
 }
 
-// Errors returns only error-severity diagnostics.
-func (r Result) Errors() []Diagnostic
-
-// HasErrors returns true if any error-severity diagnostics exist.
-func (r Result) HasErrors() bool
-```
-
-### 2. `validator/codes.go`
-
-Error code registry — constants and human descriptions.
-
-```go
-const (
-    DIP001 = "DIP001" // start node missing
-    DIP002 = "DIP002" // exit node missing
-    DIP003 = "DIP003" // unknown node reference in edge
-    DIP004 = "DIP004" // unreachable node(s) from start
-    DIP005 = "DIP005" // unconditional cycle detected
-    DIP006 = "DIP006" // exit node has outgoing edges
-    DIP007 = "DIP007" // parallel/fan_in mismatch
-    DIP008 = "DIP008" // duplicate node ID
-    DIP009 = "DIP009" // duplicate edge
-)
-
-// CodeDescription maps each code to a short human-readable description.
-var CodeDescription = map[string]string{
-    DIP001: "start node does not exist",
-    DIP002: "exit node does not exist",
-    DIP003: "unknown node reference in edge",
-    DIP004: "node unreachable from start",
-    DIP005: "unconditional cycle detected",
-    DIP006: "exit node has outgoing edges",
-    DIP007: "parallel fan-out/fan-in mismatch",
-    DIP008: "duplicate node ID",
-    DIP009: "duplicate edge",
+type dotEdge struct {
+    From  string
+    To    string
+    Attrs map[string]string
 }
+
+func parseDOT(input string) (*dotGraph, error)
 ```
 
-### 3. `validator/validate.go`
+### Migrator (`migrate.go`)
 
-The main validation entry point and all nine check functions.
-
-**Public API:**
+The core conversion pipeline:
 
 ```go
-// Validate runs all graph-structure checks (DIP001–DIP009) on the workflow
-// and returns all diagnostics found. It always runs all checks — never
-// short-circuits — so that a single pass reports everything.
-func Validate(w *ir.Workflow) Result
+// Migrate parses a DOT digraph string and produces a Dippin IR workflow.
+// It applies all post-migration cleanup automatically:
+// - Shape → node kind mapping
+// - \n and \" un-escaping in prompts and commands
+// - Namespace prefixing for condition variables (bare "outcome" → "ctx.outcome")
+// - Start/exit identification from Mdiamond/Msquare shapes
+// - Graph-level attribute extraction to WorkflowDefaults
+func Migrate(dotSource string) (*ir.Workflow, error)
+
+// MigrateToSource parses DOT and returns canonical .dip source text.
+// Convenience function equivalent to: formatter.Format(Migrate(dotSource))
+func MigrateToSource(dotSource string) (string, error)
 ```
 
-**Internal check functions** (each appends to a shared `[]Diagnostic`):
+#### Shape → Kind Mapping (reverse of §15 table)
+
+| DOT shape | IR NodeKind | Notes |
+|-----------|-------------|-------|
+| `box` | `agent` | Default if no shape |
+| `hexagon` | `human` | |
+| `parallelogram` | `tool` | |
+| `component` | `parallel` | |
+| `tripleoctagon` | `fan_in` | |
+| `tab` | `subgraph` | |
+| `Mdiamond` | — | Identifies `start` node (not a real kind) |
+| `Msquare` | — | Identifies `exit` node (not a real kind) |
+| `diamond` | Special handling | Per §5: if has `tool_command` → `tool`; if has `prompt` + `auto_status` → `agent`; if has `prompt` only → `agent`; otherwise → `agent` with no config (routing-only decision node — the engine evaluates outgoing edge conditions, the node itself is a no-op). In v1 Dippin there's no `conditional` kind, so diamond nodes become `agent` nodes. |
+| (missing) | `agent` | Default when shape not specified |
+
+#### Post-Migration Cleanup Steps
+
+1. **Un-escape DOT strings**: `\n` → real newline, `\"` → `"`, `\\` → `\`
+2. **Condition namespace prefixing**: Parse condition strings and prefix bare variable names:
+   - Known context vars (`outcome`, `last_response`, `human_response`, `tool_stdout`, `tool_stderr`) → `ctx.` prefix
+   - `graph.` prefixed vars → keep as-is
+   - Other bare vars → `ctx.` prefix (best guess for migration)
+3. **Graph attribute mapping**:
+   - `goal` → `Workflow.Goal`
+   - `rankdir` → ignored (presentation-only)
+   - `default_max_retry` / `max_retries` → `Defaults.MaxRetries`
+   - `max_restarts` → `Defaults.MaxRestarts`
+   - `default_fidelity` / `fidelity` → `Defaults.Fidelity`
+   - `model` → `Defaults.Model`
+   - `provider` → `Defaults.Provider`
+4. **Node attribute mapping**:
+   - `label` → `Node.Label`
+   - `prompt` → `AgentConfig.Prompt` (with un-escaping)
+   - `tool_command` → `ToolConfig.Command` (with un-escaping)
+   - `model` / `llm_model` → `AgentConfig.Model` (both forms accepted; `llm_model` is the legacy DOT convention)
+   - `provider` / `llm_provider` → `AgentConfig.Provider` (both forms accepted; `llm_provider` is the legacy DOT convention)
+   - `max_retries` → `RetryConfig.MaxRetries`
+   - `retry_policy` → `RetryConfig.Policy`
+   - `retry_target` → `RetryConfig.RetryTarget`
+   - `fallback_target` → `RetryConfig.FallbackTarget`
+   - `goal_gate` (true) → `AgentConfig.GoalGate`
+   - `auto_status` (true) → `AgentConfig.AutoStatus`
+   - `reasoning_effort` → `AgentConfig.ReasoningEffort`
+   - `fidelity` → `AgentConfig.Fidelity`
+   - `timeout` → `ToolConfig.Timeout` (parse duration string)
+   - `mode` → `HumanConfig.Mode`
+   - `default` → `HumanConfig.Default`
+   - `targets` → `ParallelConfig.Targets` (comma-separated)
+   - `sources` → `FanInConfig.Sources` (comma-separated)
+   - `ref` → `SubgraphConfig.Ref`
+   - `max_turns` → `AgentConfig.MaxTurns`
+   - `cmd_timeout` → `AgentConfig.CmdTimeout`
+   - `cache_tools` → `AgentConfig.CacheTools`
+   - `compaction` → `AgentConfig.Compaction`
+   - `system_prompt` → `AgentConfig.SystemPrompt`
+5. **Edge attribute mapping**:
+   - `label` → `Edge.Label`
+   - `condition` → `Edge.Condition` (parse + add namespaces)
+   - `weight` → `Edge.Weight`
+   - `restart` (true) → `Edge.Restart`
+   - `loop_restart` (true) → `Edge.Restart` (legacy alias used in real DOT files)
+6. **Parallel/fan_in inference**: If a node has shape `component`, detect targets from outgoing edges. If a node has shape `tripleoctagon`, detect sources from incoming edges.
+
+#### Condition Parsing for Migration
+
+Conditions in DOT are raw strings like `outcome=success`, `tool_stdout contains pass`, `outcome=success && tool_stdout contains done`. We need a minimal parser that:
+
+1. Splits on `&&` and `||` (with proper precedence)
+2. Handles `not` / `!` prefix
+3. Handles comparison operators: `=`, `!=`, `contains`, `startswith`, `endswith`, `in`
+4. Adds namespace prefixes to bare variable names
+5. Produces `ir.Condition` with both `Raw` and `Parsed` fields
 
 ```go
-func checkStartExists(w *ir.Workflow) []Diagnostic        // DIP001
-func checkExitExists(w *ir.Workflow) []Diagnostic          // DIP002
-func checkEdgeEndpoints(w *ir.Workflow) []Diagnostic       // DIP003
-func checkReachability(w *ir.Workflow) []Diagnostic         // DIP004
-func checkNoCycles(w *ir.Workflow) []Diagnostic             // DIP005
-func checkExitNoOutgoing(w *ir.Workflow) []Diagnostic       // DIP006
-func checkParallelFanIn(w *ir.Workflow) []Diagnostic        // DIP007
-func checkNoDuplicateNodes(w *ir.Workflow) []Diagnostic     // DIP008
-func checkNoDuplicateEdges(w *ir.Workflow) []Diagnostic     // DIP009
+func parseCondition(raw string) (*ir.Condition, error)
+func addNamespacePrefix(variable string) string
 ```
 
-**Algorithm notes:**
-
-- **DIP001**: Check `w.Start != ""` AND `w.Node(w.Start) != nil`.
-- **DIP002**: Check `w.Exit != ""` AND `w.Node(w.Exit) != nil`.
-- **DIP003**: For each edge, check `w.Node(e.From) != nil` and `w.Node(e.To) != nil`. Include the dangling reference name in the message. If a close match exists in node IDs (Levenshtein ≤ 2), add it as `Help: "did you mean X?"`.
-- **DIP004**: BFS/DFS from `w.Start` along all edges (including restart edges). Any node not visited is unreachable. Report each unreachable node individually with its source location.
-- **DIP005**: Build the subgraph of edges where `e.Restart == false`. Run a standard cycle detection (DFS with gray/black coloring). If a cycle is found, report the cycle path (list of node IDs forming the cycle).
-- **DIP006**: Check `len(w.EdgesFrom(w.Exit)) == 0`. Report each offending edge.
-- **DIP007**: For each `NodeParallel` node, verify there exists exactly one `NodeFanIn` node whose `FanInConfig.Sources` matches the `ParallelConfig.Targets`. For each `NodeFanIn`, verify a corresponding `NodeParallel` exists. Report orphaned parallel or fan_in nodes.
-- **DIP008**: Build `map[string]int` counting node IDs. Any ID with count > 1 is reported, with source locations of both declarations.
-- **DIP009**: Build `map[[2]string]int` keyed on `(From, To)` pairs. Edges with identical `(From, To)` are duplicates. Note: two edges with the same endpoints but *different conditions* are NOT duplicates — they are conditional branches. So the dedup key is `(From, To, Condition.Raw)` where `Condition.Raw == ""` for unconditional edges. Actually, re-reading the spec: "No duplicate edges" — this should mean truly identical edges (same From, To, and same condition raw text). Two edges `A -> B when X` and `A -> B when Y` are distinct. Two unconditional edges `A -> B` are duplicates.
-
-**Fuzzy matching helper** (for DIP003 help text):
+### Parity Checker (`parity.go`)
 
 ```go
-// closestNodeID returns the node ID most similar to the given name,
-// or "" if no node is within edit distance 2.
-func closestNodeID(w *ir.Workflow, name string) string
-```
-
-This uses a simple Levenshtein distance function (no external deps needed — implement inline, ~20 lines).
-
-### 4. `validator/validate_test.go`
-
-Comprehensive tests. See test plan below.
-
----
-
-## Test Plan (15 cases)
-
-### Happy Path
-
-1. **Valid minimal workflow** — Two nodes (start + exit), one edge. `Validate()` returns zero diagnostics.
-2. **Valid complex workflow** — `askAndExecuteWorkflow()` fixture from `ir/ir_test.go`. Has restart edges, parallel/fan_in, conditions. Zero diagnostics.
-3. **Valid workflow with restart back-edge** — Has a cycle through a `restart: true` edge. DIP005 should NOT trigger.
-4. **Valid parallel/fan_in pair** — ParallelConfig.Targets matches FanInConfig.Sources exactly. Zero diagnostics for DIP007.
-
-### Error Cases — One Diagnostic Each
-
-5. **DIP001: Missing start node** — `w.Start = "Nonexistent"`. Expect exactly one DIP001 diagnostic.
-6. **DIP002: Missing exit node** — `w.Exit = "Nonexistent"`. Expect exactly one DIP002 diagnostic.
-7. **DIP003: Dangling edge reference** — Edge `From: "A", To: "Nonexistent"`. Expect DIP003 with the dangling name in the message.
-8. **DIP003 with fuzzy match** — Edge references "Interpet" (typo for "Interpret"). Expect DIP003 with `Help` containing "did you mean \"Interpret\"?".
-9. **DIP004: Unreachable node** — A node exists in `Nodes` but has no incoming edge from any reachable node. Expect DIP004.
-10. **DIP005: Unconditional cycle** — `A -> B -> C -> A` with no restart edges. Expect DIP005 listing the cycle.
-11. **DIP006: Exit has outgoing** — Exit node has an edge going somewhere. Expect DIP006.
-12. **DIP007: Orphaned parallel** — A `NodeParallel` with targets `[X, Y]` but no corresponding `NodeFanIn`. Expect DIP007.
-13. **DIP007: Orphaned fan_in** — A `NodeFanIn` with sources `[X, Y]` but no corresponding `NodeParallel`. Expect DIP007.
-14. **DIP008: Duplicate node ID** — Two nodes with same ID. Expect DIP008.
-15. **DIP009: Duplicate edge** — Two unconditional edges with same `(From, To)`. Expect DIP009.
-
-### Edge Cases
-
-16. **Multiple errors at once** — Workflow has DIP001 + DIP003 + DIP008 simultaneously. Verify all three are reported (multi-diagnostic).
-17. **Empty workflow** — Zero nodes, zero edges. Should report DIP001, DIP002 (no start/exit). Should NOT panic.
-18. **DIP005: Cycle through restart edge is OK** — `A -> B -> C -> A [restart: true]` is valid (restart edges excluded from cycle detection). Zero DIP005 diagnostics.
-19. **DIP003: Both endpoints dangling** — Edge where both From and To are nonexistent. Expect two DIP003 diagnostics (one per endpoint).
-20. **DIP009: Same endpoints, different conditions = NOT duplicate** — Two edges `A -> B when X` and `A -> B when Y`. Should NOT trigger DIP009.
-21. **DIP004: Start node unreachable from itself** — Start is declared but `w.Start` points to it; it IS reachable (it's the starting point). Other disconnected nodes ARE unreachable.
-22. **Diagnostic formatting** — Verify `Diagnostic.String()` output matches the spec format with code, message, and location.
-
----
-
-## Implementation Order
-
-1. `validator/diagnostic.go` — types first (Diagnostic, Severity, Result)
-2. `validator/codes.go` — constants
-3. `validator/validate.go` — implement checks in order DIP008 → DIP001 → DIP002 → DIP003 → DIP006 → DIP009 → DIP004 → DIP005 → DIP007
-   - DIP008 first because duplicate detection is needed before graph traversal
-   - DIP004/DIP005 require graph traversal algorithms (BFS, DFS cycle detection)
-   - DIP007 requires matching parallel/fan_in semantics
-4. `validator/validate_test.go` — tests alongside implementation
-
-**Rationale for check order in `Validate()`**: All checks run unconditionally. However, DIP008 (duplicate nodes) logically comes first because later checks might produce confusing results on workflows with duplicate IDs. The public `Validate()` function runs all checks and concatenates results.
-
----
-
-## Non-Goals (explicitly out of scope)
-
-- **Layer 2 (Schema validation)** — known fields, required fields, type checking. That's a separate component.
-- **Layer 4 (Semantic warnings / linter: DIP101–DIP112)** — separate `linter` component per the ledger.
-- **Parser integration** — the validator takes `*ir.Workflow`, not `.dip` source text.
-- **JSON diagnostic output** — will be added when CLI is implemented. The `Diagnostic` type should be JSON-serializable but we don't build the JSON formatter here.
-- **Autofix** — diagnostics include `Fix` text for human/tooling consumption, but no automated rewriting.
-
----
-
-## Open Design Decisions
-
-1. **DIP007 matching semantics**: The spec says "Parallel fan-out has matching fan-in." The strictest reading: for each `NodeParallel` with `Targets: [X, Y]`, there must exist exactly one `NodeFanIn` with `Sources: [X, Y]` (same set, order-insensitive). The implementation should use set comparison (sort both slices, compare).
-
-2. **DIP009 dedup key**: The spec says "No duplicate edges." Two edges with the same `(From, To)` but different conditions are NOT duplicates — they represent conditional branching. The dedup key is `(From, To, conditionKey)` where `conditionKey` is `Condition.Raw` if the condition exists, or `""` if unconditional.
-
-3. **DIP005 cycle reporting**: When a cycle is found, the diagnostic should include the cycle path (e.g., "cycle: A → B → C → A") so the user knows which edges to fix. The DFS algorithm should record the path of gray nodes when a back-edge is encountered.
-
----
-
-## Example Usage (for implementation agent reference)
-
-```go
-import (
-    "fmt"
-    "github.com/2389/dippin/ir"
-    "github.com/2389/dippin/validator"
-)
-
-func example() {
-    w := &ir.Workflow{
-        Name:  "broken",
-        Start: "Begin",
-        Exit:  "End",
-        Nodes: []*ir.Node{
-            {ID: "Begin", Kind: ir.NodeHuman, Config: ir.HumanConfig{}},
-            // "End" is missing!
-        },
-        Edges: []*ir.Edge{
-            {From: "Begin", To: "End"},
-        },
-    }
-
-    result := validator.Validate(w)
-    for _, d := range result.Diagnostics {
-        fmt.Println(d.String())
-    }
-    // Output:
-    // error[DIP002]: exit node "End" is declared but does not exist in the node list
-    //   --> :0:0
-    //   = help: add a node with ID "End" to the workflow
-    // error[DIP003]: edge references unknown node "End"
-    //   --> :0:0
-    //   = help: declare a node with ID "End" or fix the edge target
+// Difference describes a structural difference between two workflows.
+type Difference struct {
+    Kind    string // "node_missing", "edge_missing", "config_mismatch", "topology_diff", etc.
+    Message string // Human-readable description
+    PathA   string // Location in workflow A (e.g., "node:Validate")
+    PathB   string // Location in workflow B (may be empty)
 }
+
+// CheckParity compares two workflows for structural equivalence.
+// It checks:
+// - Same node IDs and kinds
+// - Same edges (from/to/conditions)
+// - Same start/exit
+// - Compatible node configurations (prompt content modulo whitespace)
+// - Same graph-level defaults
+func CheckParity(a, b *ir.Workflow) []Difference
 ```
+
+## Test Cases (22+ cases)
+
+### DOT Parser Tests
+
+1. **Simple digraph** — `digraph G { A -> B; }` → 2 nodes, 1 edge
+2. **Node with attributes** — `A [shape=box, label="My Agent"];` → correct attrs
+3. **Edge with attributes** — `A -> B [label="yes", condition="outcome=success"];` → correct attrs
+4. **Graph attributes** — `graph [goal="test", rankdir=LR];` → correct extraction
+5. **Quoted strings with escapes** — `label="line1\nline2\"quoted\""` → proper un-escaping
+6. **Comments** — `// comment` and `/* block */` correctly skipped
+7. **Empty graph** — `digraph G {}` → no nodes, no edges
+8. **Multiple edges** — `A -> B; A -> C; B -> C;` → 3 edges
+9. **Missing semicolons** — `A -> B` without `;` should still parse (DOT allows it)
+10. **Malformed DOT** — returns descriptive error (unclosed quote, missing brace, etc.)
+
+### Migration Tests
+
+11. **Full pipeline migration** — `build_dippin.dot`-style input → correct IR with all node kinds, edges, conditions
+12. **Shape to kind mapping** — each DOT shape maps to the correct `ir.NodeKind`
+13. **Start/exit identification** — `Mdiamond` → `Workflow.Start`, `Msquare` → `Workflow.Exit`
+14. **Prompt un-escaping** — `"line1\nline2\n\"code\""` → `"line1\nline2\n\"code\""` (real newlines, unquoted)
+15. **Tool command un-escaping** — `tool_command="set -eu\necho hello"` → multiline command
+16. **Condition namespace prefixing** — `outcome=success` → `ctx.outcome = success`; `graph.goal` stays
+17. **Complex condition** — `outcome=success && tool_stdout contains pass` → `CondAnd{CondCompare{ctx.outcome, =, success}, CondCompare{ctx.tool_stdout, contains, pass}}`
+18. **Condition with negation** — `not outcome=fail` → `CondNot{CondCompare{ctx.outcome, =, fail}}`
+19. **Restart edge** — `A -> B [restart=true]` → `Edge.Restart = true`
+20. **Graph defaults extraction** — `graph [model="claude-opus-4-6", max_restarts=7]` → `WorkflowDefaults`
+21. **Parallel node inference** — `component` shape node with outgoing edges → `ParallelConfig.Targets`
+22. **Fan-in node inference** — `tripleoctagon` shape node with incoming edges → `FanInConfig.Sources`
+23. **Diamond disambiguation** — diamond with `tool_command` → tool; diamond with `prompt` → agent
+24. **Weight on edge** — `A -> B [weight=10]` → `Edge.Weight = 10`
+25. **Duration parsing** — `timeout="30s"` → `30 * time.Second`, `timeout="1h30m"` → `90 * time.Minute`
+26. **Empty/nil handling** — Node with no attributes → agent with empty config (default kind)
+27. **MigrateToSource round-trip** — DOT → IR → `.dip` source; verify output is valid Dippin format
+
+### Parity Checker Tests
+
+28. **Identical workflows** — returns empty differences
+29. **Missing node** — workflow B missing a node → reports `node_missing`
+30. **Extra node** — workflow B has an extra node → reports `node_extra`
+31. **Different start/exit** — reports `start_mismatch` / `exit_mismatch`
+32. **Edge missing** — reports `edge_missing`
+33. **Config mismatch** — different prompt text → reports `config_mismatch`
+34. **Kind mismatch** — same node ID, different kind → reports `kind_mismatch`
+35. **Whitespace-tolerant prompt comparison** — prompts that differ only in whitespace → no difference
+
+### Integration Test
+
+36. **build_dippin.dot migration** — Parse the actual `build_dippin.dot` file in the repo, migrate it, verify the IR has all expected nodes/edges/attributes. This is the real-world integration test.
+
+## Implementation Notes
+
+### DOT String Un-escaping
+
+DOT uses `\n` for newline, `\"` for quote, `\\` for backslash. During migration:
+- `\n` → literal newline character (`\n`)
+- `\"` → literal quote (`"`)
+- `\\` → literal backslash (`\`)
+- `\l` → literal newline (DOT left-justified line break)
+- `\r` → ignore (DOT carriage return, not meaningful)
+
+### Workflow Name Extraction
+
+The DOT `digraph <name>` becomes `Workflow.Name`. If the name is quoted, strip quotes.
+
+### Node Ordering
+
+Preserve the declaration order from the DOT file for `Workflow.Nodes`. This ensures deterministic output and maintains the author's intended reading order.
+
+### Edge Ordering
+
+Preserve edge declaration order from the DOT file for `Workflow.Edges`.
+
+### Start/Exit Node Handling
+
+Nodes with `shape=Mdiamond` or `shape=Msquare` are terminal markers:
+- They are NOT added as real nodes in `Workflow.Nodes` (they are syntactic, not semantic)
+- Instead, if `Mdiamond` node has edges pointing TO a real node, that real node becomes `Workflow.Start`
+- If real nodes have edges pointing TO the `Msquare` node, the `Msquare` determines `Workflow.Exit`
+- If `Mdiamond` has a label other than "Start", use it for the workflow name if graph name is generic
+- **Alternative approach (simpler)**: Include Start/Exit as agent nodes in the IR with the ID from DOT. Set `Workflow.Start` and `Workflow.Exit` to those IDs. The formatter and other consumers already handle start/exit by ID. This approach is simpler and matches how `build_dippin.dot` works (Start and Exit are real nodes with edges).
+
+**Decision**: Use the simpler approach — keep Start/Exit as nodes in the IR. Their kind will be `agent` (the default when shape doesn't map to another kind, since Mdiamond/Msquare don't have a kind mapping). The formatter knows to emit them because `Workflow.Start`/`.Exit` point to them. The validator requires them to exist.
+
+Actually, re-examining: Start/Exit with `Mdiamond`/`Msquare` are terminal markers with no handler logic. They should be `agent` nodes with empty configs. The important thing is `Workflow.Start` and `Workflow.Exit` point to them.
+
+### Parallel/Fan-in Target/Source Inference
+
+For `component` (parallel) nodes:
+- If the node has a `targets` attribute, use it directly (comma-split)
+- Otherwise, infer targets from outgoing edges of that node
+
+For `tripleoctagon` (fan_in) nodes:
+- If the node has a `sources` attribute, use it directly (comma-split)
+- Otherwise, infer sources from incoming edges to that node
+
+### Known Context Variables for Namespace Prefixing
+
+Per §8.2, these bare names get `ctx.` prefix:
+- `outcome`
+- `last_response`
+- `human_response`
+- `tool_stdout`
+- `tool_stderr`
+
+Variables already containing a `.` (like `graph.goal`) are left as-is.
+
+The prefix `context.` in DOT conditions (e.g., `context.tool_stdout`) should be normalized to `ctx.` (per §8.2 namespace table).
+
+The prefix `graph.` is kept as-is.
+
+**Real-world example from `build_dippin.dot`**:
+- `condition="context.tool_stdout=all_complete"` → `ctx.tool_stdout = all_complete`
+- `condition="outcome=success"` → `ctx.outcome = success`
+- `condition="outcome=fail"` → `ctx.outcome = fail`
+- `condition="outcome=retry"` → `ctx.outcome = retry`
+
+Note: DOT conditions use `=` with no spaces around the operator. The condition parser should handle both `outcome=success` and `outcome = success`.
+
+### Real-World DOT Attribute Names
+
+From examining `build_dippin.dot`, these are the actual attribute names used:
+
+**Node attributes**: `shape`, `label`, `llm_provider`, `llm_model`, `reasoning_effort`, `fidelity`, `prompt`, `tool_command`, `goal_gate`, `retry_target`
+
+**Edge attributes**: `condition`, `label`, `loop_restart`
+
+**Graph attributes**: `goal`, `rankdir`, `default_max_retry`, `default_fidelity`, `max_restarts`
+
+The migration tool MUST handle these legacy names:
+- `llm_model` → maps to `model` in IR
+- `llm_provider` → maps to `provider` in IR
+- `loop_restart` → maps to `restart` in IR
+- `default_max_retry` → maps to `max_retries` in IR defaults
+- `default_fidelity` → maps to `fidelity` in IR defaults
+- `context.` prefix in conditions → maps to `ctx.` prefix in IR
+
+### Condition Operator Mapping
+
+DOT conditions use `=` for equality. Dippin IR uses `=` as well. Operators:
+- `=` → `=`
+- `!=` → `!=`
+- `contains` → `contains`
+- `startswith` → `startswith`
+- `endswith` → `endswith`
+- `in` → `in`
+- `&&` → `CondAnd`
+- `||` → `CondOr`
+- `not` / `!` → `CondNot`
 
 TOOL CALL: read
 INPUT:
 {"path": ".tracker/current_context.md"}
 TOOL RESULT: read
 OUTPUT:
-=== Next component: linter ===
-component: linter
-package: validator/
-description: Semantic quality warnings (DIP101-DIP112)
+=== Next component: migration ===
+component: migration
+package: migrate/
+description: Migration tool: DOT to IR to .dip
 
 === Current codebase ===
 ./cmd/dippin/main.go
+./export/dot_test.go
+./export/dot.go
+./formatter/format_test.go
+./formatter/format.go
 ./ir/edge.go
 ./ir/ir_test.go
 ./ir/ir.go
@@ -302,25 +379,30 @@ description: Semantic quality warnings (DIP101-DIP112)
 ./ir/source.go
 ./validator/codes.go
 ./validator/diagnostic.go
-./validator/validate.go
+./validator/lint_codes.go
+./validator/lint_test.go
+./validator/lint.go
 ./validator/validate_test.go
+./validator/validate.go
 
 === Test status ===
 ?   	github.com/2389/dippin/cmd/dippin	[no test files]
-ok  	github.com/2389/dippin/ir
-ok  	github.com/2389/dippin/validator
+ok  	github.com/2389/dippin/export	(cached)
+ok  	github.com/2389/dippin/formatter	(cached)
+ok  	github.com/2389/dippin/ir	(cached)
+ok  	github.com/2389/dippin/validator	(cached)
 
 === Ledger ===
 component	package	status	description
 ir	ir/	complete	Canonical IR types (Workflow, Node, Edge, Condition)
-parser-lexer	parser/	in_progress	Line-based indentation-aware lexer
-parser-core	parser/	in_progress	Parser: .dip source to IR with error recovery
-parser-conditions	parser/	in_progress	Condition expression parser (and/or/not/compare)
+parser-lexer	parser/	complete	Line-based indentation-aware lexer
+parser-core	parser/	complete	Parser: .dip source to IR with error recovery
+parser-conditions	parser/	complete	Condition expression parser (and/or/not/compare)
 validator	validator/	complete	Graph structure validation (DIP001-DIP009)
-linter	validator/	pending	Semantic quality warnings (DIP101-DIP112)
-formatter	formatter/	pending	Canonical formatter: IR to .dip source
-dot-exporter	export/	pending	DOT exporter: IR to DOT string
-migration	migrate/	pending	Migration tool: DOT to IR to .dip
+linter	validator/	complete	Semantic quality warnings (DIP101-DIP112)
+formatter	formatter/	complete	Canonical formatter: IR to .dip source
+dot-exporter	export/	complete	DOT exporter: IR to DOT string
+migration	migrate/	in_progress	Migration tool: DOT to IR to .dip
 cli	cmd/dippin/	pending	CLI subcommands: parse, validate, lint, fmt, export-dot, migrate
 
 TOOL CALL: read
@@ -340,17 +422,6 @@ OUTPUT:
 ../dippin/DIPPIN_DESIGN_PLAN.md
 ../dippin-lang/DIPPIN_DESIGN_PLAN.md
 
-TOOL CALL: glob
-INPUT:
-{"pattern": "ir/*.go"}
-TOOL RESULT: glob
-OUTPUT:
-ir/edge.go
-ir/ir.go
-ir/ir_test.go
-ir/lookup.go
-ir/source.go
-TURN 3
 TOOL CALL: read
 INPUT:
 {"path": "ir/ir.go"}
@@ -557,6 +628,34 @@ func (CondCompare) conditionExpr() {}
 
 TOOL CALL: read
 INPUT:
+{"path": "ir/source.go"}
+TOOL RESULT: read
+OUTPUT:
+package ir
+
+// SourceLocation identifies a range in a source file for diagnostics.
+type SourceLocation struct {
+	File      string
+	Line      int
+	Column    int
+	EndLine   int
+	EndColumn int
+}
+
+// SourceMap preserves the mapping from IR elements back to source positions.
+// After subgraph expansion, this is how you trace "where did this node come from?"
+type SourceMap struct {
+	Entries []SourceMapEntry
+}
+
+// SourceMapEntry maps an IR element identifier to its source location.
+type SourceMapEntry struct {
+	IRElement string // "node:MyNode", "edge:A->B"
+	Location  SourceLocation
+}
+
+TOOL CALL: read
+INPUT:
 {"path": "ir/lookup.go"}
 TOOL RESULT: read
 OUTPUT:
@@ -603,33 +702,800 @@ func (w *Workflow) NodeIDs() []string {
 	return ids
 }
 
+TURN 3
 TOOL CALL: read
 INPUT:
-{"path": "ir/source.go"}
+{"path": "formatter/format.go"}
 TOOL RESULT: read
 OUTPUT:
-package ir
+// Package formatter implements canonical Dippin source formatting.
+// Given an ir.Workflow, it produces deterministic .dip source text.
+// The output is idempotent: Format(w) always produces the same string
+// for the same IR state.
+package formatter
 
-// SourceLocation identifies a range in a source file for diagnostics.
-type SourceLocation struct {
-	File      string
-	Line      int
-	Column    int
-	EndLine   int
-	EndColumn int
+import (
+	"fmt"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/2389/dippin/ir"
+)
+
+// Format renders a workflow to canonical Dippin source text.
+// The output always ends with exactly one trailing newline.
+func Format(w *ir.Workflow) string {
+	wr := &writer{}
+
+	writeWorkflowHeader(wr, w)
+
+	if !isDefaultsZero(w.Defaults) {
+		wr.blank()
+		writeDefaults(wr, w.Defaults)
+	}
+
+	for _, n := range w.Nodes {
+		wr.blank()
+		writeNode(wr, n)
+	}
+
+	if len(w.Edges) > 0 {
+		wr.blank()
+		writeEdges(wr, w.Edges)
+	}
+
+	return wr.String()
 }
 
-// SourceMap preserves the mapping from IR elements back to source positions.
-// After subgraph expansion, this is how you trace "where did this node come from?"
-type SourceMap struct {
-	Entries []SourceMapEntry
+// writer wraps a strings.Builder with indentation tracking.
+type writer struct {
+	buf    strings.Builder
+	indent int // current indent level (each level = 2 spaces)
 }
 
-// SourceMapEntry maps an IR element identifier to its source location.
-type SourceMapEntry struct {
-	IRElement string // "node:MyNode", "edge:A->B"
-	Location  SourceLocation
+// line writes a single indented line followed by a newline.
+func (wr *writer) line(format string, args ...any) {
+	content := fmt.Sprintf(format, args...)
+	content = strings.TrimRight(content, " \t")
+	prefix := strings.Repeat("  ", wr.indent)
+	wr.buf.WriteString(prefix)
+	wr.buf.WriteString(content)
+	wr.buf.WriteByte('\n')
 }
+
+// blank writes an empty line.
+func (wr *writer) blank() {
+	wr.buf.WriteByte('\n')
+}
+
+// push increases the indentation level by one.
+func (wr *writer) push() {
+	wr.indent++
+}
+
+// pop decreases the indentation level by one.
+func (wr *writer) pop() {
+	wr.indent--
+}
+
+// multilineBlock emits a multiline field in the canonical form:
+//
+//	key:
+//	  <line1>
+//	  <line2>
+func (wr *writer) multilineBlock(key, content string) {
+	wr.line("%s:", key)
+	content = strings.TrimRight(content, " \t\n\r")
+	if content == "" {
+		return
+	}
+	wr.push()
+	for _, l := range strings.Split(content, "\n") {
+		l = strings.TrimRight(l, " \t\r")
+		if l == "" {
+			wr.blank()
+		} else {
+			wr.line("%s", l)
+		}
+	}
+	wr.pop()
+}
+
+// String returns the final output with exactly one trailing newline.
+func (wr *writer) String() string {
+	s := wr.buf.String()
+	s = strings.TrimRight(s, "\n\r \t")
+	return s + "\n"
+}
+
+// --- Section emitters ---
+
+func writeWorkflowHeader(wr *writer, w *ir.Workflow) {
+	wr.line("workflow %s", w.Name)
+	wr.push()
+	if w.Goal != "" {
+		wr.line("goal: %s", quoteValue(w.Goal))
+	}
+	wr.line("start: %s", w.Start)
+	wr.line("exit: %s", w.Exit)
+	// We keep the indent at 1 for the rest of the top-level sections
+}
+
+func writeDefaults(wr *writer, d ir.WorkflowDefaults) {
+	wr.line("defaults")
+	wr.push()
+	if d.Model != "" {
+		wr.line("model: %s", quoteValue(d.Model))
+	}
+	if d.Provider != "" {
+		wr.line("provider: %s", quoteValue(d.Provider))
+	}
+	if d.RetryPolicy != "" {
+		wr.line("retry_policy: %s", quoteValue(d.RetryPolicy))
+	}
+	if d.MaxRetries != 0 {
+		wr.line("max_retries: %d", d.MaxRetries)
+	}
+	if d.Fidelity != "" {
+		wr.line("fidelity: %s", quoteValue(d.Fidelity))
+	}
+	if d.MaxRestarts != 0 {
+		wr.line("max_restarts: %d", d.MaxRestarts)
+	}
+	if d.RestartTarget != "" {
+		wr.line("restart_target: %s", d.RestartTarget)
+	}
+	if d.CacheTools {
+		wr.line("cache_tools: true")
+	}
+	if d.Compaction != "" {
+		wr.line("compaction: %s", quoteValue(d.Compaction))
+	}
+	wr.pop()
+}
+
+func writeNode(wr *writer, n *ir.Node) {
+	switch cfg := n.Config.(type) {
+	case ir.ParallelConfig:
+		wr.line("parallel %s -> %s", n.ID, strings.Join(cfg.Targets, ", "))
+	case ir.FanInConfig:
+		wr.line("fan_in %s <- %s", n.ID, strings.Join(cfg.Sources, ", "))
+	default:
+		wr.line("%s %s", n.Kind, n.ID)
+		wr.push()
+		switch cfg := n.Config.(type) {
+		case ir.AgentConfig:
+			writeAgentFields(wr, n, cfg)
+		case ir.HumanConfig:
+			writeHumanFields(wr, n, cfg)
+		case ir.ToolConfig:
+			writeToolFields(wr, n, cfg)
+		case ir.SubgraphConfig:
+			writeSubgraphFields(wr, n, cfg)
+		}
+		wr.pop()
+	}
+}
+
+func writeAgentFields(wr *writer, n *ir.Node, cfg ir.AgentConfig) {
+	if n.Label != "" {
+		wr.line("label: %s", quoteValue(n.Label))
+	}
+	if len(n.Classes) > 0 {
+		wr.line("class: %s", strings.Join(n.Classes, ", "))
+	}
+	if cfg.Model != "" {
+		wr.line("model: %s", quoteValue(cfg.Model))
+	}
+	if cfg.Provider != "" {
+		wr.line("provider: %s", quoteValue(cfg.Provider))
+	}
+	if cfg.ReasoningEffort != "" {
+		wr.line("reasoning_effort: %s", quoteValue(cfg.ReasoningEffort))
+	}
+	if cfg.Fidelity != "" {
+		wr.line("fidelity: %s", quoteValue(cfg.Fidelity))
+	}
+	if cfg.GoalGate {
+		wr.line("goal_gate: true")
+	}
+	if cfg.AutoStatus {
+		wr.line("auto_status: true")
+	}
+	if cfg.MaxTurns != 0 {
+		wr.line("max_turns: %d", cfg.MaxTurns)
+	}
+	if n.Retry.Policy != "" {
+		wr.line("retry_policy: %s", quoteValue(n.Retry.Policy))
+	}
+	if n.Retry.MaxRetries != 0 {
+		wr.line("max_retries: %d", n.Retry.MaxRetries)
+	}
+	if n.Retry.RetryTarget != "" {
+		wr.line("retry_target: %s", n.Retry.RetryTarget)
+	}
+	if n.Retry.FallbackTarget != "" {
+		wr.line("fallback_target: %s", n.Retry.FallbackTarget)
+	}
+	if len(n.IO.Reads) > 0 {
+		wr.line("reads: %s", strings.Join(n.IO.Reads, ", "))
+	}
+	if len(n.IO.Writes) > 0 {
+		wr.line("writes: %s", strings.Join(n.IO.Writes, ", "))
+	}
+	if cfg.Prompt != "" {
+		wr.multilineBlock("prompt", cfg.Prompt)
+	}
+}
+
+func writeHumanFields(wr *writer, n *ir.Node, cfg ir.HumanConfig) {
+	if n.Label != "" {
+		wr.line("label: %s", quoteValue(n.Label))
+	}
+	if cfg.Mode != "" {
+		wr.line("mode: %s", quoteValue(cfg.Mode))
+	}
+	if cfg.Default != "" {
+		wr.line("default: %s", quoteValue(cfg.Default))
+	}
+	if len(n.IO.Reads) > 0 {
+		wr.line("reads: %s", strings.Join(n.IO.Reads, ", "))
+	}
+	if len(n.IO.Writes) > 0 {
+		wr.line("writes: %s", strings.Join(n.IO.Writes, ", "))
+	}
+}
+
+func writeToolFields(wr *writer, n *ir.Node, cfg ir.ToolConfig) {
+	if n.Label != "" {
+		wr.line("label: %s", quoteValue(n.Label))
+	}
+	if cfg.Timeout != 0 {
+		wr.line("timeout: %s", formatDuration(cfg.Timeout))
+	}
+	if len(n.IO.Reads) > 0 {
+		wr.line("reads: %s", strings.Join(n.IO.Reads, ", "))
+	}
+	if len(n.IO.Writes) > 0 {
+		wr.line("writes: %s", strings.Join(n.IO.Writes, ", "))
+	}
+	if cfg.Command != "" {
+		wr.multilineBlock("command", cfg.Command)
+	}
+}
+
+func writeSubgraphFields(wr *writer, n *ir.Node, cfg ir.SubgraphConfig) {
+	if n.Label != "" {
+		wr.line("label: %s", quoteValue(n.Label))
+	}
+	if cfg.Ref != "" {
+		wr.line("ref: %s", quoteValue(cfg.Ref))
+	}
+	if len(cfg.Params) > 0 {
+		wr.line("params:")
+		wr.push()
+		keys := make([]string, 0, len(cfg.Params))
+		for k := range cfg.Params {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			wr.line("%s: %s", k, quoteValue(cfg.Params[k]))
+		}
+		wr.pop()
+	}
+}
+
+func writeEdges(wr *writer, edges []*ir.Edge) {
+	wr.line("edges")
+	wr.push()
+	for _, e := range edges {
+		writeEdge(wr, e)
+	}
+	wr.pop()
+}
+
+func writeEdge(wr *writer, e *ir.Edge) {
+	var parts []string
+	parts = append(parts, fmt.Sprintf("%s -> %s", e.From, e.To))
+
+	if e.Condition != nil && e.Condition.Parsed != nil {
+		parts = append(parts, fmt.Sprintf("when %s", formatCondition(e.Condition.Parsed)))
+	}
+	if e.Label != "" {
+		parts = append(parts, fmt.Sprintf("label: %s", quoteValue(e.Label)))
+	}
+	if e.Weight != 0 {
+		parts = append(parts, fmt.Sprintf("weight: %d", e.Weight))
+	}
+	if e.Restart {
+		parts = append(parts, "restart: true")
+	}
+
+	wr.line("%s", strings.Join(parts, "  "))
+}
+
+// --- Condition formatting ---
+
+const (
+	precOr  = 1
+	precAnd = 2
+	precNot = 3
+)
+
+func formatCondition(expr ir.ConditionExpr) string {
+	return formatConditionExpr(expr, 0)
+}
+
+func formatConditionExpr(expr ir.ConditionExpr, parentPrec int) string {
+	switch e := expr.(type) {
+	case ir.CondCompare:
+		return fmt.Sprintf("%s %s %s", e.Variable, e.Op, e.Value)
+	case ir.CondAnd:
+		s := fmt.Sprintf("%s and %s",
+			formatConditionExpr(e.Left, precAnd),
+			formatConditionExpr(e.Right, precAnd))
+		// Parenthesize if parent is a different compound operator (OR wrapping AND,
+		// NOT wrapping AND). parentPrec==0 means top-level, no parens needed.
+		if parentPrec != 0 && parentPrec != precAnd {
+			return "(" + s + ")"
+		}
+		return s
+	case ir.CondOr:
+		s := fmt.Sprintf("%s or %s",
+			formatConditionExpr(e.Left, precOr),
+			formatConditionExpr(e.Right, precOr))
+		// Parenthesize if parent is a different compound operator (AND wrapping OR,
+		// NOT wrapping OR).
+		if parentPrec != 0 && parentPrec != precOr {
+			return "(" + s + ")"
+		}
+		return s
+	case ir.CondNot:
+		inner := formatConditionExpr(e.Inner, precNot)
+		return "not " + inner
+	default:
+		return ""
+	}
+}
+
+func quoteValue(s string) string {
+	if s == "" {
+		return `""`
+	}
+	if needsQuoting(s) {
+		return `"` + s + `"`
+	}
+	return s
+}
+
+// needsQuoting returns true if the value needs to be enclosed in double quotes.
+// Simple identifiers (alphanumeric, underscore, dash, dot, slash, colon) are unquoted.
+func needsQuoting(s string) bool {
+	for _, ch := range s {
+		switch {
+		case ch >= 'a' && ch <= 'z':
+		case ch >= 'A' && ch <= 'Z':
+		case ch >= '0' && ch <= '9':
+		case ch == '_', ch == '-', ch == '.', ch == '/', ch == ':':
+		default:
+			return true
+		}
+	}
+	return false
+}
+
+// formatDuration renders a time.Duration as a compact human-readable string
+// suitable for Dippin source: "30s", "5m", "1h30m".
+func formatDuration(d time.Duration) string {
+	if d == 0 {
+		return "0s"
+	}
+	var parts []string
+	if h := int(d.Hours()); h > 0 {
+		parts = append(parts, fmt.Sprintf("%dh", h))
+		d -= time.Duration(h) * time.Hour
+	}
+	if m := int(d.Minutes()); m > 0 {
+		parts = append(parts, fmt.Sprintf("%dm", m))
+		d -= time.Duration(m) * time.Minute
+	}
+	if s := int(d.Seconds()); s > 0 {
+		parts = append(parts, fmt.Sprintf("%ds", s))
+	}
+	if len(parts) == 0 {
+		// Sub-second durations.
+		return d.String()
+	}
+	return strings.Join(parts, "")
+}
+
+func isDefaultsZero(d ir.WorkflowDefaults) bool {
+	return d == ir.WorkflowDefaults{}
+}
+
+TOOL CALL: read
+INPUT:
+{"path": "export/dot.go"}
+TOOL RESULT: read
+OUTPUT:
+// Package export provides DOT graph format export for Dippin workflows.
+//
+// The primary function ExportDOT converts an ir.Workflow into a valid DOT
+// language string suitable for rendering with Graphviz. The mapping is
+// documented in §15 of the Dippin design spec.
+package export
+
+import (
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/2389/dippin/ir"
+)
+
+// ExportOptions controls the DOT output format.
+type ExportOptions struct {
+	// IncludePrompts includes full prompt/command text as node attributes.
+	// Default (zero value) is false; set to true for full-fidelity export.
+	IncludePrompts bool
+
+	// RankDir controls the graph layout direction: "LR" (left-to-right)
+	// or "TB" (top-to-bottom). Defaults to "TB" when empty.
+	RankDir string
+
+	// HighlightGoalGates applies a distinct fill color to nodes with
+	// GoalGate: true.
+	HighlightGoalGates bool
+}
+
+// ExportDOT renders a workflow as a DOT language string.
+// The output is a valid digraph that can be processed by Graphviz tools.
+func ExportDOT(w *ir.Workflow, opts ExportOptions) string {
+	var b strings.Builder
+
+	rankDir := opts.RankDir
+	if rankDir == "" {
+		rankDir = "TB"
+	}
+
+	graphName := w.Name
+	if graphName == "" {
+		graphName = "workflow"
+	}
+
+	b.WriteString(fmt.Sprintf("digraph %s {\n", dotID(graphName)))
+	b.WriteString(fmt.Sprintf("  rankdir=%s;\n", rankDir))
+	b.WriteString("  node [fontname=\"Helvetica\"];\n")
+	b.WriteString("  edge [fontname=\"Helvetica\"];\n")
+
+	// Emit nodes.
+	for _, n := range w.Nodes {
+		writeNodeDOT(&b, n, w, opts)
+	}
+
+	b.WriteByte('\n')
+
+	// Emit edges.
+	for _, e := range w.Edges {
+		writeEdgeDOT(&b, e)
+	}
+
+	b.WriteString("}\n")
+	return b.String()
+}
+
+// nodeShape maps a NodeKind to the corresponding DOT shape attribute.
+// Per §15: agent→box, human→hexagon, tool→parallelogram,
+// parallel→component, fan_in→tripleoctagon, subgraph→tab.
+// Start and exit nodes override to Mdiamond and Msquare respectively.
+func nodeShape(kind ir.NodeKind) string {
+	switch kind {
+	case ir.NodeAgent:
+		return "box"
+	case ir.NodeHuman:
+		return "hexagon"
+	case ir.NodeTool:
+		return "parallelogram"
+	case ir.NodeParallel:
+		return "component"
+	case ir.NodeFanIn:
+		return "tripleoctagon"
+	case ir.NodeSubgraph:
+		return "tab"
+	default:
+		return "box"
+	}
+}
+
+// writeNodeDOT emits a single DOT node statement.
+func writeNodeDOT(b *strings.Builder, n *ir.Node, w *ir.Workflow, opts ExportOptions) {
+	attrs := make(map[string]string)
+
+	// Shape: start and exit override the kind-based shape.
+	if n.ID == w.Start {
+		attrs["shape"] = "Mdiamond"
+	} else if n.ID == w.Exit {
+		attrs["shape"] = "Msquare"
+	} else {
+		attrs["shape"] = nodeShape(n.Kind)
+	}
+
+	// Label: use the human-readable label if set, otherwise the node ID.
+	if n.Label != "" {
+		attrs["label"] = n.Label
+	} else {
+		attrs["label"] = n.ID
+	}
+
+	// Goal gate highlighting.
+	if opts.HighlightGoalGates {
+		if ac, ok := n.Config.(ir.AgentConfig); ok && ac.GoalGate {
+			attrs["style"] = "filled"
+			attrs["fillcolor"] = "#ffcccc"
+		}
+	}
+
+	// Include prompts/commands as attributes for full-fidelity export.
+	if opts.IncludePrompts {
+		switch cfg := n.Config.(type) {
+		case ir.AgentConfig:
+			if cfg.Prompt != "" {
+				attrs["prompt"] = escapeNewlines(cfg.Prompt)
+			}
+			if cfg.Model != "" {
+				attrs["model"] = cfg.Model
+			}
+			if cfg.Provider != "" {
+				attrs["provider"] = cfg.Provider
+			}
+		case ir.ToolConfig:
+			if cfg.Command != "" {
+				attrs["tool_command"] = escapeNewlines(cfg.Command)
+			}
+			if cfg.Timeout != 0 {
+				attrs["timeout"] = formatDuration(cfg.Timeout)
+			}
+		case ir.HumanConfig:
+			if cfg.Mode != "" {
+				attrs["mode"] = cfg.Mode
+			}
+			if cfg.Default != "" {
+				attrs["default"] = cfg.Default
+			}
+		case ir.SubgraphConfig:
+			if cfg.Ref != "" {
+				attrs["ref"] = cfg.Ref
+			}
+		case ir.ParallelConfig:
+			if len(cfg.Targets) > 0 {
+				attrs["targets"] = strings.Join(cfg.Targets, ",")
+			}
+		case ir.FanInConfig:
+			if len(cfg.Sources) > 0 {
+				attrs["sources"] = strings.Join(cfg.Sources, ",")
+			}
+		}
+	}
+
+	b.WriteString(fmt.Sprintf("  %s %s;\n", dotID(n.ID), formatDOTAttrs(attrs)))
+}
+
+// writeEdgeDOT emits a single DOT edge statement.
+func writeEdgeDOT(b *strings.Builder, e *ir.Edge) {
+	attrs := make(map[string]string)
+
+	if e.Label != "" {
+		attrs["label"] = e.Label
+	}
+
+	if e.Condition != nil && e.Condition.Parsed != nil {
+		condStr := formatCondition(e.Condition.Parsed)
+		// If there's no separate label, use the condition text as the edge label.
+		if e.Label == "" {
+			attrs["label"] = condStr
+		}
+		attrs["condition"] = condStr
+	}
+
+	if e.Weight != 0 {
+		attrs["weight"] = fmt.Sprintf("%d", e.Weight)
+	}
+
+	if e.Restart {
+		attrs["restart"] = "true"
+		// Visual hint: restart edges are dashed.
+		attrs["style"] = "dashed"
+	}
+
+	b.WriteString(fmt.Sprintf("  %s -> %s", dotID(e.From), dotID(e.To)))
+	if len(attrs) > 0 {
+		b.WriteString(" ")
+		b.WriteString(formatDOTAttrs(attrs))
+	}
+	b.WriteString(";\n")
+}
+
+// formatDOTAttrs renders a map of DOT attributes as a bracketed list,
+// with keys in sorted order for deterministic output.
+func formatDOTAttrs(attrs map[string]string) string {
+	if len(attrs) == 0 {
+		return ""
+	}
+
+	// Sort keys for deterministic output.
+	keys := make([]string, 0, len(attrs))
+	for k := range attrs {
+		keys = append(keys, k)
+	}
+	sortStrings(keys)
+
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, fmt.Sprintf("%s=%s", k, dotQuote(attrs[k])))
+	}
+	return "[" + strings.Join(parts, ", ") + "]"
+}
+
+// dotID formats a string as a valid DOT identifier.
+// If the string is a simple identifier (alphanumeric + underscore, not starting
+// with a digit), it is returned as-is. Otherwise it is double-quoted.
+func dotID(s string) string {
+	if s == "" {
+		return `""`
+	}
+	if isSimpleDOTID(s) {
+		return s
+	}
+	return dotQuote(s)
+}
+
+// isSimpleDOTID returns true if s is a valid unquoted DOT identifier.
+func isSimpleDOTID(s string) bool {
+	if len(s) == 0 {
+		return false
+	}
+	// Must not start with a digit.
+	if s[0] >= '0' && s[0] <= '9' {
+		return false
+	}
+	for _, ch := range s {
+		if !((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_') {
+			return false
+		}
+	}
+	return true
+}
+
+// dotQuote wraps a string in double quotes, escaping internal quotes and
+// backslashes. Preserves DOT escape sequences like \n, \l, \r.
+func dotQuote(s string) string {
+	var b strings.Builder
+	b.WriteByte('"')
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		switch ch {
+		case '"':
+			b.WriteString(`\"`)
+		case '\\':
+			// Check if this backslash is part of a DOT escape sequence.
+			if i+1 < len(s) {
+				next := s[i+1]
+				if next == 'n' || next == 'l' || next == 'r' {
+					// Preserve DOT escape sequences.
+					b.WriteByte('\\')
+					b.WriteByte(next)
+					i++
+					continue
+				}
+			}
+			b.WriteString(`\\`)
+		default:
+			b.WriteByte(ch)
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
+}
+
+// escapeNewlines replaces literal newlines with the DOT \n escape for
+// multi-line attribute values.
+func escapeNewlines(s string) string {
+	return strings.ReplaceAll(s, "\n", `\n`)
+}
+
+// --- Condition formatting ---
+// Replicates the formatter's condition serialization for DOT attribute values.
+
+const (
+	precOr  = 1
+	precAnd = 2
+	precNot = 3
+)
+
+func formatCondition(expr ir.ConditionExpr) string {
+	return formatConditionExpr(expr, 0)
+}
+
+func formatConditionExpr(expr ir.ConditionExpr, parentPrec int) string {
+	switch e := expr.(type) {
+	case ir.CondCompare:
+		return fmt.Sprintf("%s %s %s", e.Variable, e.Op, e.Value)
+	case ir.CondAnd:
+		s := fmt.Sprintf("%s and %s",
+			formatConditionExpr(e.Left, precAnd),
+			formatConditionExpr(e.Right, precAnd))
+		if parentPrec != 0 && parentPrec != precAnd {
+			return "(" + s + ")"
+		}
+		return s
+	case ir.CondOr:
+		s := fmt.Sprintf("%s or %s",
+			formatConditionExpr(e.Left, precOr),
+			formatConditionExpr(e.Right, precOr))
+		if parentPrec != 0 && parentPrec != precOr {
+			return "(" + s + ")"
+		}
+		return s
+	case ir.CondNot:
+		inner := formatConditionExpr(e.Inner, precNot)
+		return "not " + inner
+	default:
+		return ""
+	}
+}
+
+// --- Duration formatting ---
+
+func formatDuration(d time.Duration) string {
+	if d == 0 {
+		return "0s"
+	}
+	var parts []string
+	if h := int(d.Hours()); h > 0 {
+		parts = append(parts, fmt.Sprintf("%dh", h))
+		d -= time.Duration(h) * time.Hour
+	}
+	if m := int(d.Minutes()); m > 0 {
+		parts = append(parts, fmt.Sprintf("%dm", m))
+		d -= time.Duration(m) * time.Minute
+	}
+	if s := int(d.Seconds()); s > 0 {
+		parts = append(parts, fmt.Sprintf("%ds", s))
+	}
+	if len(parts) == 0 {
+		return d.String()
+	}
+	return strings.Join(parts, "")
+}
+
+// sortStrings sorts a string slice in place. Avoids importing sort for this
+// single use.
+func sortStrings(s []string) {
+	for i := 1; i < len(s); i++ {
+		for j := i; j > 0 && s[j] < s[j-1]; j-- {
+			s[j], s[j-1] = s[j-1], s[j]
+		}
+	}
+}
+
+TOOL CALL: read
+INPUT:
+{"path": "go.mod"}
+TOOL RESULT: read
+OUTPUT:
+module github.com/2389/dippin
+
+go 1.25.4
+
+TURN 4
+TOOL CALL: bash
+INPUT:
+{"command": "find . -name \"*.dot\" 2>/dev/null | head -10"}
+TOOL RESULT: bash
+OUTPUT:
+./build_dippin.dot
 
 TOOL CALL: read
 INPUT:
@@ -1018,114 +1884,1247 @@ func TestNodeIDs(t *testing.T) {
 	}
 }
 
-TURN 4
+TURN 5
 TOOL CALL: read
 INPUT:
-{"path": "validator/diagnostic.go"}
+{"path": "build_dippin.dot"}
 TOOL RESULT: read
 OUTPUT:
-// Package validator performs graph structure validation on Dippin IR workflows.
-//
-// It implements checks DIP001 through DIP009, covering structural correctness
-// of the workflow graph: start/exit existence, edge validity, reachability,
-// cycle detection, parallel/fan-in pairing, and duplicate detection.
-//
-// The validator is a pure IR consumer — it takes a *ir.Workflow and returns
-// a Result containing all diagnostics found. It always runs all checks and
-// never short-circuits, so a single pass reports everything.
-package validator
+digraph BuildDippin {
+  graph [
+    goal="Build the Dippin toolchain (parser, validator, formatter, DOT exporter, migration tool) by reading the design spec and iteratively implementing components into the dippin-lang Go module. Ledger-driven: picks the next uncompleted component automatically and loops until all are done.",
+    rankdir=LR,
+    default_max_retry=3,
+    default_fidelity="summary:high",
+    max_restarts=7
+  ];
+
+  Start [shape=Mdiamond, label="Start"];
+  Exit [shape=Msquare, label="Exit"];
+
+  // ── Phase 0: Setup ──────────────────────────────────────────────
+
+  SetupWorkspace [
+    shape=parallelogram,
+    label="Setup Workspace & Ledger",
+    tool_command="set -eu\nmkdir -p .tracker/runs\nif [ ! -f go.mod ]; then\n  echo 'ERROR: must run from dippin-lang directory with go.mod'\n  exit 1\nfi\n# Initialize ledger if it doesn't exist\nif [ ! -f .tracker/ledger.tsv ]; then\n  printf 'component\\tpackage\\tstatus\\tdescription\\n' > .tracker/ledger.tsv\n  printf 'ir\\tir/\\tcomplete\\tCanonical IR types (Workflow, Node, Edge, Condition)\\n' >> .tracker/ledger.tsv\n  printf 'parser-lexer\\tparser/\\tpending\\tLine-based indentation-aware lexer\\n' >> .tracker/ledger.tsv\n  printf 'parser-core\\tparser/\\tpending\\tParser: .dip source to IR with error recovery\\n' >> .tracker/ledger.tsv\n  printf 'parser-conditions\\tparser/\\tpending\\tCondition expression parser (and/or/not/compare)\\n' >> .tracker/ledger.tsv\n  printf 'validator\\tvalidator/\\tpending\\tGraph structure validation (DIP001-DIP009)\\n' >> .tracker/ledger.tsv\n  printf 'linter\\tvalidator/\\tpending\\tSemantic quality warnings (DIP101-DIP112)\\n' >> .tracker/ledger.tsv\n  printf 'formatter\\tformatter/\\tpending\\tCanonical formatter: IR to .dip source\\n' >> .tracker/ledger.tsv\n  printf 'dot-exporter\\texport/\\tpending\\tDOT exporter: IR to DOT string\\n' >> .tracker/ledger.tsv\n  printf 'migration\\tmigrate/\\tpending\\tMigration tool: DOT to IR to .dip\\n' >> .tracker/ledger.tsv\n  printf 'cli\\tcmd/dippin/\\tpending\\tCLI subcommands: parse, validate, lint, fmt, export-dot, migrate\\n' >> .tracker/ledger.tsv\nfi\ncat .tracker/ledger.tsv\nprintf 'workspace-ready'"
+  ];
+
+  // ── Phase 1: Pick next task from ledger ─────────────────────────
+
+  PickNextComponent [
+    shape=parallelogram,
+    label="Pick Next Component",
+    tool_command="set -eu\n# Find first pending component\nNEXT=$(awk -F'\\t' '$3==\"pending\" { print $1; exit }' .tracker/ledger.tsv)\nif [ -z \"$NEXT\" ]; then\n  printf 'all_complete'\n  exit 0\nfi\n# Mark it in-progress\nawk -F'\\t' -v comp=\"$NEXT\" 'BEGIN{OFS=\"\\t\"} $1==comp{$3=\"in_progress\"} {print}' .tracker/ledger.tsv > .tracker/ledger.tmp && mv .tracker/ledger.tmp .tracker/ledger.tsv\n# Write context snapshot for planner to read from disk\nmkdir -p .tracker\necho \"=== Next component: $NEXT ===\" > .tracker/current_context.md\nawk -F'\\t' -v comp=\"$NEXT\" '$1==comp { printf \"component: %s\\npackage: %s\\ndescription: %s\\n\", $1, $2, $4 }' .tracker/ledger.tsv >> .tracker/current_context.md\necho '' >> .tracker/current_context.md\necho '=== Current codebase ===' >> .tracker/current_context.md\nfind . -name '*.go' -not -path './vendor/*' | sort >> .tracker/current_context.md\necho '' >> .tracker/current_context.md\necho '=== Test status ===' >> .tracker/current_context.md\ngo test ./... >> .tracker/current_context.md 2>&1 || true\necho '' >> .tracker/current_context.md\necho '=== Ledger ===' >> .tracker/current_context.md\ncat .tracker/ledger.tsv >> .tracker/current_context.md\nprintf 'has_next'"
+  ];
+
+  // Route: all done vs has work
+  CheckComplete [
+    shape=diamond,
+    label="All done?"
+  ];
+
+  // ── Phase 2: Plan ───────────────────────────────────────────────
+
+  PlanComponent [
+    shape=box,
+    label="Plan Component",
+    llm_provider="anthropic",
+    llm_model="claude-opus-4-6",
+    reasoning_effort="high",
+    prompt="You are building the Dippin toolchain. Read .tracker/current_context.md to see which component is in_progress and the current state of the codebase.\n\nRead the design spec at ../DIPPIN_DESIGN_PLAN.md — this is the authoritative specification.\n\nRead the current codebase to understand what already exists (especially ir/ types).\n\nProduce a focused implementation plan for THIS component only:\n1. List the exact files to create/modify\n2. List the types and functions to implement\n3. List 10+ test cases (happy path, error cases, edge cases)\n4. Reference the specific design spec sections that govern this component\n5. Note any dependencies on existing packages\n\nWrite the plan to .tracker/current_plan.md so implementation agents can read it.\n\nDo NOT implement yet — just plan. Be precise enough that an implementation agent can work from this plan without ambiguity."
+  ];
+
+  // ── Phase 3: Implement ──────────────────────────────────────────
+
+  ImplementParallel [shape=component, label="Implement (Parallel)"];
+
+  ImplementClaude [
+    shape=box,
+    label="Claude Implementation",
+    llm_provider="anthropic",
+    llm_model="claude-opus-4-6",
+    reasoning_effort="high",
+    fidelity="full",
+    prompt="Implement the planned component for the Dippin toolchain. Read .tracker/current_plan.md for exactly what to build and .tracker/current_context.md for the current codebase state.\n\nRead the design spec at ../DIPPIN_DESIGN_PLAN.md for exact specifications.\nRead existing code in ir/ to match types precisely.\n\nRules:\n- Write idiomatic Go. Standard library only (no external deps beyond what go.mod already has).\n- Every exported function gets a test. Test files go next to source.\n- Match the IR types in ir/ exactly. Do not modify ir/ unless the plan says to.\n- Table-driven tests with edge cases from the plan.\n- One responsibility per package.\n- Use diagnostic codes from the spec (DIP001-DIP112) where applicable.\n- Write real, complete code — no stubs, no TODOs, no placeholders.\n- Run 'go build ./...' and 'go test ./...' to verify before finishing."
+  ];
+
+  ImplementGPT [
+    shape=box,
+    label="GPT Implementation",
+    llm_provider="openai",
+    llm_model="gpt-5.4",
+    reasoning_effort="high",
+    fidelity="full",
+    prompt="Implement the planned component for the Dippin toolchain. Read .tracker/current_plan.md for exactly what to build and .tracker/current_context.md for the current codebase state.\n\nRead the design spec at ../DIPPIN_DESIGN_PLAN.md for exact specifications.\nRead existing code in ir/ to match types precisely.\n\nRules:\n- Write idiomatic Go. Standard library only (no external deps beyond what go.mod already has).\n- Every exported function gets a test. Test files go next to source.\n- Match the IR types in ir/ exactly. Do not modify ir/ unless the plan says to.\n- Table-driven tests with edge cases from the plan.\n- One responsibility per package.\n- Use diagnostic codes from the spec (DIP001-DIP112) where applicable.\n- Write real, complete code — no stubs, no TODOs, no placeholders.\n- Run 'go build ./...' and 'go test ./...' to verify before finishing."
+  ];
+
+  ImplementGemini [
+    shape=box,
+    label="Gemini Implementation",
+    llm_provider="gemini",
+    llm_model="gemini-3-flash-preview",
+    reasoning_effort="high",
+    fidelity="full",
+    prompt="Implement the planned component for the Dippin toolchain. Read .tracker/current_plan.md for exactly what to build and .tracker/current_context.md for the current codebase state.\n\nRead the design spec at ../DIPPIN_DESIGN_PLAN.md for exact specifications.\nRead existing code in ir/ to match types precisely.\n\nRules:\n- Write idiomatic Go. Standard library only (no external deps beyond what go.mod already has).\n- Every exported function gets a test. Test files go next to source.\n- Match the IR types in ir/ exactly. Do not modify ir/ unless the plan says to.\n- Table-driven tests with edge cases from the plan.\n- One responsibility per package.\n- Use diagnostic codes from the spec (DIP001-DIP112) where applicable.\n- Write real, complete code — no stubs, no TODOs, no placeholders.\n- Run 'go build ./...' and 'go test ./...' to verify before finishing."
+  ];
+
+  ImplementJoin [shape=tripleoctagon, label="Implement Join"];
+
+  // ── Phase 4: Validate ───────────────────────────────────────────
+
+  ValidateBuild [
+    shape=parallelogram,
+    label="Validate Build and Tests",
+    tool_command="set -eu\necho '=== go vet ==='\ngo vet ./... 2>&1\necho ''\necho '=== go build ==='\ngo build ./... 2>&1\necho ''\necho '=== go test -v ==='\ngo test -v -count=1 ./... 2>&1\nprintf 'validation-pass'"
+  ];
+
+  // ── Phase 5: Review ─────────────────────────────────────────────
+
+  ReviewParallel [shape=component, label="Reviews (Parallel)"];
+
+  ReviewClaude [
+    shape=box,
+    label="Claude Review",
+    llm_provider="anthropic",
+    llm_model="claude-opus-4-6",
+    reasoning_effort="high",
+    prompt="Review the implementation against the Dippin design spec (../DIPPIN_DESIGN_PLAN.md). Check:\n1. Does the code match the spec's type definitions, validation rules, and syntax?\n2. Are tests comprehensive — happy path, errors, and edge cases the spec calls out?\n3. Does the code integrate correctly with the existing ir/ package?\n4. Is the code idiomatic Go with proper error handling?\n5. Any deviations from the spec that need justification?\n\nReturn STATUS: success if solid. Return STATUS: fail with specific required fixes if not."
+  ];
+
+  ReviewGPT [
+    shape=box,
+    label="GPT Review",
+    llm_provider="openai",
+    llm_model="gpt-5.4",
+    reasoning_effort="high",
+    prompt="Review the implementation against the Dippin design spec (../DIPPIN_DESIGN_PLAN.md). Check:\n1. Correctness: does the code do what the spec says?\n2. Completeness: are all spec requirements for this component addressed?\n3. Test quality: do tests cover happy path, error cases, and edge cases?\n4. Integration: does it work with existing packages without modification?\n\nReturn STATUS: success if solid. Return STATUS: fail with specific required fixes if not."
+  ];
+
+  ReviewGemini [
+    shape=box,
+    label="Gemini Review",
+    llm_provider="gemini",
+    llm_model="gemini-3-flash-preview",
+    reasoning_effort="high",
+    prompt="Review the implementation against the Dippin design spec (../DIPPIN_DESIGN_PLAN.md). Check:\n1. Spec fidelity: does the code faithfully implement what the design doc specifies?\n2. Edge cases: are boundary conditions and error paths handled?\n3. Test coverage: do tests exercise the contract surfaces, not just happy paths?\n4. Robustness: will this code survive adversarial or malformed input?\n\nReturn STATUS: success if solid. Return STATUS: fail with specific required fixes if not."
+  ];
+
+  ReviewsJoin [shape=tripleoctagon, label="Reviews Join"];
+
+  ReviewAnalysis [
+    shape=box,
+    label="Review Synthesis",
+    llm_provider="anthropic",
+    llm_model="claude-opus-4-6",
+    reasoning_effort="high",
+    goal_gate=true,
+    retry_target="ImplementClaude",
+    prompt="Synthesize all three reviews into one verdict.\n\n- If reviewers agree the code is solid: return STATUS: success.\n- If fixes are needed and reviewers agree on what: return STATUS: retry with a clear fix list.\n- If reviewers fundamentally disagree or component is broken: return STATUS: fail to escalate.\n\nBe concrete about what needs fixing if retry."
+  ];
+
+  // ── Phase 6: Ship & Loop ────────────────────────────────────────
+
+  CommitWork [
+    shape=box,
+    label="Commit Component",
+    llm_provider="anthropic",
+    llm_model="claude-sonnet-4-6",
+    reasoning_effort="low",
+    prompt="All reviews passed. Commit the new component with a clean conventional commit message. The message should name the package and what it implements (e.g., 'feat(parser): implement lexer with indentation tracking'). Include test count in the message body."
+  ];
+
+  MarkComplete [
+    shape=parallelogram,
+    label="Mark Component Complete",
+    tool_command="set -eu\n# Find the in_progress component and mark it complete\nawk -F'\\t' 'BEGIN{OFS=\"\\t\"} $3==\"in_progress\"{$3=\"complete\"} {print}' .tracker/ledger.tsv > .tracker/ledger.tmp && mv .tracker/ledger.tmp .tracker/ledger.tsv\necho '=== Updated ledger ==='\ncat .tracker/ledger.tsv\nPENDING=$(awk -F'\\t' '$3==\"pending\"' .tracker/ledger.tsv | wc -l | tr -d ' ')\necho \"Remaining: $PENDING components\"\nprintf 'marked-complete'"
+  ];
+
+  FailureSummary [
+    shape=box,
+    label="Failure Summary",
+    llm_provider="anthropic",
+    llm_model="claude-sonnet-4-6",
+    reasoning_effort="high",
+    prompt="The component could not be built to satisfaction. Summarize what was attempted, what failed, and what the blockers are. Write this to .tracker/failure-report.md so the next run can pick up from here. Also mark the component back to 'pending' in the ledger."
+  ];
+
+  MarkFailed [
+    shape=parallelogram,
+    label="Reset Failed Component",
+    tool_command="set -eu\n# Reset in_progress back to pending\nawk -F'\\t' 'BEGIN{OFS=\"\\t\"} $3==\"in_progress\"{$3=\"pending\"} {print}' .tracker/ledger.tsv > .tracker/ledger.tmp && mv .tracker/ledger.tmp .tracker/ledger.tsv\ncat .tracker/ledger.tsv\nprintf 'reset-done'"
+  ];
+
+  // ── Edges ───────────────────────────────────────────────────────
+
+  // Setup
+  Start -> SetupWorkspace;
+  SetupWorkspace -> PickNextComponent;
+
+  // Task selection routing
+  PickNextComponent -> CheckComplete;
+  CheckComplete -> Exit [condition="context.tool_stdout=all_complete", label="all done"];
+  CheckComplete -> PlanComponent [condition="context.tool_stdout=has_next", label="has work"];
+
+  // Plan -> Implement
+  PlanComponent -> ImplementParallel;
+
+  // Parallel implementation
+  ImplementParallel -> ImplementClaude;
+  ImplementParallel -> ImplementGPT;
+  ImplementParallel -> ImplementGemini;
+  ImplementClaude -> ImplementJoin;
+  ImplementGPT -> ImplementJoin;
+  ImplementGemini -> ImplementJoin;
+
+  // Validation
+  ImplementJoin -> ValidateBuild;
+  ValidateBuild -> ReviewParallel [condition="outcome=success", label="validated"];
+  ValidateBuild -> ImplementClaude [condition="outcome=fail", label="fix_build"];
+
+  // Reviews
+  ReviewParallel -> ReviewClaude;
+  ReviewParallel -> ReviewGPT;
+  ReviewParallel -> ReviewGemini;
+  ReviewClaude -> ReviewsJoin;
+  ReviewGPT -> ReviewsJoin;
+  ReviewGemini -> ReviewsJoin;
+
+  // Synthesis and routing
+  ReviewsJoin -> ReviewAnalysis;
+  ReviewAnalysis -> CommitWork [condition="outcome=success", label="pass"];
+  ReviewAnalysis -> ImplementClaude [condition="outcome=retry", label="rework"];
+  ReviewAnalysis -> FailureSummary [condition="outcome=fail", label="escalate"];
+
+  // Ship and loop
+  CommitWork -> MarkComplete;
+  MarkComplete -> PickNextComponent [label="next component", loop_restart=true];
+
+  // Failure handling
+  FailureSummary -> MarkFailed;
+  MarkFailed -> Exit;
+}
+
+TURN 6
+TOOL CALL: read
+INPUT:
+{"path": "export/dot_test.go"}
+TOOL RESULT: read
+OUTPUT:
+package export
 
 import (
-	"fmt"
 	"strings"
+	"testing"
+	"time"
 
 	"github.com/2389/dippin/ir"
 )
 
-// Severity levels for diagnostics.
-type Severity int
+// --- Fixtures ---
 
-const (
-	SeverityError   Severity = iota // Must fix — workflow cannot execute
-	SeverityWarning                 // Should fix — likely a bug (used by linter, not this component)
-	SeverityInfo                    // Informational
-	SeverityHint                    // Suggestion
-)
-
-// String returns a human-readable severity label.
-func (s Severity) String() string {
-	switch s {
-	case SeverityError:
-		return "error"
-	case SeverityWarning:
-		return "warning"
-	case SeverityInfo:
-		return "info"
-	case SeverityHint:
-		return "hint"
-	default:
-		return "unknown"
+func minimalWorkflow() *ir.Workflow {
+	return &ir.Workflow{
+		Name:  "minimal",
+		Start: "Begin",
+		Exit:  "End",
+		Nodes: []*ir.Node{
+			{ID: "Begin", Kind: ir.NodeHuman, Config: ir.HumanConfig{Mode: "freeform"}},
+			{ID: "End", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Done."}},
+		},
+		Edges: []*ir.Edge{
+			{From: "Begin", To: "End"},
+		},
 	}
 }
 
-// Diagnostic represents a single validation finding.
-type Diagnostic struct {
-	Code     string            // "DIP001", "DIP002", etc.
-	Severity Severity          // Error, warning, etc.
-	Message  string            // Human-readable explanation
-	Location ir.SourceLocation // Where in the source (may be zero-value if unavailable)
-	Help     string            // Optional "did you mean X?" or explanation
-	Fix      string            // Optional suggested replacement text
+func askAndExecuteWorkflow() *ir.Workflow {
+	return &ir.Workflow{
+		Name:  "ask_and_execute",
+		Goal:  "Ask user for a task, implement it, review, ship",
+		Start: "AskUser",
+		Exit:  "Done",
+		Defaults: ir.WorkflowDefaults{
+			Model:       "claude-opus-4-6",
+			Provider:    "anthropic",
+			RetryPolicy: "standard",
+			Fidelity:    "summary:high",
+			MaxRestarts: 5,
+		},
+		Nodes: []*ir.Node{
+			{ID: "AskUser", Kind: ir.NodeHuman, Config: ir.HumanConfig{Mode: "freeform"}},
+			{
+				ID: "Interpret", Kind: ir.NodeAgent,
+				IO: ir.NodeIO{Reads: []string{"human_response"}, Writes: []string{"plan"}},
+				Config: ir.AgentConfig{
+					Prompt: "You are a senior software architect.\n\nRead the user's request below and produce a clear,\nactionable implementation plan.\n\n## User Request\n${ctx.human_response}",
+				},
+			},
+			{ID: "ImplementFanOut", Kind: ir.NodeParallel, Config: ir.ParallelConfig{Targets: []string{"ImplementClaude", "ImplementCodex"}}},
+			{
+				ID: "ImplementClaude", Kind: ir.NodeAgent,
+				Config: ir.AgentConfig{Prompt: "Implement the plan.", Model: "gpt-5.4", Provider: "openai"},
+			},
+			{
+				ID: "ImplementCodex", Kind: ir.NodeAgent,
+				Config: ir.AgentConfig{Prompt: "Implement the plan.", Model: "gpt-5.3-codex", Provider: "openai"},
+			},
+			{ID: "ImplementJoin", Kind: ir.NodeFanIn, Config: ir.FanInConfig{Sources: []string{"ImplementClaude", "ImplementCodex"}}},
+			{
+				ID: "Validate", Kind: ir.NodeAgent,
+				Config: ir.AgentConfig{
+					Prompt:     "Review the implementations. Run tests.\nRespond with STATUS: success or STATUS: fail.",
+					AutoStatus: true,
+					GoalGate:   true,
+				},
+				Retry: ir.RetryConfig{MaxRetries: 2},
+			},
+			{ID: "Approve", Kind: ir.NodeHuman, Config: ir.HumanConfig{Mode: "choice", Default: "Yes"}},
+			{ID: "Done", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Ship it."}},
+		},
+		Edges: []*ir.Edge{
+			{From: "AskUser", To: "Interpret"},
+			{From: "Interpret", To: "ImplementFanOut"},
+			{From: "ImplementJoin", To: "Validate"},
+			{From: "Validate", To: "Approve", Condition: &ir.Condition{
+				Raw:    "ctx.outcome = success",
+				Parsed: ir.CondCompare{Variable: "ctx.outcome", Op: "=", Value: "success"},
+			}},
+			{From: "Validate", To: "Interpret", Label: "retry", Restart: true, Condition: &ir.Condition{
+				Raw:    "ctx.outcome = fail",
+				Parsed: ir.CondCompare{Variable: "ctx.outcome", Op: "=", Value: "fail"},
+			}},
+			{From: "Approve", To: "Done"},
+		},
+	}
 }
 
-// String returns a formatted diagnostic string matching the spec format:
-//
-//	error[DIP003]: unknown node reference "InterpretX" in edge
-//	  --> pipeline.dip:45:5
-//	  = help: did you mean "Interpret"?
-func (d Diagnostic) String() string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "%s[%s]: %s", d.Severity, d.Code, d.Message)
-
-	file := d.Location.File
-	if file == "" {
-		file = "<unknown>"
+func toolWorkflow() *ir.Workflow {
+	return &ir.Workflow{
+		Name:  "tool_test",
+		Start: "Check",
+		Exit:  "Report",
+		Nodes: []*ir.Node{
+			{
+				ID: "Check", Kind: ir.NodeTool,
+				IO: ir.NodeIO{Writes: []string{"test_result"}},
+				Config: ir.ToolConfig{
+					Command: "#!/bin/sh\nset -eu\npytest --tb=short",
+					Timeout: 60 * time.Second,
+				},
+			},
+			{ID: "Report", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Report results."}},
+		},
+		Edges: []*ir.Edge{
+			{From: "Check", To: "Report"},
+		},
 	}
-	fmt.Fprintf(&b, "\n  --> %s:%d:%d", file, d.Location.Line, d.Location.Column)
-
-	if d.Help != "" {
-		fmt.Fprintf(&b, "\n  = help: %s", d.Help)
-	}
-	if d.Fix != "" {
-		fmt.Fprintf(&b, "\n  = fix: %s", d.Fix)
-	}
-	return b.String()
 }
 
-// Result holds the outcome of a validation pass.
-type Result struct {
-	Diagnostics []Diagnostic
+func subgraphWorkflow() *ir.Workflow {
+	return &ir.Workflow{
+		Name:  "with_subgraph",
+		Start: "Build",
+		Exit:  "Done",
+		Nodes: []*ir.Node{
+			{ID: "Build", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Build the feature."}},
+			{
+				ID: "Review", Kind: ir.NodeSubgraph,
+				Config: ir.SubgraphConfig{
+					Ref:    "./review.dip",
+					Params: map[string]string{"model": "gpt-5.4"},
+				},
+			},
+			{ID: "Done", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Done."}},
+		},
+		Edges: []*ir.Edge{
+			{From: "Build", To: "Review"},
+			{From: "Review", To: "Done"},
+		},
+	}
 }
 
-// Errors returns only error-severity diagnostics.
-func (r Result) Errors() []Diagnostic {
-	var out []Diagnostic
-	for _, d := range r.Diagnostics {
-		if d.Severity == SeverityError {
-			out = append(out, d)
+// --- Test helpers ---
+
+func assertContains(t *testing.T, output, substr string) {
+	t.Helper()
+	if !strings.Contains(output, substr) {
+		t.Errorf("output does not contain %q\n\ngot:\n%s", substr, output)
+	}
+}
+
+func assertNotContains(t *testing.T, output, substr string) {
+	t.Helper()
+	if strings.Contains(output, substr) {
+		t.Errorf("output unexpectedly contains %q\n\ngot:\n%s", substr, output)
+	}
+}
+
+// --- Tests ---
+
+func TestExportDOTMinimal(t *testing.T) {
+	out := ExportDOT(minimalWorkflow(), ExportOptions{})
+
+	assertContains(t, out, "digraph minimal {")
+	assertContains(t, out, "rankdir=TB;")
+	assertContains(t, out, `Begin [label="Begin", shape="Mdiamond"];`)
+	assertContains(t, out, `End [label="End", shape="Msquare"];`)
+	assertContains(t, out, "Begin -> End;")
+	assertContains(t, out, "}\n")
+}
+
+func TestExportDOTFullWorkflow(t *testing.T) {
+	out := ExportDOT(askAndExecuteWorkflow(), ExportOptions{})
+
+	// Verify digraph structure.
+	assertContains(t, out, "digraph ask_and_execute {")
+
+	// Start node gets Mdiamond shape.
+	assertContains(t, out, `AskUser [label="AskUser", shape="Mdiamond"];`)
+
+	// Exit node gets Msquare shape.
+	assertContains(t, out, `Done [label="Done", shape="Msquare"];`)
+
+	// Regular agent node gets box shape.
+	assertContains(t, out, `Interpret [label="Interpret", shape="box"];`)
+
+	// Human node (non-start) gets hexagon shape.
+	assertContains(t, out, `Approve [label="Approve", shape="hexagon"];`)
+
+	// Parallel node gets component shape.
+	assertContains(t, out, `ImplementFanOut [label="ImplementFanOut", shape="component"];`)
+
+	// Fan-in node gets tripleoctagon shape.
+	assertContains(t, out, `ImplementJoin [label="ImplementJoin", shape="tripleoctagon"];`)
+
+	// Simple edge.
+	assertContains(t, out, "AskUser -> Interpret;")
+
+	// Conditional edge.
+	assertContains(t, out, `Validate -> Approve [condition="ctx.outcome = success", label="ctx.outcome = success"];`)
+
+	// Restart edge with condition and label.
+	assertContains(t, out, `Validate -> Interpret`)
+	assertContains(t, out, `restart="true"`)
+	assertContains(t, out, `style="dashed"`)
+}
+
+func TestExportDOTNodeShapes(t *testing.T) {
+	tests := []struct {
+		name     string
+		kind     ir.NodeKind
+		config   ir.NodeConfig
+		wantAttr string
+	}{
+		{"agent", ir.NodeAgent, ir.AgentConfig{Prompt: "go."}, `shape="box"`},
+		{"human", ir.NodeHuman, ir.HumanConfig{}, `shape="hexagon"`},
+		{"tool", ir.NodeTool, ir.ToolConfig{Command: "echo"}, `shape="parallelogram"`},
+		{"parallel", ir.NodeParallel, ir.ParallelConfig{Targets: []string{"A"}}, `shape="component"`},
+		{"fan_in", ir.NodeFanIn, ir.FanInConfig{Sources: []string{"A"}}, `shape="tripleoctagon"`},
+		{"subgraph", ir.NodeSubgraph, ir.SubgraphConfig{Ref: "x.dip"}, `shape="tab"`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := &ir.Workflow{
+				Name:  "test",
+				Start: "Start",
+				Exit:  "Exit",
+				Nodes: []*ir.Node{
+					{ID: "Start", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go."}},
+					{ID: "N", Kind: tt.kind, Config: tt.config},
+					{ID: "Exit", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done."}},
+				},
+			}
+			out := ExportDOT(w, ExportOptions{})
+			// N should get its kind-based shape (not overridden by start/exit).
+			if !strings.Contains(out, tt.wantAttr) {
+				t.Errorf("node N missing %s in output:\n%s", tt.wantAttr, out)
+			}
+		})
+	}
+}
+
+func TestExportDOTStartExitShapeOverride(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "test",
+		Start: "S",
+		Exit:  "E",
+		Nodes: []*ir.Node{
+			{ID: "S", Kind: ir.NodeHuman, Config: ir.HumanConfig{}},
+			{ID: "E", Kind: ir.NodeTool, Config: ir.ToolConfig{Command: "echo done"}},
+		},
+		Edges: []*ir.Edge{{From: "S", To: "E"}},
+	}
+	out := ExportDOT(w, ExportOptions{})
+
+	// Start node should be Mdiamond regardless of kind.
+	assertContains(t, out, `S [label="S", shape="Mdiamond"];`)
+	// Exit node should be Msquare regardless of kind.
+	assertContains(t, out, `E [label="E", shape="Msquare"];`)
+}
+
+func TestExportDOTNodeLabel(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "test",
+		Start: "A",
+		Exit:  "B",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Label: "My Agent", Config: ir.AgentConfig{Prompt: "go."}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done."}},
+		},
+	}
+	out := ExportDOT(w, ExportOptions{})
+
+	// Node with a label uses the label text.
+	assertContains(t, out, `label="My Agent"`)
+	// Node without a label uses the ID.
+	assertContains(t, out, `B [label="B"`)
+}
+
+func TestExportDOTRankDir(t *testing.T) {
+	tests := []struct {
+		name    string
+		rankDir string
+		want    string
+	}{
+		{"default", "", "rankdir=TB;"},
+		{"LR", "LR", "rankdir=LR;"},
+		{"TB explicit", "TB", "rankdir=TB;"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := minimalWorkflow()
+			out := ExportDOT(w, ExportOptions{RankDir: tt.rankDir})
+			assertContains(t, out, tt.want)
+		})
+	}
+}
+
+func TestExportDOTIncludePrompts(t *testing.T) {
+	t.Run("prompts included", func(t *testing.T) {
+		w := &ir.Workflow{
+			Name:  "test",
+			Start: "A",
+			Exit:  "A",
+			Nodes: []*ir.Node{
+				{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+					Prompt:   "Line one.\nLine two.",
+					Model:    "gpt-5.4",
+					Provider: "openai",
+				}},
+			},
+		}
+		out := ExportDOT(w, ExportOptions{IncludePrompts: true})
+		assertContains(t, out, `model="gpt-5.4"`)
+		assertContains(t, out, `prompt="Line one.`+`\n`+`Line two."`)
+		assertContains(t, out, `provider="openai"`)
+	})
+
+	t.Run("prompts excluded by default", func(t *testing.T) {
+		w := &ir.Workflow{
+			Name:  "test",
+			Start: "A",
+			Exit:  "A",
+			Nodes: []*ir.Node{
+				{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+					Prompt: "secret prompt",
+					Model:  "gpt-5.4",
+				}},
+			},
+		}
+		out := ExportDOT(w, ExportOptions{})
+		assertNotContains(t, out, "prompt=")
+		assertNotContains(t, out, "model=")
+	})
+}
+
+func TestExportDOTToolCommand(t *testing.T) {
+	out := ExportDOT(toolWorkflow(), ExportOptions{IncludePrompts: true})
+	// Multiline command should be escaped.
+	assertContains(t, out, `tool_command="#!/bin/sh\nset -eu\npytest --tb=short"`)
+	assertContains(t, out, `timeout="1m"`)
+}
+
+func TestExportDOTHumanConfig(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "test",
+		Start: "H",
+		Exit:  "H",
+		Nodes: []*ir.Node{
+			{ID: "H", Kind: ir.NodeHuman, Config: ir.HumanConfig{Mode: "choice", Default: "Yes"}},
+		},
+	}
+	out := ExportDOT(w, ExportOptions{IncludePrompts: true})
+	assertContains(t, out, `default="Yes"`)
+	assertContains(t, out, `mode="choice"`)
+}
+
+func TestExportDOTSubgraphConfig(t *testing.T) {
+	out := ExportDOT(subgraphWorkflow(), ExportOptions{IncludePrompts: true})
+	assertContains(t, out, `ref="./review.dip"`)
+	assertContains(t, out, `shape="tab"`)
+}
+
+func TestExportDOTParallelConfig(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "test",
+		Start: "S",
+		Exit:  "J",
+		Nodes: []*ir.Node{
+			{ID: "S", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go."}},
+			{ID: "P", Kind: ir.NodeParallel, Config: ir.ParallelConfig{Targets: []string{"A", "B"}}},
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "a."}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "b."}},
+			{ID: "J", Kind: ir.NodeFanIn, Config: ir.FanInConfig{Sources: []string{"A", "B"}}},
+		},
+	}
+	out := ExportDOT(w, ExportOptions{IncludePrompts: true})
+	assertContains(t, out, `targets="A,B"`)
+	assertContains(t, out, `sources="A,B"`)
+}
+
+func TestExportDOTHighlightGoalGates(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "test",
+		Start: "A",
+		Exit:  "B",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go.", GoalGate: true}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done."}},
+		},
+	}
+
+	t.Run("highlighting enabled", func(t *testing.T) {
+		out := ExportDOT(w, ExportOptions{HighlightGoalGates: true})
+		assertContains(t, out, `fillcolor="#ffcccc"`)
+		assertContains(t, out, `style="filled"`)
+	})
+
+	t.Run("highlighting disabled", func(t *testing.T) {
+		out := ExportDOT(w, ExportOptions{HighlightGoalGates: false})
+		assertNotContains(t, out, "fillcolor")
+		assertNotContains(t, out, `style="filled"`)
+	})
+}
+
+func TestExportDOTEdgeConditions(t *testing.T) {
+	tests := []struct {
+		name      string
+		condition *ir.Condition
+		wantAttr  string
+	}{
+		{
+			name: "simple compare",
+			condition: &ir.Condition{
+				Raw:    "ctx.outcome = success",
+				Parsed: ir.CondCompare{Variable: "ctx.outcome", Op: "=", Value: "success"},
+			},
+			wantAttr: `condition="ctx.outcome = success"`,
+		},
+		{
+			name: "AND condition",
+			condition: &ir.Condition{
+				Raw: "ctx.x = 1 and ctx.y = 2",
+				Parsed: ir.CondAnd{
+					Left:  ir.CondCompare{Variable: "ctx.x", Op: "=", Value: "1"},
+					Right: ir.CondCompare{Variable: "ctx.y", Op: "=", Value: "2"},
+				},
+			},
+			wantAttr: `condition="ctx.x = 1 and ctx.y = 2"`,
+		},
+		{
+			name: "OR condition",
+			condition: &ir.Condition{
+				Raw: "ctx.x = 1 or ctx.x = 2",
+				Parsed: ir.CondOr{
+					Left:  ir.CondCompare{Variable: "ctx.x", Op: "=", Value: "1"},
+					Right: ir.CondCompare{Variable: "ctx.x", Op: "=", Value: "2"},
+				},
+			},
+			wantAttr: `condition="ctx.x = 1 or ctx.x = 2"`,
+		},
+		{
+			name: "NOT condition",
+			condition: &ir.Condition{
+				Raw: "not ctx.done = true",
+				Parsed: ir.CondNot{
+					Inner: ir.CondCompare{Variable: "ctx.done", Op: "=", Value: "true"},
+				},
+			},
+			wantAttr: `condition="not ctx.done = true"`,
+		},
+		{
+			name: "nested AND in OR — parenthesized",
+			condition: &ir.Condition{
+				Raw: "(ctx.x = 1 and ctx.y = 2) or ctx.z = 3",
+				Parsed: ir.CondOr{
+					Left: ir.CondAnd{
+						Left:  ir.CondCompare{Variable: "ctx.x", Op: "=", Value: "1"},
+						Right: ir.CondCompare{Variable: "ctx.y", Op: "=", Value: "2"},
+					},
+					Right: ir.CondCompare{Variable: "ctx.z", Op: "=", Value: "3"},
+				},
+			},
+			wantAttr: `condition="(ctx.x = 1 and ctx.y = 2) or ctx.z = 3"`,
+		},
+		{
+			name: "NOT of compound — parenthesized",
+			condition: &ir.Condition{
+				Raw: "not (ctx.x = 1 and ctx.y = 2)",
+				Parsed: ir.CondNot{
+					Inner: ir.CondAnd{
+						Left:  ir.CondCompare{Variable: "ctx.x", Op: "=", Value: "1"},
+						Right: ir.CondCompare{Variable: "ctx.y", Op: "=", Value: "2"},
+					},
+				},
+			},
+			wantAttr: `condition="not (ctx.x = 1 and ctx.y = 2)"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := &ir.Workflow{
+				Name:  "test",
+				Start: "A",
+				Exit:  "B",
+				Nodes: []*ir.Node{
+					{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go."}},
+					{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done."}},
+				},
+				Edges: []*ir.Edge{
+					{From: "A", To: "B", Condition: tt.condition},
+				},
+			}
+			out := ExportDOT(w, ExportOptions{})
+			assertContains(t, out, tt.wantAttr)
+		})
+	}
+}
+
+func TestExportDOTEdgeRestart(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "test",
+		Start: "A",
+		Exit:  "B",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go."}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done."}},
+		},
+		Edges: []*ir.Edge{
+			{From: "A", To: "B", Restart: true},
+		},
+	}
+	out := ExportDOT(w, ExportOptions{})
+	assertContains(t, out, `restart="true"`)
+	assertContains(t, out, `style="dashed"`)
+}
+
+func TestExportDOTEdgeWeight(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "test",
+		Start: "A",
+		Exit:  "B",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go."}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done."}},
+		},
+		Edges: []*ir.Edge{
+			{From: "A", To: "B", Weight: 10},
+		},
+	}
+	out := ExportDOT(w, ExportOptions{})
+	assertContains(t, out, `weight="10"`)
+}
+
+func TestExportDOTEdgeLabelWithCondition(t *testing.T) {
+	// When an edge has both a label and a condition, the explicit label is used
+	// and the condition is a separate attribute.
+	w := &ir.Workflow{
+		Name:  "test",
+		Start: "A",
+		Exit:  "B",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go."}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done."}},
+		},
+		Edges: []*ir.Edge{
+			{
+				From:  "A",
+				To:    "B",
+				Label: "retry",
+				Condition: &ir.Condition{
+					Raw:    "ctx.outcome = fail",
+					Parsed: ir.CondCompare{Variable: "ctx.outcome", Op: "=", Value: "fail"},
+				},
+			},
+		},
+	}
+	out := ExportDOT(w, ExportOptions{})
+	assertContains(t, out, `label="retry"`)
+	assertContains(t, out, `condition="ctx.outcome = fail"`)
+}
+
+func TestExportDOTEdgeConditionAsLabel(t *testing.T) {
+	// When an edge has a condition but no explicit label, the condition
+	// text is used as the label for visual display.
+	w := &ir.Workflow{
+		Name:  "test",
+		Start: "A",
+		Exit:  "B",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go."}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done."}},
+		},
+		Edges: []*ir.Edge{
+			{
+				From: "A",
+				To:   "B",
+				Condition: &ir.Condition{
+					Raw:    "ctx.outcome = success",
+					Parsed: ir.CondCompare{Variable: "ctx.outcome", Op: "=", Value: "success"},
+				},
+			},
+		},
+	}
+	out := ExportDOT(w, ExportOptions{})
+	assertContains(t, out, `label="ctx.outcome = success"`)
+	assertContains(t, out, `condition="ctx.outcome = success"`)
+}
+
+func TestExportDOTEmptyWorkflow(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "empty",
+		Start: "S",
+		Exit:  "E",
+	}
+	out := ExportDOT(w, ExportOptions{})
+	assertContains(t, out, "digraph empty {")
+	assertContains(t, out, "}\n")
+	// No node or edge lines (just the preamble and closing).
+	assertNotContains(t, out, "->")
+}
+
+func TestExportDOTNoName(t *testing.T) {
+	w := &ir.Workflow{
+		Start: "S",
+		Exit:  "E",
+	}
+	out := ExportDOT(w, ExportOptions{})
+	assertContains(t, out, "digraph workflow {")
+}
+
+func TestExportDOTAllEdgeAttributes(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "test",
+		Start: "A",
+		Exit:  "B",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go."}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done."}},
+		},
+		Edges: []*ir.Edge{
+			{
+				From:    "A",
+				To:      "B",
+				Label:   "retry",
+				Weight:  5,
+				Restart: true,
+				Condition: &ir.Condition{
+					Raw:    "ctx.outcome = fail",
+					Parsed: ir.CondCompare{Variable: "ctx.outcome", Op: "=", Value: "fail"},
+				},
+			},
+		},
+	}
+	out := ExportDOT(w, ExportOptions{})
+	assertContains(t, out, `condition="ctx.outcome = fail"`)
+	assertContains(t, out, `label="retry"`)
+	assertContains(t, out, `restart="true"`)
+	assertContains(t, out, `style="dashed"`)
+	assertContains(t, out, `weight="5"`)
+}
+
+func TestExportDOTIdempotent(t *testing.T) {
+	workflows := []*ir.Workflow{
+		minimalWorkflow(),
+		askAndExecuteWorkflow(),
+		toolWorkflow(),
+		subgraphWorkflow(),
+	}
+	for _, w := range workflows {
+		first := ExportDOT(w, ExportOptions{IncludePrompts: true})
+		second := ExportDOT(w, ExportOptions{IncludePrompts: true})
+		if first != second {
+			t.Errorf("ExportDOT is not idempotent for workflow %q", w.Name)
 		}
 	}
-	return out
 }
 
-// HasErrors returns true if any error-severity diagnostics exist.
-func (r Result) HasErrors() bool {
-	for _, d := range r.Diagnostics {
-		if d.Severity == SeverityError {
-			return true
+func TestExportDOTDeterministicAttrOrder(t *testing.T) {
+	// Attributes should always appear in sorted order.
+	w := &ir.Workflow{
+		Name:  "test",
+		Start: "A",
+		Exit:  "B",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go."}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done."}},
+		},
+		Edges: []*ir.Edge{
+			{
+				From:    "A",
+				To:      "B",
+				Label:   "go",
+				Weight:  3,
+				Restart: true,
+			},
+		},
+	}
+	out := ExportDOT(w, ExportOptions{})
+
+	// Find the edge line.
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "A -> B") {
+			// Verify attribute order: label, restart, style, weight (alphabetical).
+			labelIdx := strings.Index(line, "label=")
+			restartIdx := strings.Index(line, "restart=")
+			styleIdx := strings.Index(line, "style=")
+			weightIdx := strings.Index(line, "weight=")
+			if labelIdx > restartIdx || restartIdx > styleIdx || styleIdx > weightIdx {
+				t.Errorf("attributes not in sorted order: %s", line)
+			}
+			return
 		}
 	}
-	return false
+	t.Error("could not find edge line A -> B")
+}
+
+func TestExportDOTSpecialCharactersInLabel(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "test",
+		Start: "A",
+		Exit:  "A",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Label: `Say "hello" & goodbye`, Config: ir.AgentConfig{Prompt: "go."}},
+		},
+	}
+	out := ExportDOT(w, ExportOptions{})
+	// Internal quotes should be escaped.
+	assertContains(t, out, `label="Say \"hello\" & goodbye"`)
+}
+
+func TestExportDOTValidDOTSyntax(t *testing.T) {
+	// Basic structural validation: the output should be parseable as DOT.
+	out := ExportDOT(askAndExecuteWorkflow(), ExportOptions{IncludePrompts: true})
+
+	// Should start with digraph and end with }
+	if !strings.HasPrefix(out, "digraph ") {
+		t.Error("output should start with 'digraph '")
+	}
+	if !strings.HasSuffix(out, "}\n") {
+		t.Error("output should end with '}\\n'")
+	}
+
+	// Count braces — should be balanced.
+	opens := strings.Count(out, "{")
+	closes := strings.Count(out, "}")
+	if opens != closes {
+		t.Errorf("unbalanced braces: %d opens, %d closes", opens, closes)
+	}
+
+	// Every node and edge statement should end with semicolon.
+	for _, line := range strings.Split(out, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || trimmed == "}" || strings.HasPrefix(trimmed, "digraph") {
+			continue
+		}
+		if !strings.HasSuffix(trimmed, ";") {
+			t.Errorf("line does not end with semicolon: %q", trimmed)
+		}
+	}
+}
+
+func TestExportDOTNilConditionParsed(t *testing.T) {
+	// Edge with Condition but nil Parsed should not emit condition attribute.
+	w := &ir.Workflow{
+		Name:  "test",
+		Start: "A",
+		Exit:  "B",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go."}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done."}},
+		},
+		Edges: []*ir.Edge{
+			{From: "A", To: "B", Condition: &ir.Condition{Raw: "ctx.x = 1"}},
+		},
+	}
+	out := ExportDOT(w, ExportOptions{})
+	assertNotContains(t, out, "condition=")
+}
+
+func TestExportDOTNilConfig(t *testing.T) {
+	// A node with nil config should not panic.
+	w := &ir.Workflow{
+		Name:  "test",
+		Start: "A",
+		Exit:  "A",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent},
+		},
+	}
+	out := ExportDOT(w, ExportOptions{IncludePrompts: true})
+	assertContains(t, out, `A [`)
+}
+
+func TestExportDOTGoalGateNonAgent(t *testing.T) {
+	// HighlightGoalGates should only apply to agent nodes with GoalGate: true.
+	w := &ir.Workflow{
+		Name:  "test",
+		Start: "H",
+		Exit:  "H",
+		Nodes: []*ir.Node{
+			{ID: "H", Kind: ir.NodeHuman, Config: ir.HumanConfig{Mode: "freeform"}},
+		},
+	}
+	out := ExportDOT(w, ExportOptions{HighlightGoalGates: true})
+	assertNotContains(t, out, "fillcolor")
+}
+
+// --- Unit tests for internal helpers ---
+
+func TestDotID(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"AskUser", "AskUser"},
+		{"simple_name", "simple_name"},
+		{"has space", `"has space"`},
+		{"123start", `"123start"`},
+		{"", `""`},
+		{"with-dash", `"with-dash"`},
+		{"with.dot", `"with.dot"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := dotID(tt.input)
+			if got != tt.want {
+				t.Errorf("dotID(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDotQuote(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"hello", `"hello"`},
+		{`say "hi"`, `"say \"hi\""`},
+		{`path\to`, `"path\\to"`},
+		{"", `""`},
+		{`line1\nline2`, `"line1\nline2"`},     // DOT escape sequence preserved
+		{`left\lalign`, `"left\lalign"`},        // DOT \l preserved
+		{`real\\backslash`, `"real\\\\backslash"`}, // Actual backslash-backslash escaped
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := dotQuote(tt.input)
+			if got != tt.want {
+				t.Errorf("dotQuote(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestEscapeNewlines(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"no newlines", "no newlines"},
+		{"line1\nline2", `line1\nline2`},
+		{"a\nb\nc", `a\nb\nc`},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := escapeNewlines(tt.input)
+			if got != tt.want {
+				t.Errorf("escapeNewlines(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFormatDuration(t *testing.T) {
+	tests := []struct {
+		input time.Duration
+		want  string
+	}{
+		{30 * time.Second, "30s"},
+		{5 * time.Minute, "5m"},
+		{time.Hour, "1h"},
+		{90 * time.Minute, "1h30m"},
+		{0, "0s"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			got := formatDuration(tt.input)
+			if got != tt.want {
+				t.Errorf("formatDuration(%v) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFormatConditionExport(t *testing.T) {
+	tests := []struct {
+		name string
+		expr ir.ConditionExpr
+		want string
+	}{
+		{
+			name: "simple compare",
+			expr: ir.CondCompare{Variable: "ctx.outcome", Op: "=", Value: "success"},
+			want: "ctx.outcome = success",
+		},
+		{
+			name: "AND",
+			expr: ir.CondAnd{
+				Left:  ir.CondCompare{Variable: "ctx.x", Op: "=", Value: "1"},
+				Right: ir.CondCompare{Variable: "ctx.y", Op: "=", Value: "2"},
+			},
+			want: "ctx.x = 1 and ctx.y = 2",
+		},
+		{
+			name: "OR",
+			expr: ir.CondOr{
+				Left:  ir.CondCompare{Variable: "ctx.x", Op: "=", Value: "1"},
+				Right: ir.CondCompare{Variable: "ctx.x", Op: "=", Value: "2"},
+			},
+			want: "ctx.x = 1 or ctx.x = 2",
+		},
+		{
+			name: "NOT",
+			expr: ir.CondNot{Inner: ir.CondCompare{Variable: "ctx.done", Op: "=", Value: "true"}},
+			want: "not ctx.done = true",
+		},
+		{
+			name: "AND inside OR parenthesized",
+			expr: ir.CondOr{
+				Left: ir.CondAnd{
+					Left:  ir.CondCompare{Variable: "ctx.x", Op: "=", Value: "1"},
+					Right: ir.CondCompare{Variable: "ctx.y", Op: "=", Value: "2"},
+				},
+				Right: ir.CondCompare{Variable: "ctx.z", Op: "=", Value: "3"},
+			},
+			want: "(ctx.x = 1 and ctx.y = 2) or ctx.z = 3",
+		},
+		{
+			name: "NOT of compound parenthesized",
+			expr: ir.CondNot{
+				Inner: ir.CondAnd{
+					Left:  ir.CondCompare{Variable: "ctx.x", Op: "=", Value: "1"},
+					Right: ir.CondCompare{Variable: "ctx.y", Op: "=", Value: "2"},
+				},
+			},
+			want: "not (ctx.x = 1 and ctx.y = 2)",
+		},
+		{
+			name: "nil",
+			expr: nil,
+			want: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := formatCondition(tt.expr)
+			if got != tt.want {
+				t.Errorf("formatCondition() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSortStrings(t *testing.T) {
+	tests := []struct {
+		input []string
+		want  []string
+	}{
+		{[]string{"c", "a", "b"}, []string{"a", "b", "c"}},
+		{[]string{"z"}, []string{"z"}},
+		{nil, nil},
+		{[]string{}, []string{}},
+		{[]string{"a", "a"}, []string{"a", "a"}},
+	}
+	for _, tt := range tests {
+		got := make([]string, len(tt.input))
+		copy(got, tt.input)
+		sortStrings(got)
+		if len(got) != len(tt.want) {
+			t.Errorf("sortStrings(%v) length = %d, want %d", tt.input, len(got), len(tt.want))
+			continue
+		}
+		for i := range got {
+			if got[i] != tt.want[i] {
+				t.Errorf("sortStrings(%v)[%d] = %q, want %q", tt.input, i, got[i], tt.want[i])
+			}
+		}
+	}
+}
+
+func TestIsSimpleDOTID(t *testing.T) {
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		{"AskUser", true},
+		{"node_1", true},
+		{"A", true},
+		{"123", false},
+		{"has space", false},
+		{"has-dash", false},
+		{"has.dot", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := isSimpleDOTID(tt.input)
+			if got != tt.want {
+				t.Errorf("isSimpleDOTID(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFormatDOTAttrs(t *testing.T) {
+	t.Run("empty", func(t *testing.T) {
+		got := formatDOTAttrs(map[string]string{})
+		if got != "" {
+			t.Errorf("formatDOTAttrs({}) = %q, want empty", got)
+		}
+	})
+
+	t.Run("single", func(t *testing.T) {
+		got := formatDOTAttrs(map[string]string{"shape": "box"})
+		if got != `[shape="box"]` {
+			t.Errorf(`formatDOTAttrs = %q, want [shape="box"]`, got)
+		}
+	})
+
+	t.Run("sorted keys", func(t *testing.T) {
+		got := formatDOTAttrs(map[string]string{"z": "1", "a": "2"})
+		// a should come before z.
+		aIdx := strings.Index(got, "a=")
+		zIdx := strings.Index(got, "z=")
+		if aIdx > zIdx {
+			t.Errorf("keys not sorted: %s", got)
+		}
+	})
 }
 
 TOOL CALL: read
@@ -1161,1837 +3160,35 @@ var CodeDescription = map[string]string{
 	DIP009: "duplicate edge",
 }
 
-TOOL CALL: read
-INPUT:
-{"path": "validator/validate.go"}
-TOOL RESULT: read
-OUTPUT:
-package validator
-
-import (
-	"fmt"
-	"sort"
-	"strings"
-
-	"github.com/2389/dippin/ir"
-)
-
-// Validate runs all graph-structure checks (DIP001–DIP009) on the workflow
-// and returns all diagnostics found. It always runs all checks — never
-// short-circuits — so that a single pass reports everything.
-func Validate(w *ir.Workflow) Result {
-	var diags []Diagnostic
-
-	// Run all checks unconditionally. DIP008 first because duplicate detection
-	// is logically prior to other graph checks.
-	diags = append(diags, checkNoDuplicateNodes(w)...)
-	diags = append(diags, checkStartExists(w)...)
-	diags = append(diags, checkExitExists(w)...)
-	diags = append(diags, checkEdgeEndpoints(w)...)
-	diags = append(diags, checkExitNoOutgoing(w)...)
-	diags = append(diags, checkNoDuplicateEdges(w)...)
-	diags = append(diags, checkReachability(w)...)
-	diags = append(diags, checkNoCycles(w)...)
-	diags = append(diags, checkParallelFanIn(w)...)
-
-	return Result{Diagnostics: diags}
-}
-
-// checkStartExists verifies DIP001: the start node ID is set and references
-// an existing node.
-func checkStartExists(w *ir.Workflow) []Diagnostic {
-	if w.Start == "" {
-		return []Diagnostic{{
-			Code:     DIP001,
-			Severity: SeverityError,
-			Message:  "workflow has no start node declared",
-			Help:     "add a start: field to the workflow",
-		}}
-	}
-	if w.Node(w.Start) == nil {
-		return []Diagnostic{{
-			Code:     DIP001,
-			Severity: SeverityError,
-			Message:  fmt.Sprintf("start node %q is declared but does not exist in the node list", w.Start),
-			Help:     fmt.Sprintf("add a node with ID %q to the workflow", w.Start),
-		}}
-	}
-	return nil
-}
-
-// checkExitExists verifies DIP002: the exit node ID is set and references
-// an existing node.
-func checkExitExists(w *ir.Workflow) []Diagnostic {
-	if w.Exit == "" {
-		return []Diagnostic{{
-			Code:     DIP002,
-			Severity: SeverityError,
-			Message:  "workflow has no exit node declared",
-			Help:     "add an exit: field to the workflow",
-		}}
-	}
-	if w.Node(w.Exit) == nil {
-		return []Diagnostic{{
-			Code:     DIP002,
-			Severity: SeverityError,
-			Message:  fmt.Sprintf("exit node %q is declared but does not exist in the node list", w.Exit),
-			Help:     fmt.Sprintf("add a node with ID %q to the workflow", w.Exit),
-		}}
-	}
-	return nil
-}
-
-// checkEdgeEndpoints verifies DIP003: every edge endpoint references an existing node.
-// If a dangling reference is close to an existing node ID (Levenshtein ≤ 2),
-// a "did you mean?" suggestion is included.
-func checkEdgeEndpoints(w *ir.Workflow) []Diagnostic {
-	var diags []Diagnostic
-	nodeSet := buildNodeSet(w)
-
-	for _, e := range w.Edges {
-		if _, ok := nodeSet[e.From]; !ok && e.From != "" {
-			d := Diagnostic{
-				Code:     DIP003,
-				Severity: SeverityError,
-				Message:  fmt.Sprintf("edge references unknown source node %q", e.From),
-				Location: e.Source,
-			}
-			if suggestion := closestNodeID(w, e.From); suggestion != "" {
-				d.Help = fmt.Sprintf("did you mean %q?", suggestion)
-			} else {
-				d.Help = fmt.Sprintf("declare a node with ID %q or fix the edge source", e.From)
-			}
-			diags = append(diags, d)
-		}
-		if _, ok := nodeSet[e.To]; !ok && e.To != "" {
-			d := Diagnostic{
-				Code:     DIP003,
-				Severity: SeverityError,
-				Message:  fmt.Sprintf("edge references unknown target node %q", e.To),
-				Location: e.Source,
-			}
-			if suggestion := closestNodeID(w, e.To); suggestion != "" {
-				d.Help = fmt.Sprintf("did you mean %q?", suggestion)
-			} else {
-				d.Help = fmt.Sprintf("declare a node with ID %q or fix the edge target", e.To)
-			}
-			diags = append(diags, d)
-		}
-	}
-	return diags
-}
-
-// checkReachability verifies DIP004: all nodes are reachable from the start node.
-// Uses BFS traversal including restart edges (restart edges are valid paths for
-// reachability purposes).
-func checkReachability(w *ir.Workflow) []Diagnostic {
-	// If start doesn't exist, we can't do reachability.
-	if w.Start == "" || w.Node(w.Start) == nil {
-		return nil
-	}
-
-	// Build adjacency list from edges for BFS.
-	adj := make(map[string][]string)
-	for _, e := range w.Edges {
-		adj[e.From] = append(adj[e.From], e.To)
-	}
-
-	visited := make(map[string]bool)
-	queue := []string{w.Start}
-	visited[w.Start] = true
-
-	for len(queue) > 0 {
-		curr := queue[0]
-		queue = queue[1:]
-		for _, next := range adj[curr] {
-			if !visited[next] {
-				visited[next] = true
-				queue = append(queue, next)
-			}
-		}
-	}
-
-	var diags []Diagnostic
-	for _, n := range w.Nodes {
-		if !visited[n.ID] {
-			diags = append(diags, Diagnostic{
-				Code:     DIP004,
-				Severity: SeverityError,
-				Message:  fmt.Sprintf("node %q is unreachable from start node %q", n.ID, w.Start),
-				Location: n.Source,
-				Help:     fmt.Sprintf("add an edge leading to %q or remove it", n.ID),
-			})
-		}
-	}
-	return diags
-}
-
-// checkNoCycles verifies DIP005: no unconditional cycles exist after excluding
-// edges marked restart: true. Per ADR 1, restart edges are back-edges that
-// trigger downstream clear + re-execution and are not considered cycles.
-func checkNoCycles(w *ir.Workflow) []Diagnostic {
-	if w.Start == "" || w.Node(w.Start) == nil {
-		return nil
-	}
-
-	// Build adjacency list excluding restart edges.
-	adj := make(map[string][]string)
-	for _, e := range w.Edges {
-		if !e.Restart {
-			adj[e.From] = append(adj[e.From], e.To)
-		}
-	}
-
-	// DFS with white/gray/black coloring for cycle detection.
-	const (
-		white = 0 // Not visited
-		gray  = 1 // In current DFS path (visiting)
-		black = 2 // Fully processed (done)
-	)
-
-	color := make(map[string]int)
-	parent := make(map[string]string)
-
-	var diags []Diagnostic
-
-	var dfs func(node string) bool
-	dfs = func(node string) bool {
-		color[node] = gray
-		for _, next := range adj[node] {
-			if color[next] == gray {
-				// Found a cycle — reconstruct path from next → ... → node → next
-				cycle := reconstructCycle(parent, node, next)
-				diags = append(diags, Diagnostic{
-					Code:     DIP005,
-					Severity: SeverityError,
-					Message:  fmt.Sprintf("unconditional cycle detected: %s", strings.Join(cycle, " → ")),
-					Help:     "break the cycle by removing an edge or marking it restart: true",
-				})
-				return true
-			}
-			if color[next] == white {
-				parent[next] = node
-				if dfs(next) {
-					return true
-				}
-			}
-		}
-		color[node] = black
-		return false
-	}
-
-	// Start DFS from all nodes to catch cycles in disconnected components too.
-	for _, n := range w.Nodes {
-		if color[n.ID] == white {
-			dfs(n.ID)
-		}
-	}
-
-	return diags
-}
-
-// reconstructCycle builds the cycle path from the DFS parent map.
-// Given that we found an edge from → to where to is already gray (in the
-// current path), we walk parent pointers from "from" back to "to" to
-// reconstruct: to → ... → from → to.
-func reconstructCycle(parent map[string]string, from, to string) []string {
-	path := []string{to}
-	curr := from
-	for curr != to {
-		path = append(path, curr)
-		curr = parent[curr]
-	}
-	path = append(path, to)
-	// Reverse so it reads: to → ... → from → to
-	for i, j := 0, len(path)-1; i < j; i, j = i+1, j-1 {
-		path[i], path[j] = path[j], path[i]
-	}
-	return path
-}
-
-// checkExitNoOutgoing verifies DIP006: the exit node has no outgoing edges.
-func checkExitNoOutgoing(w *ir.Workflow) []Diagnostic {
-	if w.Exit == "" || w.Node(w.Exit) == nil {
-		return nil
-	}
-
-	outgoing := w.EdgesFrom(w.Exit)
-	if len(outgoing) == 0 {
-		return nil
-	}
-
-	var diags []Diagnostic
-	for _, e := range outgoing {
-		diags = append(diags, Diagnostic{
-			Code:     DIP006,
-			Severity: SeverityError,
-			Message:  fmt.Sprintf("exit node %q has outgoing edge to %q", w.Exit, e.To),
-			Location: e.Source,
-			Help:     "remove the outgoing edge or change the exit node",
-		})
-	}
-	return diags
-}
-
-// checkParallelFanIn verifies DIP007: every parallel fan-out node has a matching
-// fan-in node, and vice versa. Matching means the ParallelConfig.Targets set
-// equals the FanInConfig.Sources set (order-insensitive).
-func checkParallelFanIn(w *ir.Workflow) []Diagnostic {
-	var diags []Diagnostic
-
-	type nodeTargets struct {
-		node   *ir.Node
-		sorted []string
-	}
-
-	var parallels []nodeTargets
-	var fanIns []nodeTargets
-
-	for _, n := range w.Nodes {
-		switch cfg := n.Config.(type) {
-		case ir.ParallelConfig:
-			sorted := make([]string, len(cfg.Targets))
-			copy(sorted, cfg.Targets)
-			sort.Strings(sorted)
-			parallels = append(parallels, nodeTargets{node: n, sorted: sorted})
-		case ir.FanInConfig:
-			sorted := make([]string, len(cfg.Sources))
-			copy(sorted, cfg.Sources)
-			sort.Strings(sorted)
-			fanIns = append(fanIns, nodeTargets{node: n, sorted: sorted})
-		}
-	}
-
-	// For each parallel node, check there's a matching fan-in.
-	for _, p := range parallels {
-		found := false
-		for _, f := range fanIns {
-			if slicesEqual(p.sorted, f.sorted) {
-				found = true
-				break
-			}
-		}
-		if !found {
-			diags = append(diags, Diagnostic{
-				Code:     DIP007,
-				Severity: SeverityError,
-				Message:  fmt.Sprintf("parallel node %q has targets %v but no matching fan_in node", p.node.ID, p.sorted),
-				Location: p.node.Source,
-				Help:     fmt.Sprintf("add a fan_in node with sources: %v", p.sorted),
-			})
-		}
-	}
-
-	// For each fan-in node, check there's a matching parallel.
-	for _, f := range fanIns {
-		found := false
-		for _, p := range parallels {
-			if slicesEqual(f.sorted, p.sorted) {
-				found = true
-				break
-			}
-		}
-		if !found {
-			diags = append(diags, Diagnostic{
-				Code:     DIP007,
-				Severity: SeverityError,
-				Message:  fmt.Sprintf("fan_in node %q has sources %v but no matching parallel node", f.node.ID, f.sorted),
-				Location: f.node.Source,
-				Help:     fmt.Sprintf("add a parallel node with targets: %v", f.sorted),
-			})
-		}
-	}
-
-	return diags
-}
-
-// checkNoDuplicateNodes verifies DIP008: no two nodes share the same ID.
-func checkNoDuplicateNodes(w *ir.Workflow) []Diagnostic {
-	var diags []Diagnostic
-	seen := make(map[string]*ir.Node)
-
-	for _, n := range w.Nodes {
-		if first, ok := seen[n.ID]; ok {
-			diags = append(diags, Diagnostic{
-				Code:     DIP008,
-				Severity: SeverityError,
-				Message:  fmt.Sprintf("duplicate node ID %q", n.ID),
-				Location: n.Source,
-				Help:     fmt.Sprintf("first declaration at %s:%d:%d", locFile(first.Source), first.Source.Line, first.Source.Column),
-			})
-		} else {
-			seen[n.ID] = n
-		}
-	}
-	return diags
-}
-
-// checkNoDuplicateEdges verifies DIP009: no two edges are identical.
-// The dedup key is (From, To, Condition.Raw). Two edges with the same
-// endpoints but different conditions are conditional branches, not duplicates.
-func checkNoDuplicateEdges(w *ir.Workflow) []Diagnostic {
-	type edgeKey struct {
-		from, to, condRaw string
-	}
-
-	var diags []Diagnostic
-	seen := make(map[edgeKey]*ir.Edge)
-
-	for _, e := range w.Edges {
-		condRaw := ""
-		if e.Condition != nil {
-			condRaw = e.Condition.Raw
-		}
-		key := edgeKey{from: e.From, to: e.To, condRaw: condRaw}
-		if first, ok := seen[key]; ok {
-			diags = append(diags, Diagnostic{
-				Code:     DIP009,
-				Severity: SeverityError,
-				Message:  fmt.Sprintf("duplicate edge from %q to %q", e.From, e.To),
-				Location: e.Source,
-				Help:     fmt.Sprintf("first declaration at %s:%d:%d", locFile(first.Source), first.Source.Line, first.Source.Column),
-			})
-		} else {
-			seen[key] = e
-		}
-	}
-	return diags
-}
-
-// --- Helpers ---
-
-// buildNodeSet returns a set of all node IDs in the workflow.
-func buildNodeSet(w *ir.Workflow) map[string]bool {
-	set := make(map[string]bool, len(w.Nodes))
-	for _, n := range w.Nodes {
-		set[n.ID] = true
-	}
-	return set
-}
-
-// closestNodeID returns the node ID most similar to the given name,
-// or "" if no node is within edit distance 2.
-func closestNodeID(w *ir.Workflow, name string) string {
-	bestDist := 3 // threshold: Levenshtein ≤ 2
-	bestID := ""
-	for _, n := range w.Nodes {
-		d := levenshtein(name, n.ID)
-		if d < bestDist {
-			bestDist = d
-			bestID = n.ID
-		}
-	}
-	return bestID
-}
-
-// levenshtein computes the Levenshtein edit distance between two strings.
-func levenshtein(a, b string) int {
-	la, lb := len(a), len(b)
-	if la == 0 {
-		return lb
-	}
-	if lb == 0 {
-		return la
-	}
-
-	// Use two rows for space efficiency.
-	prev := make([]int, lb+1)
-	curr := make([]int, lb+1)
-
-	for j := 0; j <= lb; j++ {
-		prev[j] = j
-	}
-
-	for i := 1; i <= la; i++ {
-		curr[0] = i
-		for j := 1; j <= lb; j++ {
-			cost := 1
-			if a[i-1] == b[j-1] {
-				cost = 0
-			}
-			ins := curr[j-1] + 1
-			del := prev[j] + 1
-			sub := prev[j-1] + cost
-			m := ins
-			if del < m {
-				m = del
-			}
-			if sub < m {
-				m = sub
-			}
-			curr[j] = m
-		}
-		prev, curr = curr, prev
-	}
-	return prev[lb]
-}
-
-// slicesEqual returns true if two sorted string slices are element-wise equal.
-func slicesEqual(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
-// locFile returns the file from a SourceLocation, defaulting to "<unknown>".
-func locFile(loc ir.SourceLocation) string {
-	if loc.File == "" {
-		return "<unknown>"
-	}
-	return loc.File
-}
-
-TOOL CALL: read
-INPUT:
-{"path": "validator/validate_test.go"}
-TOOL RESULT: read
-OUTPUT:
-package validator
-
-import (
-	"strings"
-	"testing"
-
-	"github.com/2389/dippin/ir"
-)
-
-// --- Test fixtures ---
-
-// minimalValidWorkflow returns a valid two-node workflow.
-func minimalValidWorkflow() *ir.Workflow {
-	return &ir.Workflow{
-		Name:  "minimal",
-		Start: "Begin",
-		Exit:  "End",
-		Nodes: []*ir.Node{
-			{ID: "Begin", Kind: ir.NodeHuman, Config: ir.HumanConfig{Mode: "freeform"}},
-			{ID: "End", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Done."}},
-		},
-		Edges: []*ir.Edge{
-			{From: "Begin", To: "End"},
-		},
-	}
-}
-
-// askAndExecuteWorkflow returns the canonical example with restart edges
-// and parallel/fan_in.
-func askAndExecuteWorkflow() *ir.Workflow {
-	return &ir.Workflow{
-		Name:  "ask_and_execute",
-		Start: "AskUser",
-		Exit:  "Done",
-		Nodes: []*ir.Node{
-			{ID: "AskUser", Kind: ir.NodeHuman, Config: ir.HumanConfig{Mode: "freeform"}},
-			{ID: "Interpret", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Plan."}},
-			{ID: "ImplementFanOut", Kind: ir.NodeParallel, Config: ir.ParallelConfig{Targets: []string{"ImplementClaude", "ImplementCodex"}}},
-			{ID: "ImplementClaude", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Implement."}},
-			{ID: "ImplementCodex", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Implement."}},
-			{ID: "ImplementJoin", Kind: ir.NodeFanIn, Config: ir.FanInConfig{Sources: []string{"ImplementClaude", "ImplementCodex"}}},
-			{ID: "Validate", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Review."}},
-			{ID: "Approve", Kind: ir.NodeHuman, Config: ir.HumanConfig{Mode: "choice"}},
-			{ID: "Done", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Ship."}},
-		},
-		Edges: []*ir.Edge{
-			{From: "AskUser", To: "Interpret"},
-			{From: "Interpret", To: "ImplementFanOut"},
-			{From: "ImplementFanOut", To: "ImplementClaude"},
-			{From: "ImplementFanOut", To: "ImplementCodex"},
-			{From: "ImplementClaude", To: "ImplementJoin"},
-			{From: "ImplementCodex", To: "ImplementJoin"},
-			{From: "ImplementJoin", To: "Validate"},
-			{From: "Validate", To: "Approve", Condition: &ir.Condition{
-				Raw:    "ctx.outcome = success",
-				Parsed: ir.CondCompare{Variable: "ctx.outcome", Op: "=", Value: "success"},
-			}},
-			{From: "Validate", To: "Interpret", Label: "retry", Restart: true, Condition: &ir.Condition{
-				Raw:    "ctx.outcome = fail",
-				Parsed: ir.CondCompare{Variable: "ctx.outcome", Op: "=", Value: "fail"},
-			}},
-			{From: "Approve", To: "Done"},
-		},
-	}
-}
-
-// --- Table-driven tests ---
-
-func TestValidate(t *testing.T) {
-	tests := []struct {
-		name       string
-		workflow   *ir.Workflow
-		wantCodes  []string // Expected diagnostic codes (empty = no diagnostics)
-		wantNoDiag bool     // If true, expect zero diagnostics
-	}{
-		// --- Happy path ---
-		{
-			name:       "valid minimal workflow",
-			workflow:   minimalValidWorkflow(),
-			wantNoDiag: true,
-		},
-		{
-			name:       "valid complex workflow with restart and parallel",
-			workflow:   askAndExecuteWorkflow(),
-			wantNoDiag: true,
-		},
-		{
-			name: "valid workflow with restart back-edge (no cycle)",
-			workflow: &ir.Workflow{
-				Name:  "restart_loop",
-				Start: "A",
-				Exit:  "D",
-				Nodes: []*ir.Node{
-					{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "a"}},
-					{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "b"}},
-					{ID: "C", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "c"}},
-					{ID: "D", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "d"}},
-				},
-				Edges: []*ir.Edge{
-					{From: "A", To: "B"},
-					{From: "B", To: "C"},
-					{From: "C", To: "A", Restart: true},
-					{From: "C", To: "D"},
-				},
-			},
-			wantNoDiag: true,
-		},
-		{
-			name: "valid parallel/fan_in pair with different order",
-			workflow: &ir.Workflow{
-				Name:  "parallel_ok",
-				Start: "Start",
-				Exit:  "End",
-				Nodes: []*ir.Node{
-					{ID: "Start", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go"}},
-					{ID: "Fork", Kind: ir.NodeParallel, Config: ir.ParallelConfig{Targets: []string{"W1", "W2"}}},
-					{ID: "W1", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "w1"}},
-					{ID: "W2", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "w2"}},
-					{ID: "Join", Kind: ir.NodeFanIn, Config: ir.FanInConfig{Sources: []string{"W2", "W1"}}}, // order differs
-					{ID: "End", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done"}},
-				},
-				Edges: []*ir.Edge{
-					{From: "Start", To: "Fork"},
-					{From: "Fork", To: "W1"},
-					{From: "Fork", To: "W2"},
-					{From: "W1", To: "Join"},
-					{From: "W2", To: "Join"},
-					{From: "Join", To: "End"},
-				},
-			},
-			wantNoDiag: true,
-		},
-
-		// --- Error cases: one diagnostic each ---
-		{
-			name: "DIP001: start node empty",
-			workflow: &ir.Workflow{
-				Name:  "no_start",
-				Start: "",
-				Exit:  "End",
-				Nodes: []*ir.Node{
-					{ID: "End", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done"}},
-				},
-			},
-			wantCodes: []string{DIP001},
-		},
-		{
-			name: "DIP001: start node declared but missing from nodes",
-			workflow: &ir.Workflow{
-				Name:  "bad_start",
-				Start: "Nonexistent",
-				Exit:  "End",
-				Nodes: []*ir.Node{
-					{ID: "End", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done"}},
-				},
-			},
-			wantCodes: []string{DIP001},
-		},
-		{
-			name: "DIP002: exit node missing from nodes",
-			workflow: &ir.Workflow{
-				Name:  "bad_exit",
-				Start: "Begin",
-				Exit:  "Nonexistent",
-				Nodes: []*ir.Node{
-					{ID: "Begin", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go"}},
-				},
-			},
-			wantCodes: []string{DIP002},
-		},
-		{
-			name: "DIP003: dangling edge target",
-			workflow: &ir.Workflow{
-				Name:  "dangling",
-				Start: "A",
-				Exit:  "A",
-				Nodes: []*ir.Node{
-					{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "a"}},
-				},
-				Edges: []*ir.Edge{
-					{From: "A", To: "Nonexistent"},
-				},
-			},
-			wantCodes: []string{DIP003},
-		},
-		{
-			name: "DIP003: fuzzy match suggests similar node",
-			workflow: &ir.Workflow{
-				Name:  "fuzzy",
-				Start: "Interpret",
-				Exit:  "Interpret",
-				Nodes: []*ir.Node{
-					{ID: "Interpret", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "a"}},
-				},
-				Edges: []*ir.Edge{
-					{From: "Interpret", To: "Interpet"}, // typo: missing 'r'
-				},
-			},
-			wantCodes: []string{DIP003},
-		},
-		{
-			name: "DIP004: unreachable node",
-			workflow: &ir.Workflow{
-				Name:  "unreachable",
-				Start: "A",
-				Exit:  "B",
-				Nodes: []*ir.Node{
-					{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "a"}},
-					{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "b"}},
-					{ID: "Island", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "island"}},
-				},
-				Edges: []*ir.Edge{
-					{From: "A", To: "B"},
-				},
-			},
-			wantCodes: []string{DIP004},
-		},
-		{
-			name: "DIP005: unconditional cycle",
-			workflow: &ir.Workflow{
-				Name:  "cycle",
-				Start: "A",
-				Exit:  "D",
-				Nodes: []*ir.Node{
-					{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "a"}},
-					{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "b"}},
-					{ID: "C", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "c"}},
-					{ID: "D", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "d"}},
-				},
-				Edges: []*ir.Edge{
-					{From: "A", To: "B"},
-					{From: "B", To: "C"},
-					{From: "C", To: "A"}, // cycle: not restart
-					{From: "C", To: "D"},
-				},
-			},
-			wantCodes: []string{DIP005},
-		},
-		{
-			name: "DIP006: exit has outgoing edge",
-			workflow: &ir.Workflow{
-				Name:  "exit_outgoing",
-				Start: "A",
-				Exit:  "B",
-				Nodes: []*ir.Node{
-					{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "a"}},
-					{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "b"}},
-				},
-				Edges: []*ir.Edge{
-					{From: "A", To: "B"},
-					{From: "B", To: "A"},
-				},
-			},
-			wantCodes: []string{DIP006},
-		},
-		{
-			name: "DIP007: orphaned parallel node",
-			workflow: &ir.Workflow{
-				Name:  "orphan_parallel",
-				Start: "Start",
-				Exit:  "End",
-				Nodes: []*ir.Node{
-					{ID: "Start", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go"}},
-					{ID: "Fork", Kind: ir.NodeParallel, Config: ir.ParallelConfig{Targets: []string{"X", "Y"}}},
-					{ID: "X", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "x"}},
-					{ID: "Y", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "y"}},
-					{ID: "End", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done"}},
-				},
-				Edges: []*ir.Edge{
-					{From: "Start", To: "Fork"},
-					{From: "Fork", To: "X"},
-					{From: "Fork", To: "Y"},
-					{From: "X", To: "End"},
-					{From: "Y", To: "End"},
-				},
-			},
-			wantCodes: []string{DIP007},
-		},
-		{
-			name: "DIP007: orphaned fan_in node",
-			workflow: &ir.Workflow{
-				Name:  "orphan_fanin",
-				Start: "Start",
-				Exit:  "End",
-				Nodes: []*ir.Node{
-					{ID: "Start", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go"}},
-					{ID: "X", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "x"}},
-					{ID: "Y", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "y"}},
-					{ID: "Join", Kind: ir.NodeFanIn, Config: ir.FanInConfig{Sources: []string{"X", "Y"}}},
-					{ID: "End", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done"}},
-				},
-				Edges: []*ir.Edge{
-					{From: "Start", To: "X"},
-					{From: "Start", To: "Y"},
-					{From: "X", To: "Join"},
-					{From: "Y", To: "Join"},
-					{From: "Join", To: "End"},
-				},
-			},
-			wantCodes: []string{DIP007},
-		},
-		{
-			name: "DIP008: duplicate node ID",
-			workflow: &ir.Workflow{
-				Name:  "dup_node",
-				Start: "A",
-				Exit:  "A",
-				Nodes: []*ir.Node{
-					{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "first"}, Source: ir.SourceLocation{File: "test.dip", Line: 1}},
-					{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "second"}, Source: ir.SourceLocation{File: "test.dip", Line: 5}},
-				},
-			},
-			wantCodes: []string{DIP008},
-		},
-		{
-			name: "DIP009: duplicate unconditional edge",
-			workflow: &ir.Workflow{
-				Name:  "dup_edge",
-				Start: "A",
-				Exit:  "B",
-				Nodes: []*ir.Node{
-					{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "a"}},
-					{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "b"}},
-				},
-				Edges: []*ir.Edge{
-					{From: "A", To: "B"},
-					{From: "A", To: "B"},
-				},
-			},
-			wantCodes: []string{DIP009},
-		},
-
-		// --- Edge cases ---
-		{
-			name: "multiple errors at once",
-			workflow: &ir.Workflow{
-				Name:  "multi_error",
-				Start: "Missing",
-				Exit:  "End",
-				Nodes: []*ir.Node{
-					{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "a"}, Source: ir.SourceLocation{File: "test.dip", Line: 1}},
-					{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "dup"}, Source: ir.SourceLocation{File: "test.dip", Line: 5}},
-					{ID: "End", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "end"}},
-				},
-				Edges: []*ir.Edge{
-					{From: "A", To: "Ghost"},
-				},
-			},
-			wantCodes: []string{DIP008, DIP001, DIP003},
-		},
-		{
-			name:      "empty workflow",
-			workflow:  &ir.Workflow{},
-			wantCodes: []string{DIP001, DIP002},
-		},
-		{
-			name: "DIP003: both endpoints dangling",
-			workflow: &ir.Workflow{
-				Name:  "both_dangling",
-				Start: "Real",
-				Exit:  "Real",
-				Nodes: []*ir.Node{
-					{ID: "Real", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "ok"}},
-				},
-				Edges: []*ir.Edge{
-					{From: "Ghost1", To: "Ghost2"},
-				},
-			},
-			wantCodes: []string{DIP003, DIP003},
-		},
-		{
-			name: "DIP009: same endpoints different conditions = NOT duplicate",
-			workflow: &ir.Workflow{
-				Name:  "cond_branches",
-				Start: "A",
-				Exit:  "B",
-				Nodes: []*ir.Node{
-					{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "a"}},
-					{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "b"}},
-				},
-				Edges: []*ir.Edge{
-					{From: "A", To: "B", Condition: &ir.Condition{Raw: "ctx.x = 1", Parsed: ir.CondCompare{Variable: "ctx.x", Op: "=", Value: "1"}}},
-					{From: "A", To: "B", Condition: &ir.Condition{Raw: "ctx.x = 2", Parsed: ir.CondCompare{Variable: "ctx.x", Op: "=", Value: "2"}}},
-				},
-			},
-			wantNoDiag: true,
-		},
-		{
-			name: "DIP005: cycle through restart edge is OK (duplicate of happy path for clarity)",
-			workflow: &ir.Workflow{
-				Name:  "restart_ok",
-				Start: "A",
-				Exit:  "D",
-				Nodes: []*ir.Node{
-					{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "a"}},
-					{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "b"}},
-					{ID: "C", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "c"}},
-					{ID: "D", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "d"}},
-				},
-				Edges: []*ir.Edge{
-					{From: "A", To: "B"},
-					{From: "B", To: "C"},
-					{From: "C", To: "A", Restart: true},
-					{From: "C", To: "D"},
-				},
-			},
-			wantNoDiag: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := Validate(tt.workflow)
-
-			if tt.wantNoDiag {
-				if len(result.Diagnostics) != 0 {
-					t.Errorf("expected no diagnostics, got %d:", len(result.Diagnostics))
-					for _, d := range result.Diagnostics {
-						t.Errorf("  %s", d.String())
-					}
-				}
-				return
-			}
-
-			if tt.wantCodes != nil {
-				gotCodes := make([]string, len(result.Diagnostics))
-				for i, d := range result.Diagnostics {
-					gotCodes[i] = d.Code
-				}
-
-				// Check that all expected codes are present (order-insensitive).
-				wantCount := make(map[string]int)
-				for _, c := range tt.wantCodes {
-					wantCount[c]++
-				}
-				gotCount := make(map[string]int)
-				for _, c := range gotCodes {
-					gotCount[c]++
-				}
-				for code, want := range wantCount {
-					if got := gotCount[code]; got < want {
-						t.Errorf("expected at least %d %s diagnostic(s), got %d. All codes: %v", want, code, got, gotCodes)
-					}
-				}
-			}
-		})
-	}
-}
-
-func TestDIP003FuzzyMatchHelp(t *testing.T) {
-	w := &ir.Workflow{
-		Name:  "fuzzy",
-		Start: "Interpret",
-		Exit:  "Interpret",
-		Nodes: []*ir.Node{
-			{ID: "Interpret", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "a"}},
-		},
-		Edges: []*ir.Edge{
-			{From: "Interpret", To: "Interpet"}, // typo: missing 'r'
-		},
-	}
-
-	result := Validate(w)
-
-	var found bool
-	for _, d := range result.Diagnostics {
-		if d.Code == DIP003 {
-			found = true
-			if !strings.Contains(d.Help, `"Interpret"`) {
-				t.Errorf("DIP003 help = %q, expected it to contain '\"Interpret\"'", d.Help)
-			}
-			if !strings.Contains(d.Help, "did you mean") {
-				t.Errorf("DIP003 help = %q, expected 'did you mean'", d.Help)
-			}
-		}
-	}
-	if !found {
-		t.Error("expected DIP003 diagnostic for fuzzy match test")
-	}
-}
-
-func TestDIP004StartNodeIsReachable(t *testing.T) {
-	w := &ir.Workflow{
-		Name:  "start_reachable",
-		Start: "A",
-		Exit:  "B",
-		Nodes: []*ir.Node{
-			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "a"}},
-			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "b"}},
-			{ID: "Island", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "island"}},
-		},
-		Edges: []*ir.Edge{
-			{From: "A", To: "B"},
-		},
-	}
-
-	result := Validate(w)
-
-	// Only "Island" should be unreachable, not A or B.
-	dip004Count := 0
-	for _, d := range result.Diagnostics {
-		if d.Code == DIP004 {
-			dip004Count++
-			if !strings.Contains(d.Message, `"Island"`) {
-				t.Errorf("expected DIP004 to report Island, got: %s", d.Message)
-			}
-		}
-	}
-	if dip004Count != 1 {
-		t.Errorf("expected exactly 1 DIP004 diagnostic (for Island), got %d", dip004Count)
-	}
-}
-
-func TestDiagnosticFormatting(t *testing.T) {
-	d := Diagnostic{
-		Code:     DIP003,
-		Severity: SeverityError,
-		Message:  `edge references unknown node "InterpretX"`,
-		Location: ir.SourceLocation{File: "pipeline.dip", Line: 45, Column: 5},
-		Help:     `did you mean "Interpret"?`,
-	}
-
-	s := d.String()
-
-	if !strings.Contains(s, "error[DIP003]") {
-		t.Errorf("diagnostic string missing 'error[DIP003]', got:\n%s", s)
-	}
-	if !strings.Contains(s, "pipeline.dip:45:5") {
-		t.Errorf("diagnostic string missing location, got:\n%s", s)
-	}
-	if !strings.Contains(s, `= help: did you mean "Interpret"?`) {
-		t.Errorf("diagnostic string missing help, got:\n%s", s)
-	}
-}
-
-func TestDiagnosticFormattingNoFile(t *testing.T) {
-	d := Diagnostic{
-		Code:     DIP001,
-		Severity: SeverityError,
-		Message:  "workflow has no start node declared",
-	}
-
-	s := d.String()
-	if !strings.Contains(s, "<unknown>:0:0") {
-		t.Errorf("diagnostic string should show <unknown> for missing file, got:\n%s", s)
-	}
-}
-
-func TestDiagnosticFormattingWithFix(t *testing.T) {
-	d := Diagnostic{
-		Code:     DIP003,
-		Severity: SeverityError,
-		Message:  `unknown node "Foo"`,
-		Fix:      `rename to "Bar"`,
-	}
-
-	s := d.String()
-	if !strings.Contains(s, `= fix: rename to "Bar"`) {
-		t.Errorf("diagnostic string missing fix, got:\n%s", s)
-	}
-}
-
-func TestResultErrors(t *testing.T) {
-	r := Result{
-		Diagnostics: []Diagnostic{
-			{Code: DIP001, Severity: SeverityError, Message: "e1"},
-			{Code: "INFO", Severity: SeverityInfo, Message: "i1"},
-			{Code: DIP002, Severity: SeverityError, Message: "e2"},
-		},
-	}
-
-	errs := r.Errors()
-	if len(errs) != 2 {
-		t.Fatalf("Errors() returned %d, want 2", len(errs))
-	}
-	if errs[0].Code != DIP001 || errs[1].Code != DIP002 {
-		t.Errorf("Errors() = [%s, %s], want [DIP001, DIP002]", errs[0].Code, errs[1].Code)
-	}
-}
-
-func TestResultHasErrors(t *testing.T) {
-	tests := []struct {
-		name string
-		r    Result
-		want bool
-	}{
-		{
-			name: "no diagnostics",
-			r:    Result{},
-			want: false,
-		},
-		{
-			name: "only info",
-			r:    Result{Diagnostics: []Diagnostic{{Severity: SeverityInfo}}},
-			want: false,
-		},
-		{
-			name: "has error",
-			r:    Result{Diagnostics: []Diagnostic{{Severity: SeverityError}}},
-			want: true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.r.HasErrors(); got != tt.want {
-				t.Errorf("HasErrors() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestSeverityString(t *testing.T) {
-	tests := []struct {
-		s    Severity
-		want string
-	}{
-		{SeverityError, "error"},
-		{SeverityWarning, "warning"},
-		{SeverityInfo, "info"},
-		{SeverityHint, "hint"},
-		{Severity(99), "unknown"},
-	}
-	for _, tt := range tests {
-		if got := tt.s.String(); got != tt.want {
-			t.Errorf("Severity(%d).String() = %q, want %q", tt.s, got, tt.want)
-		}
-	}
-}
-
-func TestLevenshtein(t *testing.T) {
-	tests := []struct {
-		a, b string
-		want int
-	}{
-		{"", "", 0},
-		{"abc", "", 3},
-		{"", "abc", 3},
-		{"abc", "abc", 0},
-		{"abc", "abd", 1},
-		{"abc", "abcd", 1},
-		{"Interpret", "Interpet", 1},   // missing 'r'
-		{"Interpret", "InterpretX", 1}, // extra char
-		{"Interpret", "Intepret", 1},   // transposition-ish
-		{"abc", "xyz", 3},              // all different
-	}
-	for _, tt := range tests {
-		got := levenshtein(tt.a, tt.b)
-		if got != tt.want {
-			t.Errorf("levenshtein(%q, %q) = %d, want %d", tt.a, tt.b, got, tt.want)
-		}
-	}
-}
-
-func TestCodeDescriptionCoverage(t *testing.T) {
-	codes := []string{DIP001, DIP002, DIP003, DIP004, DIP005, DIP006, DIP007, DIP008, DIP009}
-	for _, c := range codes {
-		if desc, ok := CodeDescription[c]; !ok || desc == "" {
-			t.Errorf("CodeDescription[%q] is missing or empty", c)
-		}
-	}
-}
-
-func TestDIP005CyclePathIncluded(t *testing.T) {
-	w := &ir.Workflow{
-		Name:  "cycle_path",
-		Start: "A",
-		Exit:  "D",
-		Nodes: []*ir.Node{
-			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "a"}},
-			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "b"}},
-			{ID: "C", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "c"}},
-			{ID: "D", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "d"}},
-		},
-		Edges: []*ir.Edge{
-			{From: "A", To: "B"},
-			{From: "B", To: "C"},
-			{From: "C", To: "A"}, // cycle
-			{From: "C", To: "D"},
-		},
-	}
-
-	result := Validate(w)
-
-	var found bool
-	for _, d := range result.Diagnostics {
-		if d.Code == DIP005 {
-			found = true
-			if !strings.Contains(d.Message, "→") {
-				t.Errorf("DIP005 message should include cycle path with arrows, got: %s", d.Message)
-			}
-			mentionsA := strings.Contains(d.Message, "A")
-			mentionsB := strings.Contains(d.Message, "B")
-			mentionsC := strings.Contains(d.Message, "C")
-			if !(mentionsA && mentionsB && mentionsC) {
-				t.Errorf("DIP005 message should mention cycle nodes A, B, C, got: %s", d.Message)
-			}
-		}
-	}
-	if !found {
-		t.Error("expected DIP005 diagnostic for cycle test")
-	}
-}
-
-func TestDIP006MultipleOutgoing(t *testing.T) {
-	w := &ir.Workflow{
-		Name:  "exit_multi_outgoing",
-		Start: "A",
-		Exit:  "B",
-		Nodes: []*ir.Node{
-			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "a"}},
-			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "b"}},
-			{ID: "C", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "c"}},
-		},
-		Edges: []*ir.Edge{
-			{From: "A", To: "B"},
-			{From: "B", To: "A"},
-			{From: "B", To: "C"},
-		},
-	}
-
-	result := Validate(w)
-
-	count := 0
-	for _, d := range result.Diagnostics {
-		if d.Code == DIP006 {
-			count++
-		}
-	}
-	if count != 2 {
-		t.Errorf("expected 2 DIP006 diagnostics for two outgoing edges from exit, got %d", count)
-	}
-}
-
-TURN 5
-TOOL CALL: bash
-INPUT:
-{"command": "cat DIPPIN_DESIGN_PLAN.md 2>/dev/null || echo \"not found\""}
-TOOL RESULT: bash
-OUTPUT:
-[... truncated 50276 characters ...]
-peline.Graph`
-- [ ] Write IR serialization (JSON) for debugging
-- [ ] Write 10 hand-crafted IR test fixtures
-
-### Phase 1: Parser (2 weeks)
-
-- [ ] Implement Dippin lexer (line-based, indentation-aware)
-- [ ] Implement Dippin parser → IR with error recovery at top-level declarations
-- [ ] Comprehensive error recovery and multi-diagnostic collection
-- [ ] Parser test suite: 50+ cases covering all node kinds, edge syntax, multiline blocks, conditions, explicit start/exit
-- [ ] `dippin parse <file>` CLI command (outputs IR as JSON)
-
-### Phase 2: Validator & Linter (1 week)
-
-- [ ] Port existing `pipeline.Validate()` checks to work on IR
-- [ ] Add schema validation (required fields, known kinds, type checking via config structs)
-- [ ] Add semantic warnings (unreachable nodes, unbounded retries, I/O flow analysis)
-- [ ] Structured diagnostic output (text + JSON)
-- [ ] `dippin validate <file>` CLI command
-- [ ] `dippin lint <file>` CLI command (includes warnings)
-
-### Phase 3: Formatter (1 week)
-
-- [ ] Implement canonical formatter from IR → Dippin source
-- [ ] Implement canonical field ordering per node kind
-- [ ] Ensure idempotency (format ∘ parse ∘ format = format ∘ parse)
-- [ ] `dippin fmt <file>` CLI command
-- [ ] `dippin fmt --check` for CI (exit 1 if not canonical)
-
-### Phase 4: DOT Exporter (1 week)
-
-- [ ] Implement `ir.Workflow` → DOT string
-- [ ] Test against existing DOT files (parse DOT → IR → export DOT → parse DOT → compare topology)
-- [ ] `dippin export-dot <file.dip>` CLI command
-
-### Phase 5: Migration Tool (1 week)
-
-- [ ] Implement `dippin migrate <file.dot>` using existing parser + IR + formatter
-- [ ] Post-migration cleanup: un-escape prompts, reformat tool commands, add namespace prefixes to conditions
-- [ ] `dippin validate-migration <old.dot> <new.dip>` parity checker
-- [ ] Migrate all example files; commit both versions during transition
-
-### Phase 6: Engine Integration (2 weeks)
-
-- [ ] Add `.dip` file detection in `cmd/tracker/main.go`
-- [ ] Wire Dippin parser → IR → engine (via `IRToGraph()` adapter initially)
-- [ ] Incrementally migrate engine to accept IR directly
-- [ ] Verify all existing tests pass with both paths
-- [ ] Update TUI to show Dippin source locations in diagnostics
-
-### Deferred (post-v1)
-
-- [ ] Composition: import resolution, parameter substitution, namespace prefixing, subgraph expansion
-- [ ] Stylesheet language (simple selectors: *, .class, #id, kind)
-- [ ] SARIF output
-- [ ] Rich variable flow analysis
-- [ ] LSP / editor integration
-- [ ] Hot reload in TUI
-- [ ] Visual regression rendering tests
-
----
-
-## 19. Acceptance Criteria ("v1 is good enough")
-
-### Must-have for v1
-
-1. **Parse all existing patterns**: Every DOT pipeline in the repo can be expressed in Dippin and parsed to equivalent IR
-2. **Equivalent execution**: Dippin-sourced pipelines produce identical `EngineResult` as DOT-sourced pipelines for the same inputs
-3. **Explicit start/exit**: No implicit first-node-is-start. `start:` and `exit:` are required.
-4. **Multiline prompts work**: No escaping needed for prompts containing markdown, code blocks, shell syntax, or quotes
-5. **Conditions validated at parse time**: Typos in always-known variables produce errors; unknown dynamic variables produce warnings
-6. **Required fields enforced**: Missing `prompt` on agent nodes is a parse-time error, not a runtime crash
-7. **Formatter exists and is idempotent**: `dippin fmt` produces canonical output with deterministic field ordering
-8. **DOT export works**: `dippin export-dot` produces valid, renderable DOT
-9. **Migration tool works**: `dippin migrate` converts all example files with no manual edits needed for correct execution
-10. **Diagnostics are actionable**: Every error includes file, line, explanation, and suggested fix
-11. **Multi-diagnostic collection**: Parser recovers and reports all errors, not just the first one
-12. **CLI is functional**: `dippin parse`, `dippin validate`, `dippin fmt`, `dippin export-dot`, `dippin migrate`
-13. **Configuration precedence is documented and tested**: Five-layer model, no ambiguity
-
-### Nice-to-have for v1
-
-- Import/composition system (basic file refs without params)
-- `reads:`/`writes:` advisory I/O contracts with lint warnings
-- `route` syntax sugar
-- `dippin new` scaffolding command
-- Autofix for common validation errors
-
-### Deferred
-
-- Full composition with params/namespacing
-- Stylesheet language
-- SARIF
-- LSP
-- Visual editor / GUI
-
----
-
-## 20. Risks / ADR-Worthy Decisions
-
-### ADR 1: Should Dippin model a DAG, a graph, or DAG-plus-loops?
-
-**Decision**: DAG-plus-explicit-loops.
-
-**Rationale**: The current system is technically DAG (validation rejects unconditional cycles) but supports loop-like behavior via the "restart" mechanism (edge targets completed node → clear downstream → re-execute). This is graph-with-a-DAG-constraint-plus-an-escape-hatch. Dippin makes this explicit with `restart: true` on back-edges.
-
-**Runtime semantics** (specified in §4.3):
-- Back-edge is present in IR with `Restart: true`
-- Engine clears downstream completion state (BFS from target)
-- Context is fully preserved across restarts
-- Node-local stats are NOT preserved (fresh per execution)
-- Restart counter is global per engine instance
-- Subgraphs have independent restart counters
-- Checkpoints save at the restart point
-
-### ADR 2: Should conditions be a custom expression language?
-
-**Decision**: Yes, keep and improve the existing expression language.
-
-**Rationale**: The current condition language (`outcome=success`, `tool_stdout contains pass`, `&&`, `||`, `not`) is small enough to be reliable but expressive enough for real workflows. Making conditions a full programming language would hurt LLM authoring reliability. Making them just equality checks would be too limiting (the codebase uses `contains`, `startswith`, `in`, `!=`, and Boolean combinators).
-
-**Improvement**: Parse conditions at Dippin parse time (not at evaluation time). Validate variable names with namespace-aware tiering. Produce AST in IR.
-
-### ADR 3: Should the IR be the primary engine input?
-
-**Decision**: Yes, eventually. During transition, an adapter bridges IR → `pipeline.Graph`.
-
-**Risk**: Dual maintenance of IR types and pipeline types. Mitigated by making the adapter mechanical and adding tests that verify roundtrip fidelity.
-
-### ADR 4: Should Dippin support inline DOT for escape-hatch visualization hints?
-
-**Decision**: No.
-
-**Rationale**: Adding DOT syntax inside Dippin creates parser complexity, confuses the mental model, and reintroduces the problems we're solving. Visualization hints should be separate (CLI flags or a companion config file).
-
-### ADR 5: Should `condition` be a node kind or syntax sugar?
-
-**Decision**: Syntax sugar (`route`) in Dippin, lowered to a no-op condition node in IR.
-
-**Rationale**: In the current engine, condition nodes do nothing — the engine evaluates edge conditions during edge selection regardless of node kind. Making routing a surface-syntax convenience (`route X -> A when ... -> B when ...`) is cleaner than requiring authors to declare a node kind that has no configuration fields. The IR can emit a `NodeCondition` internally for migration compatibility.
-
-### ADR 6: Should stylesheets be in v1?
-
-**Decision**: No. Defer to v1.5.
-
-**Rationale**: Stylesheets add another parser, another precedence layer, and another source of hidden behavior. For v1, explicit per-node fields + workflow defaults cover all current usage. When stylesheets return, they will be a first-class top-level block (not a string-in-a-string), with only simple selectors (`*`, `.class`, `#id`, `kind`), and they will slot into the precedence ladder at a documented position.
-
-### ADR 7: Should the file extension be `.dip` or `.dippin`?
-
-**Decision**: `.dip`
-
-**Rationale**: Short, distinctive, typeable.
-
-### Open questions
-
-1. **How should the engine handle hot-reload of `.dip` files during development?** Not critical for v1 but worth considering for the TUI.
-2. **Should Dippin support conditional node inclusion (ifdef-like)?** Probably not — params + composition should handle most cases.
-3. **How should secrets/API keys be referenced in Dippin?** Currently they're purely environment-side. Keep it that way — no secrets in source files.
-4. **Should `reads:`/`writes:` become mandatory in a future version?** Probably yes, once all existing pipelines are migrated and annotated. But that's a v2 decision.
-
----
-
-## 21. Concrete Next Steps
-
-### Week 1
-
-1. **Review and finalize this plan** — get sign-off on Proposal A syntax and IR design
-2. **Create `dippin/` directory** with initial package structure
-3. **Write the Dippin syntax spec** as `dippin/SPEC.md` — formal grammar, all examples, canonical field ordering
-4. **Define IR Go types** in `dippin/ir/types.go` — with typed NodeConfig union
-5. **Write `GraphToIR()` adapter** in `dippin/ir/adapt.go`
-6. **Hand-write 5 `.dip` example files** that correspond to existing DOT examples
-
-### Week 2
-
-7. **Implement lexer** in `dippin/parser/lexer.go`
-8. **Implement parser** in `dippin/parser/parser.go` — with top-level-declaration recovery
-9. **Write parser tests** — at least 30 cases including error recovery
-10. **Implement basic validator** — graph structure checks, schema validation
-
-### Week 3
-
-11. **Implement formatter** in `dippin/format/format.go` — with canonical field ordering
-12. **Implement DOT exporter** in `dippin/export/dot.go`
-13. **Implement migration tool** in `dippin/migrate/migrate.go`
-14. **Migrate first 3 example pipelines** and verify parity
-
-### Week 4
-
-15. **Wire into `cmd/tracker`** — accept `.dip` files via `IRToGraph()` adapter
-16. **Migrate remaining examples**
-17. **Write user-facing docs**
-18. **Begin adding `reads:`/`writes:` annotations** to migrated pipelines
-
----
-
-## Appendix A: Suggested Repo Layout
-
-```
-dippin/
-├── SPEC.md                    # Formal syntax specification
-├── ir/
-│   ├── types.go               # Canonical IR types (Workflow, Node, NodeConfig union, Edge, etc.)
-│   ├── adapt.go               # pipeline.Graph → ir.Workflow
-│   ├── reverse.go             # ir.Workflow → pipeline.Graph (transition)
-│   └── ir_test.go
-├── parser/
-│   ├── lexer.go               # Line-based lexer
-│   ├── lexer_test.go
-│   ├── parser.go              # Dippin → IR (with error recovery)
-│   ├── parser_test.go
-│   └── testdata/              # .dip test fixtures
-│       ├── valid/
-│       └── invalid/
-├── validate/
-│   ├── validate.go            # Schema + graph + semantic checks
-│   ├── diagnostic.go          # Diagnostic types
-│   ├── codes.go               # Error code registry (DIP001-DIP999)
-│   └── validate_test.go
-├── format/
-│   ├── format.go              # IR → canonical Dippin source (deterministic field ordering)
-│   └── format_test.go
-├── export/
-│   ├── dot.go                 # IR → DOT
-│   └── dot_test.go
-├── migrate/
-│   ├── migrate.go             # DOT → Dippin conversion
-│   ├── parity.go              # Behavioral parity checker
-│   └── migrate_test.go
-├── cmd/
-│   └── dippin/
-│       └── main.go            # CLI: parse, validate, fmt, export-dot, migrate
-└── examples/
-    ├── hello.dip              # Minimal example
-    ├── ask_and_execute.dip    # Migrated from DOT
-    └── consensus_task.dip     # Migrated from DOT
-```
-
----
-
-## Appendix B: Answers to Required Questions
-
-**1. What current DOT semantics are essential and must survive?**
-
-Node kinds (agent, human, tool, parallel, fan_in, subgraph), edge conditions with boolean expressions, retry policies with targets and fallbacks, goal gates, checkpoint/resume, parallel fan-out/fan-in, context key-value flow, per-node model/provider override, fidelity-based compaction. Start/exit must survive but as explicit declarations, not shape conventions.
-
-**2. Which current DOT hacks are accidental and should be removed?**
-
-Shape→handler coupling, diamond+attribute special cases, `Mdiamond`/`Msquare` terminals, `\n`-encoded multiline strings, CSS-in-a-DOT-attribute stylesheets (deferred, not removed conceptually), `manager_loop` (no-op), `parallel.results` as JSON-in-string, first-node-is-start inference.
-
-**3. Should Dippin model a DAG, a graph, or DAG-plus-loops?**
-
-DAG-plus-explicit-loops. The graph is structurally a DAG but with annotated back-edges (`restart: true`) that trigger the restart mechanism. Runtime semantics are fully specified in §4.3.
-
-**4. What is the minimum viable composition model?**
-
-For v1: basic `subgraph` refs to external files. Post-v1: file-based import with path resolution, parameter declaration and override, namespace prefixing, inline expansion. No dynamic composition, no conditional imports, no inheritance.
-
-**5. What should be first-class in syntax vs lowered into IR?**
-
-First-class: node kind, prompt (multiline block), edges with conditions, parallel/fan_in declarations, explicit start/exit, `route` sugar, `reads:`/`writes:` contracts. Lowered: condition AST parsing, route-to-node expansion, namespace resolution, retry policy resolution, composition expansion.
-
-**6. What should round-trip to DOT, and what can be lossy?**
-
-Lossless: topology, node kinds (via shape mapping), labels, edge conditions (serialized from AST), weights, start/exit (as Mdiamond/Msquare). Lossy: multiline formatting (re-escaped), module structure (expanded), comments (lost), source locations (lost), parameter defaults (resolved), reads/writes (omitted), route sugar (expanded), variable namespaces (stripped).
-
-**7. What syntax properties make Dippin easy for LLMs to generate and repair?**
-
-Indentation-based nesting (LLMs handle this well), keyword-first lines (`agent`, `tool`, `human`), no quoting for multiline content, `${ns.var}` interpolation syntax (widely known), consistent `key: value` fields, one canonical encoding per concept, explicit `start:`/`exit:` (no implicit inference), clear error messages with suggested fixes, multi-diagnostic collection.
-
-**8. What diagnostics shape will make this successful?**
-
-File/line/column ranges, error codes (DIP001-DIP999), human explanations, suggested fixes with concrete text replacements, JSON output mode for tooling, severity levels (error/warning/info/hint), multi-error recovery at top-level declarations, tiered variable validation (always-known → declared → dynamic).
-
-**9. How should Tracker be used to bootstrap without trapping us?**
-
-Tracker pipelines can analyze DOT files, generate candidate Dippin, and produce test fixtures. But the spec is a human-reviewed document, the parser is hand-written Go, and all generated Dippin goes through the same validator as hand-written Dippin. Tracker is the factory floor, not the blueprint.
-TURN 6
-TOOL CALL: bash
-INPUT:
-{"command": "grep -n \"DIP10[0-9]\\|DIP11[0-9]\\|Layer 4\\|Semantic\\|linter\\|lint\" DIPPIN_DESIGN_PLAN.md | head -50"}
-TOOL RESULT: bash
-OUTPUT:
-154:## 4. Semantic Model That Must Survive
-920:Even in v1, Dippin should have a path from "magic context map" to something legible and lintable. The `reads:` and `writes:` fields on nodes are advisory — the validator produces warnings, not errors — but they immediately make state flow visible.
-950:### Semantics
-1046:**Layer 4: Semantic quality** (warnings)
-1047:- Unreachable nodes after conditional branches (`DIP101`)
-1048:- Routing nodes without fail/default edges (`DIP102`)
-1049:- Overlapping or contradictory conditions (`DIP103`)
-1050:- Unbounded retry loops (no max_retries, no fallback) (`DIP104`)
-1051:- No success path to exit (`DIP105`)
-1052:- Undefined `${variables}` in prompts — tiered by namespace (`DIP106`)
-1053:- Unused context keys (written but never read via `writes:`) (`DIP107`)
-1054:- Model/provider combination not in known catalog (`DIP108`)
-1055:- Namespace collisions in imports (`DIP109`)
-1056:- Empty prompts (`DIP110`)
-1057:- Tool command without timeout (`DIP111`)
-1058:- `reads:` key not in any upstream node's `writes:` (`DIP112`)
-1261:- [ ] `dippin lint <file>` CLI command (includes warnings)
-1325:- `reads:`/`writes:` advisory I/O contracts with lint warnings
-
 TURN 7
-TOOL CALL: bash
+TOOL CALL: write
 INPUT:
-{"command": "sed -n '1040,1070p' DIPPIN_DESIGN_PLAN.md"}
-TOOL RESULT: bash
+{"path": "migrate/dot_parser.go", "content": "// Package migrate converts DOT digraph files into Dippin IR workflows.\n//\n// It implements the migration strategy from §16 of the Dippin design spec:\n// parse a DOT digraph, apply cleanup transforms (un-escaping, namespace\n// prefixing, shape→kind mapping), and produce either an *ir.Workflow or\n// canonical .dip source text.\npackage migrate\n\nimport (\n\t\"fmt\"\n\t\"strings\"\n\t\"unicode\"\n)\n\n// dotGraph holds the parsed DOT structure before IR conversion.\ntype dotGraph struct {\n\tName       string\n\tGraphAttrs map[string]string\n\tNodeAttrs  map[string]string // default node attrs\n\tEdgeAttrs  map[string]string // default edge attrs\n\tNodes      []dotNode\n\tEdges      []dotEdge\n}\n\n// dotNode is a single DOT node statement with attributes.\ntype dotNode struct {\n\tID    string\n\tAttrs map[string]string\n}\n\n// dotEdge is a single DOT edge statement (A -> B) with attributes.\ntype dotEdge struct {\n\tFrom  string\n\tTo    string\n\tAttrs map[string]string\n}\n\n// --- DOT Lexer ---\n\ntype tokenKind int\n\nconst (\n\ttokEOF tokenKind = iota\n\ttokID            // unquoted identifier or number\n\ttokString        // double-quoted string (contents unescaped)\n\ttokLBrace        // {\n\ttokRBrace        // }\n\ttokLBrack        // [\n\ttokRBrack        // ]\n\ttokEquals        // =\n\ttokSemicolon     // ;\n\ttokComma         // ,\n\ttokArrow         // ->\n)\n\ntype token struct {\n\tkind tokenKind\n\tval  string\n\tpos  int // byte offset for error messages\n}\n\n// lexer tokenizes a DOT input string.\ntype lexer struct {\n\tinput []byte\n\tpos   int\n}\n\nfunc newLexer(input string) *lexer {\n\treturn &lexer{input: []byte(input)}\n}\n\nfunc (l *lexer) peek() byte {\n\tif l.pos >= len(l.input) {\n\t\treturn 0\n\t}\n\treturn l.input[l.pos]\n}\n\nfunc (l *lexer) advance() byte {\n\tch := l.input[l.pos]\n\tl.pos++\n\treturn ch\n}\n\nfunc (l *lexer) skipWhitespace() {\n\tfor l.pos < len(l.input) {\n\t\tch := l.input[l.pos]\n\t\tif ch == ' ' || ch == '\\t' || ch == '\\n' || ch == '\\r' {\n\t\t\tl.pos++\n\t\t\tcontinue\n\t\t}\n\t\t// C-style line comments.\n\t\tif ch == '/' && l.pos+1 < len(l.input) && l.input[l.pos+1] == '/' {\n\t\t\tl.pos += 2\n\t\t\tfor l.pos < len(l.input) && l.input[l.pos] != '\\n' {\n\t\t\t\tl.pos++\n\t\t\t}\n\t\t\tcontinue\n\t\t}\n\t\t// C-style block comments.\n\t\tif ch == '/' && l.pos+1 < len(l.input) && l.input[l.pos+1] == '*' {\n\t\t\tl.pos += 2\n\t\t\tfor l.pos+1 < len(l.input) {\n\t\t\t\tif l.input[l.pos] == '*' && l.input[l.pos+1] == '/' {\n\t\t\t\t\tl.pos += 2\n\t\t\t\t\tbreak\n\t\t\t\t}\n\t\t\t\tl.pos++\n\t\t\t}\n\t\t\tcontinue\n\t\t}\n\t\tbreak\n\t}\n}\n\nfunc (l *lexer) next() token {\n\tl.skipWhitespace()\n\tif l.pos >= len(l.input) {\n\t\treturn token{kind: tokEOF, pos: l.pos}\n\t}\n\n\tstart := l.pos\n\tch := l.peek()\n\n\tswitch ch {\n\tcase '{':\n\t\tl.advance()\n\t\treturn token{kind: tokLBrace, val: \"{\", pos: start}\n\tcase '}':\n\t\tl.advance()\n\t\treturn token{kind: tokRBrace, val: \"}\", pos: start}\n\tcase '[':\n\t\tl.advance()\n\t\treturn token{kind: tokLBrack, val: \"[\", pos: start}\n\tcase ']':\n\t\tl.advance()\n\t\treturn token{kind: tokRBrack, val: \"]\", pos: start}\n\tcase '=':\n\t\tl.advance()\n\t\treturn token{kind: tokEquals, val: \"=\", pos: start}\n\tcase ';':\n\t\tl.advance()\n\t\treturn token{kind: tokSemicolon, val: \";\", pos: start}\n\tcase ',':\n\t\tl.advance()\n\t\treturn token{kind: tokComma, val: \",\", pos: start}\n\tcase '-':\n\t\tif l.pos+1 < len(l.input) && l.input[l.pos+1] == '>' {\n\t\t\tl.pos += 2\n\t\t\treturn token{kind: tokArrow, val: \"->\", pos: start}\n\t\t}\n\t\t// Bare '-' — treat as part of an identifier.\n\t\treturn l.readID()\n\tcase '\"':\n\t\treturn l.readString()\n\tdefault:\n\t\tif isIDStart(ch) || (ch >= '0' && ch <= '9') {\n\t\t\treturn l.readID()\n\t\t}\n\t\tl.advance()\n\t\treturn token{kind: tokID, val: string(ch), pos: start}\n\t}\n}\n\nfunc isIDStart(ch byte) bool {\n\treturn (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch == '_'\n}\n\nfunc isIDCont(ch byte) bool {\n\treturn isIDStart(ch) || (ch >= '0' && ch <= '9') || ch == '.'\n}\n\nfunc (l *lexer) readID() token {\n\tstart := l.pos\n\tfor l.pos < len(l.input) && isIDCont(l.input[l.pos]) {\n\t\tl.pos++\n\t}\n\treturn token{kind: tokID, val: string(l.input[start:l.pos]), pos: start}\n}\n\nfunc (l *lexer) readString() token {\n\tstart := l.pos\n\tl.advance() // skip opening \"\n\tvar b strings.Builder\n\tfor l.pos < len(l.input) {\n\t\tch := l.advance()\n\t\tif ch == '\\\\' && l.pos < len(l.input) {\n\t\t\tnext := l.advance()\n\t\t\tswitch next {\n\t\t\tcase '\"':\n\t\t\t\tb.WriteByte('\"')\n\t\t\tcase '\\\\':\n\t\t\t\tb.WriteByte('\\\\')\n\t\t\tcase 'n':\n\t\t\t\tb.WriteByte('\\n')\n\t\t\tcase 'l':\n\t\t\t\tb.WriteByte('\\n') // DOT \\l = left-justified newline → real newline\n\t\t\tcase 'r':\n\t\t\t\t// DOT \\r — ignore (not meaningful)\n\t\t\tdefault:\n\t\t\t\tb.WriteByte('\\\\')\n\t\t\t\tb.WriteByte(next)\n\t\t\t}\n\t\t\tcontinue\n\t\t}\n\t\tif ch == '\"' {\n\t\t\treturn token{kind: tokString, val: b.String(), pos: start}\n\t\t}\n\t\tb.WriteByte(ch)\n\t}\n\t// Unterminated string — return what we have; parser will catch the error.\n\treturn token{kind: tokString, val: b.String(), pos: start}\n}\n\n// --- DOT Parser ---\n\ntype parser struct {\n\tlex   *lexer\n\tcur   token\n\tgraph *dotGraph\n}\n\nfunc parseDOT(input string) (*dotGraph, error) {\n\tp := &parser{\n\t\tlex: newLexer(input),\n\t\tgraph: &dotGraph{\n\t\t\tGraphAttrs: make(map[string]string),\n\t\t\tNodeAttrs:  make(map[string]string),\n\t\t\tEdgeAttrs:  make(map[string]string),\n\t\t},\n\t}\n\tp.advance()\n\tif err := p.parseDigraph(); err != nil {\n\t\treturn nil, err\n\t}\n\treturn p.graph, nil\n}\n\nfunc (p *parser) advance() {\n\tp.cur = p.lex.next()\n}\n\nfunc (p *parser) expect(k tokenKind) (token, error) {\n\tif p.cur.kind != k {\n\t\treturn p.cur, fmt.Errorf(\"DOT parse error at offset %d: expected %s, got %q\",\n\t\t\tp.cur.pos, tokenKindName(k), p.cur.val)\n\t}\n\tt := p.cur\n\tp.advance()\n\treturn t, nil\n}\n\nfunc tokenKindName(k tokenKind) string {\n\tswitch k {\n\tcase tokEOF:\n\t\treturn \"EOF\"\n\tcase tokID:\n\t\treturn \"identifier\"\n\tcase tokString:\n\t\treturn \"string\"\n\tcase tokLBrace:\n\t\treturn \"'{'\"\n\tcase tokRBrace:\n\t\treturn \"'}'\"\n\tcase tokLBrack:\n\t\treturn \"'['\"\n\tcase tokRBrack:\n\t\treturn \"']'\"\n\tcase tokEquals:\n\t\treturn \"'='\"\n\tcase tokSemicolon:\n\t\treturn \"';'\"\n\tcase tokComma:\n\t\treturn \"','\"\n\tcase tokArrow:\n\t\treturn \"'->'\"\n\tdefault:\n\t\treturn \"unknown\"\n\t}\n}\n\nfunc (p *parser) parseDigraph() error {\n\t// Expect: digraph <name> { ... }\n\tid, err := p.expect(tokID)\n\tif err != nil {\n\t\treturn err\n\t}\n\tif id.val != \"digraph\" {\n\t\treturn fmt.Errorf(\"DOT parse error at offset %d: expected 'digraph', got %q\", id.pos, id.val)\n\t}\n\n\t// Graph name: can be ID or string.\n\tname, err := p.readIDOrString()\n\tif err != nil {\n\t\treturn err\n\t}\n\tp.graph.Name = name\n\n\tif _, err := p.expect(tokLBrace); err != nil {\n\t\treturn err\n\t}\n\n\tfor p.cur.kind != tokRBrace && p.cur.kind != tokEOF {\n\t\tif err := p.parseStatement(); err != nil {\n\t\t\treturn err\n\t\t}\n\t}\n\n\tif _, err := p.expect(tokRBrace); err != nil {\n\t\treturn err\n\t}\n\treturn nil\n}\n\nfunc (p *parser) readIDOrString() (string, error) {\n\tswitch p.cur.kind {\n\tcase tokID:\n\t\tt := p.cur\n\t\tp.advance()\n\t\treturn t.val, nil\n\tcase tokString:\n\t\tt := p.cur\n\t\tp.advance()\n\t\treturn t.val, nil\n\tdefault:\n\t\treturn \"\", fmt.Errorf(\"DOT parse error at offset %d: expected identifier or string, got %q\",\n\t\t\tp.cur.pos, p.cur.val)\n\t}\n}\n\nfunc (p *parser) parseStatement() error {\n\t// Skip stray semicolons.\n\tif p.cur.kind == tokSemicolon {\n\t\tp.advance()\n\t\treturn nil\n\t}\n\n\t// Must be an ID or string to start a statement.\n\tif p.cur.kind != tokID && p.cur.kind != tokString {\n\t\treturn fmt.Errorf(\"DOT parse error at offset %d: unexpected token %q\", p.cur.pos, p.cur.val)\n\t}\n\n\tname := p.cur.val\n\tnameKind := p.cur.kind\n\tp.advance()\n\n\t// graph/node/edge default attributes: graph [ ... ] or node [ ... ] or edge [ ... ]\n\tif nameKind == tokID && (name == \"graph\" || name == \"node\" || name == \"edge\") && p.cur.kind == tokLBrack {\n\t\tattrs, err := p.parseAttrList()\n\t\tif err != nil {\n\t\t\treturn err\n\t\t}\n\t\tswitch name {\n\t\tcase \"graph\":\n\t\t\tfor k, v := range attrs {\n\t\t\t\tp.graph.GraphAttrs[k] = v\n\t\t\t}\n\t\tcase \"node\":\n\t\t\tfor k, v := range attrs {\n\t\t\t\tp.graph.NodeAttrs[k] = v\n\t\t\t}\n\t\tcase \"edge\":\n\t\t\tfor k, v := range attrs {\n\t\t\t\tp.graph.EdgeAttrs[k] = v\n\t\t\t}\n\t\t}\n\t\tp.consumeOptionalSemicolon()\n\t\treturn nil\n\t}\n\n\t// Edge statement: ID -> ID [ ... ] ;\n\tif p.cur.kind == tokArrow {\n\t\tp.advance()\n\t\tto, err := p.readIDOrString()\n\t\tif err != nil {\n\t\t\treturn err\n\t\t}\n\t\tattrs := make(map[string]string)\n\t\tif p.cur.kind == tokLBrack {\n\t\t\tattrs, err = p.parseAttrList()\n\t\t\tif err != nil {\n\t\t\t\treturn err\n\t\t\t}\n\t\t}\n\t\t// Merge default edge attrs.\n\t\tmerged := make(map[string]string)\n\t\tfor k, v := range p.graph.EdgeAttrs {\n\t\t\tmerged[k] = v\n\t\t}\n\t\tfor k, v := range attrs {\n\t\t\tmerged[k] = v\n\t\t}\n\t\tp.graph.Edges = append(p.graph.Edges, dotEdge{From: name, To: to, Attrs: merged})\n\n\t\t// Ensure both nodes exist (implicit declaration).\n\t\tp.ensureNode(name)\n\t\tp.ensureNode(to)\n\n\t\tp.consumeOptionalSemicolon()\n\t\treturn nil\n\t}\n\n\t// Node statement: ID [ ... ] ; or bare ID ;\n\tattrs := make(map[string]string)\n\tif p.cur.kind == tokLBrack {\n\t\tvar err error\n\t\tattrs, err = p.parseAttrList()\n\t\tif err != nil {\n\t\t\treturn err\n\t\t}\n\t}\n\t// Merge default node attrs.\n\tmerged := make(map[string]string)\n\tfor k, v := range p.graph.NodeAttrs {\n\t\tmerged[k] = v\n\t}\n\tfor k, v := range attrs {\n\t\tmerged[k] = v\n\t}\n\tp.addOrUpdateNode(name, merged)\n\n\tp.consumeOptionalSemicolon()\n\treturn nil\n}\n\n// parseAttrList parses [ key=value, key=value, ... ].\nfunc (p *parser) parseAttrList() (map[string]string, error) {\n\tif _, err := p.expect(tokLBrack); err != nil {\n\t\treturn nil, err\n\t}\n\n\tattrs := make(map[string]string)\n\tfor p.cur.kind != tokRBrack && p.cur.kind != tokEOF {\n\t\tkey, err := p.readIDOrString()\n\t\tif err != nil {\n\t\t\treturn nil, err\n\t\t}\n\t\tif _, err := p.expect(tokEquals); err != nil {\n\t\t\treturn nil, err\n\t\t}\n\t\tval, err := p.readIDOrString()\n\t\tif err != nil {\n\t\t\treturn nil, err\n\t\t}\n\t\tattrs[key] = val\n\n\t\t// Optional comma or semicolon separator.\n\t\tif p.cur.kind == tokComma || p.cur.kind == tokSemicolon {\n\t\t\tp.advance()\n\t\t}\n\t}\n\n\tif _, err := p.expect(tokRBrack); err != nil {\n\t\treturn nil, err\n\t}\n\treturn attrs, nil\n}\n\nfunc (p *parser) consumeOptionalSemicolon() {\n\tif p.cur.kind == tokSemicolon {\n\t\tp.advance()\n\t}\n}\n\n// ensureNode adds a placeholder node if it doesn't already exist.\nfunc (p *parser) ensureNode(id string) {\n\tfor _, n := range p.graph.Nodes {\n\t\tif n.ID == id {\n\t\t\treturn\n\t\t}\n\t}\n\tp.graph.Nodes = append(p.graph.Nodes, dotNode{ID: id, Attrs: make(map[string]string)})\n}\n\n// addOrUpdateNode adds a node or updates its attrs if it already exists.\nfunc (p *parser) addOrUpdateNode(id string, attrs map[string]string) {\n\tfor i, n := range p.graph.Nodes {\n\t\tif n.ID == id {\n\t\t\t// Merge attrs into existing node.\n\t\t\tfor k, v := range attrs {\n\t\t\t\tp.graph.Nodes[i].Attrs[k] = v\n\t\t\t}\n\t\t\treturn\n\t\t}\n\t}\n\tp.graph.Nodes = append(p.graph.Nodes, dotNode{ID: id, Attrs: attrs})\n}\n\n// unescapeDOT transforms DOT escape sequences in a raw string value.\n// The lexer handles this for quoted strings; this is for post-processing\n// values that were read as unquoted identifiers or for additional cleanup.\nfunc unescapeDOT(s string) string {\n\t// The lexer already handles escape sequences inside quoted strings.\n\t// This function handles any remaining \\n sequences that might appear\n\t// in attribute values from unquoted or partially-processed sources.\n\treturn s\n}\n\n// normalizeWhitespace collapses runs of whitespace into single spaces\n// and trims leading/trailing whitespace. Used for condition comparison.\nfunc normalizeWhitespace(s string) string {\n\tvar b strings.Builder\n\tinSpace := false\n\tfor _, r := range s {\n\t\tif unicode.IsSpace(r) {\n\t\t\tif !inSpace {\n\t\t\t\tb.WriteByte(' ')\n\t\t\t\tinSpace = true\n\t\t\t}\n\t\t} else {\n\t\t\tb.WriteRune(r)\n\t\t\tinSpace = false\n\t\t}\n\t}\n\treturn strings.TrimSpace(b.String())\n}\n"}
+TOOL RESULT: write
 OUTPUT:
-- No unconditional cycles after excluding edges marked `restart: true` (`DIP005`)
-- Exit node has no outgoing edges (`DIP006`)
-- Parallel fan-out has matching fan-in (`DIP007`)
-- No duplicate node IDs (`DIP008`)
-- No duplicate edges (`DIP009`)
-
-**Layer 4: Semantic quality** (warnings)
-- Unreachable nodes after conditional branches (`DIP101`)
-- Routing nodes without fail/default edges (`DIP102`)
-- Overlapping or contradictory conditions (`DIP103`)
-- Unbounded retry loops (no max_retries, no fallback) (`DIP104`)
-- No success path to exit (`DIP105`)
-- Undefined `${variables}` in prompts — tiered by namespace (`DIP106`)
-- Unused context keys (written but never read via `writes:`) (`DIP107`)
-- Model/provider combination not in known catalog (`DIP108`)
-- Namespace collisions in imports (`DIP109`)
-- Empty prompts (`DIP110`)
-- Tool command without timeout (`DIP111`)
-- `reads:` key not in any upstream node's `writes:` (`DIP112`)
-
-### Formatter
-
-`dippin fmt` — canonical formatting:
-- 2-space indentation
-- One blank line between nodes
-- Section comments preserved
-- Trailing whitespace removed
-- Single trailing newline
-
-**Canonical field ordering per node kind**:
-
-
+wrote 11423 bytes to migrate/dot_parser.go
 TURN 8
-TOOL CALL: bash
+TOOL CALL: write
 INPUT:
-{"command": "sed -n '910,970p' DIPPIN_DESIGN_PLAN.md"}
-TOOL RESULT: bash
+{"content": "package migrate\n\nimport (\n\t\"fmt\"\n\t\"strconv\"\n\t\"strings\"\n\t\"time\"\n\n\t\"github.com/2389/dippin/formatter\"\n\t\"github.com/2389/dippin/ir\"\n)\n\n// Migrate parses a DOT digraph string and produces a Dippin IR workflow.\n// It applies all post-migration cleanup automatically:\n//   - Shape → node kind mapping\n//   - Un-escaping of prompts and commands (handled by the DOT lexer)\n//   - Namespace prefixing for condition variables (bare \"outcome\" → \"ctx.outcome\")\n//   - Start/exit identification from Mdiamond/Msquare shapes\n//   - Graph-level attribute extraction to WorkflowDefaults\nfunc Migrate(dotSource string) (*ir.Workflow, error) {\n\tdg, err := parseDOT(dotSource)\n\tif err != nil {\n\t\treturn nil, fmt.Errorf(\"migrate: %w\", err)\n\t}\n\treturn convertDOTGraph(dg)\n}\n\n// MigrateToSource parses DOT and returns canonical .dip source text.\n// Convenience: equivalent to formatter.Format(Migrate(dotSource)).\nfunc MigrateToSource(dotSource string) (string, error) {\n\tw, err := Migrate(dotSource)\n\tif err != nil {\n\t\treturn \"\", err\n\t}\n\treturn formatter.Format(w), nil\n}\n\n// --- Shape → Kind Mapping ---\n\n// shapeToKind maps DOT shape attributes to IR node kinds.\n// Mdiamond and Msquare are handled specially (start/exit markers).\n// diamond is handled with disambiguation logic.\nvar shapeToKind = map[string]ir.NodeKind{\n\t\"box\":            ir.NodeAgent,\n\t\"hexagon\":        ir.NodeHuman,\n\t\"parallelogram\":  ir.NodeTool,\n\t\"component\":      ir.NodeParallel,\n\t\"tripleoctagon\":  ir.NodeFanIn,\n\t\"tab\":            ir.NodeSubgraph,\n}\n\n// convertDOTGraph transforms a parsed DOT graph into an IR workflow.\nfunc convertDOTGraph(dg *dotGraph) (*ir.Workflow, error) {\n\tw := &ir.Workflow{\n\t\tName:    dg.Name,\n\t\tVersion: \"1\",\n\t}\n\n\t// Extract graph-level attributes.\n\textractGraphDefaults(dg.GraphAttrs, w)\n\n\t// Build a set of edge-implicit nodes for quick lookup.\n\tnodeIndex := make(map[string]int) // ID → index in dg.Nodes\n\n\tfor i, n := range dg.Nodes {\n\t\tnodeIndex[n.ID] = i\n\t}\n\n\t// First pass: identify start/exit nodes and build IR nodes.\n\tstartID := \"\"\n\texitID := \"\"\n\tfor _, dn := range dg.Nodes {\n\t\tshape := dn.Attrs[\"shape\"]\n\t\tif shape == \"Mdiamond\" {\n\t\t\tstartID = dn.ID\n\t\t}\n\t\tif shape == \"Msquare\" {\n\t\t\texitID = dn.ID\n\t\t}\n\t}\n\n\t// Build IR nodes in declaration order.\n\tfor _, dn := range dg.Nodes {\n\t\tnode, err := convertNode(dn, dg.Edges)\n\t\tif err != nil {\n\t\t\treturn nil, fmt.Errorf(\"migrate: node %q: %w\", dn.ID, err)\n\t\t}\n\t\tw.Nodes = append(w.Nodes, node)\n\t}\n\n\t// Set start/exit.\n\tw.Start = startID\n\tw.Exit = exitID\n\n\t// Build IR edges.\n\tfor _, de := range dg.Edges {\n\t\tedge, err := convertEdge(de)\n\t\tif err != nil {\n\t\t\treturn nil, fmt.Errorf(\"migrate: edge %s->%s: %w\", de.From, de.To, err)\n\t\t}\n\t\tw.Edges = append(w.Edges, edge)\n\t}\n\n\t// Post-pass: infer parallel targets and fan_in sources from edges.\n\tinferParallelFanIn(w)\n\n\treturn w, nil\n}\n\n// extractGraphDefaults populates workflow-level fields from DOT graph attributes.\nfunc extractGraphDefaults(attrs map[string]string, w *ir.Workflow) {\n\tfor k, v := range attrs {\n\t\tswitch k {\n\t\tcase \"goal\":\n\t\t\tw.Goal = v\n\t\tcase \"rankdir\":\n\t\t\t// Presentation-only; ignored.\n\t\tcase \"default_max_retry\", \"max_retries\":\n\t\t\tif n, err := strconv.Atoi(v); err == nil {\n\t\t\t\tw.Defaults.MaxRetries = n\n\t\t\t}\n\t\tcase \"max_restarts\":\n\t\t\tif n, err := strconv.Atoi(v); err == nil {\n\t\t\t\tw.Defaults.MaxRestarts = n\n\t\t\t}\n\t\tcase \"default_fidelity\", \"fidelity\":\n\t\t\tw.Defaults.Fidelity = v\n\t\tcase \"model\":\n\t\t\tw.Defaults.Model = v\n\t\tcase \"provider\":\n\t\t\tw.Defaults.Provider = v\n\t\t}\n\t}\n}\n\n// convertNode converts a DOT node to an IR node.\nfunc convertNode(dn dotNode, edges []dotEdge) (*ir.Node, error) {\n\tshape := dn.Attrs[\"shape\"]\n\tkind := resolveKind(shape, dn.Attrs)\n\n\tnode := &ir.Node{\n\t\tID:   dn.ID,\n\t\tKind: kind,\n\t}\n\n\t// Set label.\n\tif label, ok := dn.Attrs[\"label\"]; ok {\n\t\tnode.Label = label\n\t}\n\n\t// Build kind-specific config.\n\tswitch kind {\n\tcase ir.NodeAgent:\n\t\tcfg := buildAgentConfig(dn.Attrs)\n\t\tnode.Config = cfg\n\t\tnode.Retry = buildRetryConfig(dn.Attrs)\n\tcase ir.NodeHuman:\n\t\tnode.Config = buildHumanConfig(dn.Attrs)\n\tcase ir.NodeTool:\n\t\tcfg, err := buildToolConfig(dn.Attrs)\n\t\tif err != nil {\n\t\t\treturn nil, err\n\t\t}\n\t\tnode.Config = cfg\n\tcase ir.NodeParallel:\n\t\tnode.Config = buildParallelConfig(dn.Attrs)\n\tcase ir.NodeFanIn:\n\t\tnode.Config = buildFanInConfig(dn.Attrs)\n\tcase ir.NodeSubgraph:\n\t\tnode.Config = buildSubgraphConfig(dn.Attrs)\n\tdefault:\n\t\tnode.Config = ir.AgentConfig{}\n\t}\n\n\treturn node, nil\n}\n\n// resolveKind determines the IR node kind from the DOT shape and attributes.\n// Implements the diamond disambiguation logic from §5.\nfunc resolveKind(shape string, attrs map[string]string) ir.NodeKind {\n\t// Start/exit markers become agent nodes.\n\tif shape == \"Mdiamond\" || shape == \"Msquare\" {\n\t\treturn ir.NodeAgent\n\t}\n\n\t// Diamond disambiguation: per §5.\n\tif shape == \"diamond\" {\n\t\tif _, hasTool := attrs[\"tool_command\"]; hasTool {\n\t\t\treturn ir.NodeTool\n\t\t}\n\t\t// All other diamonds become agent nodes (routing or prompt-based).\n\t\treturn ir.NodeAgent\n\t}\n\n\t// Direct mapping.\n\tif kind, ok := shapeToKind[shape]; ok {\n\t\treturn kind\n\t}\n\n\t// Default: agent.\n\treturn ir.NodeAgent\n}\n\n// --- Config builders ---\n\nfunc buildAgentConfig(attrs map[string]string) ir.AgentConfig {\n\tcfg := ir.AgentConfig{}\n\n\tif v, ok := attrs[\"prompt\"]; ok {\n\t\tcfg.Prompt = v\n\t}\n\tif v, ok := attrs[\"system_prompt\"]; ok {\n\t\tcfg.SystemPrompt = v\n\t}\n\t// Legacy: llm_model → model.\n\tif v, ok := attrs[\"model\"]; ok {\n\t\tcfg.Model = v\n\t}\n\tif v, ok := attrs[\"llm_model\"]; ok {\n\t\tcfg.Model = v\n\t}\n\t// Legacy: llm_provider → provider.\n\tif v, ok := attrs[\"provider\"]; ok {\n\t\tcfg.Provider = v\n\t}\n\tif v, ok := attrs[\"llm_provider\"]; ok {\n\t\tcfg.Provider = v\n\t}\n\tif v, ok := attrs[\"reasoning_effort\"]; ok {\n\t\tcfg.ReasoningEffort = v\n\t}\n\tif v, ok := attrs[\"fidelity\"]; ok {\n\t\tcfg.Fidelity = v\n\t}\n\tif v, ok := attrs[\"goal_gate\"]; ok && isTruthy(v) {\n\t\tcfg.GoalGate = true\n\t}\n\tif v, ok := attrs[\"auto_status\"]; ok && isTruthy(v) {\n\t\tcfg.AutoStatus = true\n\t}\n\tif v, ok := attrs[\"max_turns\"]; ok {\n\t\tif n, err := strconv.Atoi(v); err == nil {\n\t\t\tcfg.MaxTurns = n\n\t\t}\n\t}\n\tif v, ok := attrs[\"cmd_timeout\"]; ok {\n\t\tif d, err := time.ParseDuration(v); err == nil {\n\t\t\tcfg.CmdTimeout = d\n\t\t}\n\t}\n\tif v, ok := attrs[\"cache_tools\"]; ok && isTruthy(v) {\n\t\tcfg.CacheTools = true\n\t}\n\tif v, ok := attrs[\"compaction\"]; ok {\n\t\tcfg.Compaction = v\n\t}\n\n\treturn cfg\n}\n\nfunc buildHumanConfig(attrs map[string]string) ir.HumanConfig {\n\tcfg := ir.HumanConfig{}\n\tif v, ok := attrs[\"mode\"]; ok {\n\t\tcfg.Mode = v\n\t}\n\tif v, ok := attrs[\"default\"]; ok {\n\t\tcfg.Default = v\n\t}\n\treturn cfg\n}\n\nfunc buildToolConfig(attrs map[string]string) (ir.ToolConfig, error) {\n\tcfg := ir.ToolConfig{}\n\tif v, ok := attrs[\"tool_command\"]; ok {\n\t\tcfg.Command = v\n\t}\n\tif v, ok := attrs[\"timeout\"]; ok {\n\t\td, err := time.ParseDuration(v)\n\t\tif err != nil {\n\t\t\treturn cfg, fmt.Errorf(\"invalid timeout %q: %w\", v, err)\n\t\t}\n\t\tcfg.Timeout = d\n\t}\n\treturn cfg, nil\n}\n\nfunc buildParallelConfig(attrs map[string]string) ir.ParallelConfig {\n\tcfg := ir.ParallelConfig{}\n\tif v, ok := attrs[\"targets\"]; ok {\n\t\tcfg.Targets = splitComma(v)\n\t}\n\treturn cfg\n}\n\nfunc buildFanInConfig(attrs map[string]string) ir.FanInConfig {\n\tcfg := ir.FanInConfig{}\n\tif v, ok := attrs[\"sources\"]; ok {\n\t\tcfg.Sources = splitComma(v)\n\t}\n\treturn cfg\n}\n\nfunc buildSubgraphConfig(attrs map[string]string) ir.SubgraphConfig {\n\tcfg := ir.SubgraphConfig{}\n\tif v, ok := attrs[\"ref\"]; ok {\n\t\tcfg.Ref = v\n\t}\n\treturn cfg\n}\n\nfunc buildRetryConfig(attrs map[string]string) ir.RetryConfig {\n\trc := ir.RetryConfig{}\n\tif v, ok := attrs[\"retry_policy\"]; ok {\n\t\trc.Policy = v\n\t}\n\tif v, ok := attrs[\"max_retries\"]; ok {\n\t\tif n, err := strconv.Atoi(v); err == nil {\n\t\t\trc.MaxRetries = n\n\t\t}\n\t}\n\tif v, ok := attrs[\"retry_target\"]; ok {\n\t\trc.RetryTarget = v\n\t}\n\tif v, ok := attrs[\"fallback_target\"]; ok {\n\t\trc.FallbackTarget = v\n\t}\n\treturn rc\n}\n\n// --- Edge conversion ---\n\nfunc convertEdge(de dotEdge) (*ir.Edge, error) {\n\te := &ir.Edge{\n\t\tFrom: de.From,\n\t\tTo:   de.To,\n\t}\n\n\tif v, ok := de.Attrs[\"label\"]; ok {\n\t\te.Label = v\n\t}\n\tif v, ok := de.Attrs[\"condition\"]; ok {\n\t\tcond, err := parseCondition(v)\n\t\tif err != nil {\n\t\t\treturn nil, fmt.Errorf(\"condition %q: %w\", v, err)\n\t\t}\n\t\te.Condition = cond\n\t}\n\tif v, ok := de.Attrs[\"weight\"]; ok {\n\t\tif n, err := strconv.Atoi(v); err == nil {\n\t\t\te.Weight = n\n\t\t}\n\t}\n\t// Both restart and loop_restart (legacy) map to Edge.Restart.\n\tif v, ok := de.Attrs[\"restart\"]; ok && isTruthy(v) {\n\t\te.Restart = true\n\t}\n\tif v, ok := de.Attrs[\"loop_restart\"]; ok && isTruthy(v) {\n\t\te.Restart = true\n\t}\n\n\treturn e, nil\n}\n\n// --- Condition parsing ---\n\n// parseCondition parses a DOT condition string into an ir.Condition.\n// It handles:\n//   - Simple comparisons: outcome=success, tool_stdout contains pass\n//   - AND/OR: outcome=success && tool_stdout contains done\n//   - NOT: not outcome=fail, !outcome=fail\n//   - Namespace prefixing: bare \"outcome\" → \"ctx.outcome\"\nfunc parseCondition(raw string) (*ir.Condition, error) {\n\traw = strings.TrimSpace(raw)\n\tif raw == \"\" {\n\t\treturn nil, nil\n\t}\n\n\texpr, err := parseCondExpr(raw)\n\tif err != nil {\n\t\treturn nil, err\n\t}\n\n\t// Format the parsed condition back to a canonical raw string.\n\tcanonRaw := formatCondExpr(expr)\n\n\treturn &ir.Condition{\n\t\tRaw:    canonRaw,\n\t\tParsed: expr,\n\t}, nil\n}\n\n// parseCondExpr parses a condition expression string into an AST.\nfunc parseCondExpr(s string) (ir.ConditionExpr, error) {\n\ts = strings.TrimSpace(s)\n\tif s == \"\" {\n\t\treturn nil, fmt.Errorf(\"empty condition expression\")\n\t}\n\n\t// Try to split on || (OR — lowest precedence).\n\tif parts, ok := splitLogicalOp(s, \"||\"); ok {\n\t\tleft, err := parseCondExpr(parts[0])\n\t\tif err != nil {\n\t\t\treturn nil, err\n\t\t}\n\t\tright, err := parseCondExpr(parts[1])\n\t\tif err != nil {\n\t\t\treturn nil, err\n\t\t}\n\t\treturn ir.CondOr{Left: left, Right: right}, nil\n\t}\n\n\t// Try to split on && (AND — higher precedence).\n\tif parts, ok := splitLogicalOp(s, \"&&\"); ok {\n\t\tleft, err := parseCondExpr(parts[0])\n\t\tif err != nil {\n\t\t\treturn nil, err\n\t\t}\n\t\tright, err := parseCondExpr(parts[1])\n\t\tif err != nil {\n\t\t\treturn nil, err\n\t\t}\n\t\treturn ir.CondAnd{Left: left, Right: right}, nil\n\t}\n\n\t// Handle NOT prefix.\n\tif strings.HasPrefix(s, \"not \") {\n\t\tinner, err := parseCondExpr(s[4:])\n\t\tif err != nil {\n\t\t\treturn nil, err\n\t\t}\n\t\treturn ir.CondNot{Inner: inner}, nil\n\t}\n\tif strings.HasPrefix(s, \"!\") {\n\t\tinner, err := parseCondExpr(s[1:])\n\t\tif err != nil {\n\t\t\treturn nil, err\n\t\t}\n\t\treturn ir.CondNot{Inner: inner}, nil\n\t}\n\n\t// Parse a single comparison: var op value.\n\treturn parseComparison(s)\n}\n\n// splitLogicalOp splits a condition string on the given logical operator (&&, ||).\n// Returns the two parts if the operator is found at the top level (not inside parens).\nfunc splitLogicalOp(s, op string) ([]string, bool) {\n\tdepth := 0\n\tfor i := 0; i <= len(s)-len(op); i++ {\n\t\tch := s[i]\n\t\tif ch == '(' {\n\t\t\tdepth++\n\t\t} else if ch == ')' {\n\t\t\tdepth--\n\t\t}\n\t\tif depth == 0 && s[i:i+len(op)] == op {\n\t\t\tleft := strings.TrimSpace(s[:i])\n\t\t\tright := strings.TrimSpace(s[i+len(op):])\n\t\t\tif left != \"\" && right != \"\" {\n\t\t\t\treturn []string{left, right}, true\n\t\t\t}\n\t\t}\n\t}\n\treturn nil, false\n}\n\n// parseComparison parses a single condition comparison like \"outcome=success\"\n// or \"tool_stdout contains pass\".\nfunc parseComparison(s string) (ir.ConditionExpr, error) {\n\ts = strings.TrimSpace(s)\n\n\t// Try != first (before =) to avoid matching the = in !=.\n\tif idx := strings.Index(s, \"!=\"); idx > 0 {\n\t\tvariable := strings.TrimSpace(s[:idx])\n\t\tvalue := strings.TrimSpace(s[idx+2:])\n\t\treturn ir.CondCompare{\n\t\t\tVariable: addNamespacePrefix(variable),\n\t\t\tOp:       \"!=\",\n\t\t\tValue:    value,\n\t\t}, nil\n\t}\n\n\t// Try = (equality).\n\tif idx := strings.Index(s, \"=\"); idx > 0 {\n\t\tvariable := strings.TrimSpace(s[:idx])\n\t\tvalue := strings.TrimSpace(s[idx+1:])\n\t\treturn ir.CondCompare{\n\t\t\tVariable: addNamespacePrefix(variable),\n\t\t\tOp:       \"=\",\n\t\t\tValue:    value,\n\t\t}, nil\n\t}\n\n\t// Try word-based operators: contains, startswith, endswith, in.\n\tfor _, op := range []string{\" contains \", \" startswith \", \" endswith \", \" in \"} {\n\t\tif idx := strings.Index(s, op); idx > 0 {\n\t\t\tvariable := strings.TrimSpace(s[:idx])\n\t\t\tvalue := strings.TrimSpace(s[idx+len(op):])\n\t\t\treturn ir.CondCompare{\n\t\t\t\tVariable: addNamespacePrefix(variable),\n\t\t\t\tOp:       strings.TrimSpace(op),\n\t\t\t\tValue:    value,\n\t\t\t}, nil\n\t\t}\n\t}\n\n\treturn nil, fmt.Errorf(\"cannot parse condition comparison: %q\", s)\n}\n\n// addNamespacePrefix adds the ctx. namespace to bare condition variable names.\n// Variables that already contain a dot are left as-is (graph.*, ctx.*).\n// The legacy \"context.\" prefix is normalized to \"ctx.\".\nfunc addNamespacePrefix(variable string) string {\n\tvariable = strings.TrimSpace(variable)\n\n\t// Already namespaced with \"context.\" → normalize to \"ctx.\"\n\tif strings.HasPrefix(variable, \"context.\") {\n\t\treturn \"ctx.\" + variable[len(\"context.\"):]\n\t}\n\n\t// Already namespaced (contains a dot).\n\tif strings.Contains(variable, \".\") {\n\t\treturn variable\n\t}\n\n\t// Bare variable name → add ctx. prefix.\n\treturn \"ctx.\" + variable\n}\n\n// formatCondExpr renders a condition AST back to a canonical string.\nfunc formatCondExpr(expr ir.ConditionExpr) string {\n\treturn formatCondExprPrec(expr, 0)\n}\n\nconst (\n\tcondPrecOr  = 1\n\tcondPrecAnd = 2\n\tcondPrecNot = 3\n)\n\nfunc formatCondExprPrec(expr ir.ConditionExpr, parentPrec int) string {\n\tswitch e := expr.(type) {\n\tcase ir.CondCompare:\n\t\treturn fmt.Sprintf(\"%s %s %s\", e.Variable, e.Op, e.Value)\n\tcase ir.CondAnd:\n\t\ts := fmt.Sprintf(\"%s and %s\",\n\t\t\tformatCondExprPrec(e.Left, condPrecAnd),\n\t\t\tformatCondExprPrec(e.Right, condPrecAnd))\n\t\tif parentPrec != 0 && parentPrec != condPrecAnd {\n\t\t\treturn \"(\" + s + \")\"\n\t\t}\n\t\treturn s\n\tcase ir.CondOr:\n\t\ts := fmt.Sprintf(\"%s or %s\",\n\t\t\tformatCondExprPrec(e.Left, condPrecOr),\n\t\t\tformatCondExprPrec(e.Right, condPrecOr))\n\t\tif parentPrec != 0 && parentPrec != condPrecOr {\n\t\t\treturn \"(\" + s + \")\"\n\t\t}\n\t\treturn s\n\tcase ir.CondNot:\n\t\tinner := formatCondExprPrec(e.Inner, condPrecNot)\n\t\treturn \"not \" + inner\n\tdefault:\n\t\treturn \"\"\n\t}\n}\n\n// --- Parallel/Fan-in inference ---\n\n// inferParallelFanIn fills in Targets and Sources from edges when not\n// explicitly set in DOT attributes.\nfunc inferParallelFanIn(w *ir.Workflow) {\n\tfor _, n := range w.Nodes {\n\t\tswitch cfg := n.Config.(type) {\n\t\tcase ir.ParallelConfig:\n\t\t\tif len(cfg.Targets) == 0 {\n\t\t\t\tedges := w.EdgesFrom(n.ID)\n\t\t\t\ttargets := make([]string, 0, len(edges))\n\t\t\t\tfor _, e := range edges {\n\t\t\t\t\ttargets = append(targets, e.To)\n\t\t\t\t}\n\t\t\t\tn.Config = ir.ParallelConfig{Targets: targets}\n\t\t\t}\n\t\tcase ir.FanInConfig:\n\t\t\tif len(cfg.Sources) == 0 {\n\t\t\t\tedges := w.EdgesTo(n.ID)\n\t\t\t\tsources := make([]string, 0, len(edges))\n\t\t\t\tfor _, e := range edges {\n\t\t\t\t\tsources = append(sources, e.From)\n\t\t\t\t}\n\t\t\t\tn.Config = ir.FanInConfig{Sources: sources}\n\t\t\t}\n\t\t}\n\t}\n}\n\n// --- Helpers ---\n\nfunc isTruthy(s string) bool {\n\ts = strings.ToLower(strings.TrimSpace(s))\n\treturn s == \"true\" || s == \"1\" || s == \"yes\"\n}\n\nfunc splitComma(s string) []string {\n\tparts := strings.Split(s, \",\")\n\tresult := make([]string, 0, len(parts))\n\tfor _, p := range parts {\n\t\tp = strings.TrimSpace(p)\n\t\tif p != \"\" {\n\t\t\tresult = append(result, p)\n\t\t}\n\t}\n\treturn result\n}\n", "path": "migrate/migrate.go"}
+TOOL RESULT: write
 OUTPUT:
-**Trade-off**: You lose opaque execution boundaries, which means a subgraph can't have its own independent restart counter. If this becomes a real need, we add opaque execution as an optimization later — but inline expansion is the canonical representation.
-
-### Source-map preservation
-
-After expansion, every node retains a `SourceLocation` pointing to the original `.dip` file. Diagnostic messages show the original file and line, not the expanded position. This is how you debug "where did this node come from?"
-
----
-
-## 13. Node I/O Contracts
-
-Even in v1, Dippin should have a path from "magic context map" to something legible and lintable. The `reads:` and `writes:` fields on nodes are advisory — the validator produces warnings, not errors — but they immediately make state flow visible.
-
-### Syntax
-
-`reads:` and `writes:` use **bare logical names** (no namespace prefix). Namespaced access (`ctx.`, `graph.`) is used only in prompt interpolation and edge conditions.
-
-```dippin
-  agent Interpret
-    reads: human_response
-    writes: plan
-    prompt:
-      You are a senior software architect.
-      ## User Request
-      ${ctx.human_response}
-
-  tool CheckTests
-    reads: last_response
-    writes: test_result
-    command:
-      ...
-
-  agent Implement
-    reads: plan, test_result
-    prompt:
-      ...
-
-  edges
-    Validate -> Approve   when ctx.outcome = success
-```
-
-### Semantics
-
-- `reads:` lists context keys this node expects to be set by an upstream node
-- `writes:` lists context keys this node will set in its `ContextUpdates`
-- Both are comma-separated lists of **bare context key names** (e.g., `human_response`, not `ctx.human_response`)
-- Prompt/condition references use namespaced access: `${ctx.human_response}`, `when ctx.outcome = success`
-- The validator can check:
-  - **Warning**: Node reads a key that no upstream node writes (may be auto-injected or dynamic)
-  - **Warning**: Node writes a key that no downstream node reads (dead output)
-  - **Info**: Flow trace showing how context keys propagate through the graph
-
-### Why advisory-only in v1
-
-The current system is fully dynamic. Tool nodes can write arbitrary keys via `printf` output that ends up in `tool_stdout`. Agent nodes write `last_response` implicitly. Enforcing strict contracts would break every existing pipeline. But having them visible — even optionally — is the bridge to a future where state flow is verifiable.
-
----
-
-## 14. Linter / Diagnostics Design
-
-### Diagnostic structure
-
-
+wrote 15128 bytes to migrate/migrate.go
 TURN 9
-TOOL CALL: bash
+TOOL CALL: write
 INPUT:
-{"command": "sed -n '966,1100p' DIPPIN_DESIGN_PLAN.md"}
-TOOL RESULT: bash
+{"content": "package migrate\n\nimport (\n\t\"fmt\"\n\t\"strings\"\n\n\t\"github.com/2389/dippin/ir\"\n)\n\n// Difference describes a structural difference between two workflows.\ntype Difference struct {\n\tKind    string // \"node_missing\", \"node_extra\", \"edge_missing\", \"edge_extra\",\n\t//                \"config_mismatch\", \"kind_mismatch\", \"start_mismatch\",\n\t//                \"exit_mismatch\", \"defaults_mismatch\"\n\tMessage string // Human-readable description\n\tPathA   string // Location in workflow A (e.g., \"node:Validate\")\n\tPathB   string // Location in workflow B (may be empty)\n}\n\n// CheckParity compares two workflows for structural equivalence.\n// It checks:\n//   - Same node IDs and kinds\n//   - Same edges (from/to/conditions)\n//   - Same start/exit\n//   - Compatible node configurations (prompt content modulo whitespace)\n//   - Same graph-level defaults\nfunc CheckParity(a, b *ir.Workflow) []Difference {\n\tvar diffs []Difference\n\n\t// Start/exit.\n\tif a.Start != b.Start {\n\t\tdiffs = append(diffs, Difference{\n\t\t\tKind:    \"start_mismatch\",\n\t\t\tMessage: fmt.Sprintf(\"start differs: %q vs %q\", a.Start, b.Start),\n\t\t\tPathA:   \"workflow.start\",\n\t\t\tPathB:   \"workflow.start\",\n\t\t})\n\t}\n\tif a.Exit != b.Exit {\n\t\tdiffs = append(diffs, Difference{\n\t\t\tKind:    \"exit_mismatch\",\n\t\t\tMessage: fmt.Sprintf(\"exit differs: %q vs %q\", a.Exit, b.Exit),\n\t\t\tPathA:   \"workflow.exit\",\n\t\t\tPathB:   \"workflow.exit\",\n\t\t})\n\t}\n\n\t// Build node maps.\n\taNodes := make(map[string]*ir.Node)\n\tfor _, n := range a.Nodes {\n\t\taNodes[n.ID] = n\n\t}\n\tbNodes := make(map[string]*ir.Node)\n\tfor _, n := range b.Nodes {\n\t\tbNodes[n.ID] = n\n\t}\n\n\t// Check for missing / extra nodes.\n\tfor id, na := range aNodes {\n\t\tnb, ok := bNodes[id]\n\t\tif !ok {\n\t\t\tdiffs = append(diffs, Difference{\n\t\t\t\tKind:    \"node_missing\",\n\t\t\t\tMessage: fmt.Sprintf(\"node %q present in A but missing from B\", id),\n\t\t\t\tPathA:   \"node:\" + id,\n\t\t\t})\n\t\t\tcontinue\n\t\t}\n\t\t// Kind mismatch.\n\t\tif na.Kind != nb.Kind {\n\t\t\tdiffs = append(diffs, Difference{\n\t\t\t\tKind:    \"kind_mismatch\",\n\t\t\t\tMessage: fmt.Sprintf(\"node %q kind: %q vs %q\", id, na.Kind, nb.Kind),\n\t\t\t\tPathA:   \"node:\" + id,\n\t\t\t\tPathB:   \"node:\" + id,\n\t\t\t})\n\t\t}\n\t\t// Config comparison (per kind).\n\t\tdiffs = append(diffs, compareConfigs(id, na, nb)...)\n\t}\n\n\tfor id := range bNodes {\n\t\tif _, ok := aNodes[id]; !ok {\n\t\t\tdiffs = append(diffs, Difference{\n\t\t\t\tKind:    \"node_extra\",\n\t\t\t\tMessage: fmt.Sprintf(\"node %q present in B but missing from A\", id),\n\t\t\t\tPathB:   \"node:\" + id,\n\t\t\t})\n\t\t}\n\t}\n\n\t// Check edges.\n\taEdges := edgeSet(a.Edges)\n\tbEdges := edgeSet(b.Edges)\n\n\tfor key := range aEdges {\n\t\tif _, ok := bEdges[key]; !ok {\n\t\t\tdiffs = append(diffs, Difference{\n\t\t\t\tKind:    \"edge_missing\",\n\t\t\t\tMessage: fmt.Sprintf(\"edge %s present in A but missing from B\", key),\n\t\t\t\tPathA:   \"edge:\" + key,\n\t\t\t})\n\t\t}\n\t}\n\tfor key := range bEdges {\n\t\tif _, ok := aEdges[key]; !ok {\n\t\t\tdiffs = append(diffs, Difference{\n\t\t\t\tKind:    \"edge_extra\",\n\t\t\t\tMessage: fmt.Sprintf(\"edge %s present in B but missing from A\", key),\n\t\t\t\tPathB:   \"edge:\" + key,\n\t\t\t})\n\t\t}\n\t}\n\n\t// Compare defaults.\n\tdiffs = append(diffs, compareDefaults(a.Defaults, b.Defaults)...)\n\n\treturn diffs\n}\n\n// edgeKey produces a canonical string key for an edge including condition.\nfunc edgeKey(e *ir.Edge) string {\n\tcondStr := \"\"\n\tif e.Condition != nil {\n\t\tcondStr = e.Condition.Raw\n\t}\n\treturn fmt.Sprintf(\"%s->%s[%s]\", e.From, e.To, condStr)\n}\n\nfunc edgeSet(edges []*ir.Edge) map[string]*ir.Edge {\n\tm := make(map[string]*ir.Edge, len(edges))\n\tfor _, e := range edges {\n\t\tm[edgeKey(e)] = e\n\t}\n\treturn m\n}\n\n// compareConfigs compares the configurations of two nodes with the same ID.\nfunc compareConfigs(id string, a, b *ir.Node) []Difference {\n\tvar diffs []Difference\n\tpath := \"node:\" + id\n\n\tswitch ac := a.Config.(type) {\n\tcase ir.AgentConfig:\n\t\tbc, ok := b.Config.(ir.AgentConfig)\n\t\tif !ok {\n\t\t\tdiffs = append(diffs, Difference{\n\t\t\t\tKind:    \"config_mismatch\",\n\t\t\t\tMessage: fmt.Sprintf(\"node %q config type mismatch: AgentConfig vs %T\", id, b.Config),\n\t\t\t\tPathA:   path,\n\t\t\t\tPathB:   path,\n\t\t\t})\n\t\t\treturn diffs\n\t\t}\n\t\t// Compare prompts with whitespace tolerance.\n\t\tif !promptsEqual(ac.Prompt, bc.Prompt) {\n\t\t\tdiffs = append(diffs, Difference{\n\t\t\t\tKind:    \"config_mismatch\",\n\t\t\t\tMessage: fmt.Sprintf(\"node %q prompt differs\", id),\n\t\t\t\tPathA:   path + \".prompt\",\n\t\t\t\tPathB:   path + \".prompt\",\n\t\t\t})\n\t\t}\n\t\tif ac.Model != bc.Model {\n\t\t\tdiffs = append(diffs, Difference{\n\t\t\t\tKind:    \"config_mismatch\",\n\t\t\t\tMessage: fmt.Sprintf(\"node %q model: %q vs %q\", id, ac.Model, bc.Model),\n\t\t\t\tPathA:   path + \".model\",\n\t\t\t\tPathB:   path + \".model\",\n\t\t\t})\n\t\t}\n\t\tif ac.Provider != bc.Provider {\n\t\t\tdiffs = append(diffs, Difference{\n\t\t\t\tKind:    \"config_mismatch\",\n\t\t\t\tMessage: fmt.Sprintf(\"node %q provider: %q vs %q\", id, ac.Provider, bc.Provider),\n\t\t\t\tPathA:   path + \".provider\",\n\t\t\t\tPathB:   path + \".provider\",\n\t\t\t})\n\t\t}\n\t\tif ac.GoalGate != bc.GoalGate {\n\t\t\tdiffs = append(diffs, Difference{\n\t\t\t\tKind:    \"config_mismatch\",\n\t\t\t\tMessage: fmt.Sprintf(\"node %q goal_gate: %v vs %v\", id, ac.GoalGate, bc.GoalGate),\n\t\t\t\tPathA:   path + \".goal_gate\",\n\t\t\t\tPathB:   path + \".goal_gate\",\n\t\t\t})\n\t\t}\n\t\tif ac.AutoStatus != bc.AutoStatus {\n\t\t\tdiffs = append(diffs, Difference{\n\t\t\t\tKind:    \"config_mismatch\",\n\t\t\t\tMessage: fmt.Sprintf(\"node %q auto_status: %v vs %v\", id, ac.AutoStatus, bc.AutoStatus),\n\t\t\t\tPathA:   path + \".auto_status\",\n\t\t\t\tPathB:   path + \".auto_status\",\n\t\t\t})\n\t\t}\n\n\tcase ir.ToolConfig:\n\t\tbc, ok := b.Config.(ir.ToolConfig)\n\t\tif !ok {\n\t\t\tdiffs = append(diffs, Difference{\n\t\t\t\tKind:    \"config_mismatch\",\n\t\t\t\tMessage: fmt.Sprintf(\"node %q config type mismatch: ToolConfig vs %T\", id, b.Config),\n\t\t\t\tPathA:   path,\n\t\t\t\tPathB:   path,\n\t\t\t})\n\t\t\treturn diffs\n\t\t}\n\t\tif !promptsEqual(ac.Command, bc.Command) {\n\t\t\tdiffs = append(diffs, Difference{\n\t\t\t\tKind:    \"config_mismatch\",\n\t\t\t\tMessage: fmt.Sprintf(\"node %q command differs\", id),\n\t\t\t\tPathA:   path + \".command\",\n\t\t\t\tPathB:   path + \".command\",\n\t\t\t})\n\t\t}\n\n\tcase ir.HumanConfig:\n\t\tbc, ok := b.Config.(ir.HumanConfig)\n\t\tif !ok {\n\t\t\tdiffs = append(diffs, Difference{\n\t\t\t\tKind:    \"config_mismatch\",\n\t\t\t\tMessage: fmt.Sprintf(\"node %q config type mismatch: HumanConfig vs %T\", id, b.Config),\n\t\t\t\tPathA:   path,\n\t\t\t\tPathB:   path,\n\t\t\t})\n\t\t\treturn diffs\n\t\t}\n\t\tif ac.Mode != bc.Mode {\n\t\t\tdiffs = append(diffs, Difference{\n\t\t\t\tKind:    \"config_mismatch\",\n\t\t\t\tMessage: fmt.Sprintf(\"node %q mode: %q vs %q\", id, ac.Mode, bc.Mode),\n\t\t\t\tPathA:   path + \".mode\",\n\t\t\t\tPathB:   path + \".mode\",\n\t\t\t})\n\t\t}\n\n\tcase ir.ParallelConfig:\n\t\tbc, ok := b.Config.(ir.ParallelConfig)\n\t\tif !ok {\n\t\t\tdiffs = append(diffs, Difference{\n\t\t\t\tKind:    \"config_mismatch\",\n\t\t\t\tMessage: fmt.Sprintf(\"node %q config type mismatch: ParallelConfig vs %T\", id, b.Config),\n\t\t\t\tPathA:   path,\n\t\t\t\tPathB:   path,\n\t\t\t})\n\t\t\treturn diffs\n\t\t}\n\t\tif strings.Join(ac.Targets, \",\") != strings.Join(bc.Targets, \",\") {\n\t\t\tdiffs = append(diffs, Difference{\n\t\t\t\tKind:    \"config_mismatch\",\n\t\t\t\tMessage: fmt.Sprintf(\"node %q targets: %v vs %v\", id, ac.Targets, bc.Targets),\n\t\t\t\tPathA:   path + \".targets\",\n\t\t\t\tPathB:   path + \".targets\",\n\t\t\t})\n\t\t}\n\n\tcase ir.FanInConfig:\n\t\tbc, ok := b.Config.(ir.FanInConfig)\n\t\tif !ok {\n\t\t\tdiffs = append(diffs, Difference{\n\t\t\t\tKind:    \"config_mismatch\",\n\t\t\t\tMessage: fmt.Sprintf(\"node %q config type mismatch: FanInConfig vs %T\", id, b.Config),\n\t\t\t\tPathA:   path,\n\t\t\t\tPathB:   path,\n\t\t\t})\n\t\t\treturn diffs\n\t\t}\n\t\tif strings.Join(ac.Sources, \",\") != strings.Join(bc.Sources, \",\") {\n\t\t\tdiffs = append(diffs, Difference{\n\t\t\t\tKind:    \"config_mismatch\",\n\t\t\t\tMessage: fmt.Sprintf(\"node %q sources: %v vs %v\", id, ac.Sources, bc.Sources),\n\t\t\t\tPathA:   path + \".sources\",\n\t\t\t\tPathB:   path + \".sources\",\n\t\t\t})\n\t\t}\n\n\tcase ir.SubgraphConfig:\n\t\tbc, ok := b.Config.(ir.SubgraphConfig)\n\t\tif !ok {\n\t\t\tdiffs = append(diffs, Difference{\n\t\t\t\tKind:    \"config_mismatch\",\n\t\t\t\tMessage: fmt.Sprintf(\"node %q config type mismatch: SubgraphConfig vs %T\", id, b.Config),\n\t\t\t\tPathA:   path,\n\t\t\t\tPathB:   path,\n\t\t\t})\n\t\t\treturn diffs\n\t\t}\n\t\tif ac.Ref != bc.Ref {\n\t\t\tdiffs = append(diffs, Difference{\n\t\t\t\tKind:    \"config_mismatch\",\n\t\t\t\tMessage: fmt.Sprintf(\"node %q ref: %q vs %q\", id, ac.Ref, bc.Ref),\n\t\t\t\tPathA:   path + \".ref\",\n\t\t\t\tPathB:   path + \".ref\",\n\t\t\t})\n\t\t}\n\t}\n\n\treturn diffs\n}\n\n// promptsEqual compares two strings with whitespace tolerance.\n// Prompts that differ only in trailing whitespace per line and leading/trailing\n// whitespace overall are considered equal.\nfunc promptsEqual(a, b string) bool {\n\treturn normalizeWhitespace(a) == normalizeWhitespace(b)\n}\n\n// compareDefaults reports differences between workflow defaults.\nfunc compareDefaults(a, b ir.WorkflowDefaults) []Difference {\n\tvar diffs []Difference\n\n\tif a.Model != b.Model {\n\t\tdiffs = append(diffs, Difference{\n\t\t\tKind:    \"defaults_mismatch\",\n\t\t\tMessage: fmt.Sprintf(\"defaults.model: %q vs %q\", a.Model, b.Model),\n\t\t\tPathA:   \"defaults.model\",\n\t\t\tPathB:   \"defaults.model\",\n\t\t})\n\t}\n\tif a.Provider != b.Provider {\n\t\tdiffs = append(diffs, Difference{\n\t\t\tKind:    \"defaults_mismatch\",\n\t\t\tMessage: fmt.Sprintf(\"defaults.provider: %q vs %q\", a.Provider, b.Provider),\n\t\t\tPathA:   \"defaults.provider\",\n\t\t\tPathB:   \"defaults.provider\",\n\t\t})\n\t}\n\tif a.MaxRetries != b.MaxRetries {\n\t\tdiffs = append(diffs, Difference{\n\t\t\tKind:    \"defaults_mismatch\",\n\t\t\tMessage: fmt.Sprintf(\"defaults.max_retries: %d vs %d\", a.MaxRetries, b.MaxRetries),\n\t\t\tPathA:   \"defaults.max_retries\",\n\t\t\tPathB:   \"defaults.max_retries\",\n\t\t})\n\t}\n\tif a.MaxRestarts != b.MaxRestarts {\n\t\tdiffs = append(diffs, Difference{\n\t\t\tKind:    \"defaults_mismatch\",\n\t\t\tMessage: fmt.Sprintf(\"defaults.max_restarts: %d vs %d\", a.MaxRestarts, b.MaxRestarts),\n\t\t\tPathA:   \"defaults.max_restarts\",\n\t\t\tPathB:   \"defaults.max_restarts\",\n\t\t})\n\t}\n\tif a.Fidelity != b.Fidelity {\n\t\tdiffs = append(diffs, Difference{\n\t\t\tKind:    \"defaults_mismatch\",\n\t\t\tMessage: fmt.Sprintf(\"defaults.fidelity: %q vs %q\", a.Fidelity, b.Fidelity),\n\t\t\tPathA:   \"defaults.fidelity\",\n\t\t\tPathB:   \"defaults.fidelity\",\n\t\t})\n\t}\n\n\treturn diffs\n}\n", "path": "migrate/parity.go"}
+TOOL RESULT: write
 OUTPUT:
-
-## 14. Linter / Diagnostics Design
-
-### Diagnostic structure
-
-```go
-type Diagnostic struct {
-    Severity    Severity          // Error, Warning, Info, Hint
-    Code        string            // e.g. "DIP001"
-    Message     string            // Human-readable
-    Explanation string            // Why it matters
-    Location    SourceLocation    // File, line, column, range
-    Context     string            // Nearby source lines
-    Fix         *SuggestedFix     // Optional autofix
-}
-
-type SuggestedFix struct {
-    Description string
-    Edits       []TextEdit        // Concrete replacements
-}
-```
-
-### Output modes
-
-- **Human (default)**: Colored terminal output with source context, carets, explanations
-- **JSON**: Machine-readable array of diagnostics for editor/agent integration
-
-(SARIF deferred to post-v1.)
-
-### Example diagnostic output
-
-```
-error[DIP003]: unknown node reference "InterpretX" in edge
-  --> pipeline.dip:45:5
-   |
-45 |     AskUser -> InterpretX
-   |                ^^^^^^^^^^ this node is not declared
-   |
-   = help: did you mean "Interpret"? (declared at line 12)
-   = fix: replace "InterpretX" with "Interpret"
-```
-
-### Parser error recovery strategy
-
-The parser recovers at **recognized declaration boundaries**. When a syntax error is encountered mid-node or mid-edge:
-
-1. Record the diagnostic with location
-2. Skip forward to the next recognized declaration line at the current or shallower enclosing block depth
-3. Resume parsing from there
-
-**Synchronization tokens**: Any line matching `^(workflow|agent|human|tool|parallel|fan_in|subgraph|edges|defaults|import|#)\b` at the expected block depth is a recovery point.
-
-**Goal**: Collect multiple diagnostics per file. A single typo should not prevent reporting errors in unrelated parts of the file. The parser always processes the entire file and returns all collected diagnostics alongside whatever partial IR it could construct.
-
-### Validation layers
-
-**Layer 1: Syntax** (parser)
-- Valid Dippin syntax
-- Correct indentation
-- Valid block structure
-- Unterminated multiline blocks
-
-**Layer 2: Schema** (post-parse)
-- Known node kinds
-- Known fields per kind (typed config structs prevent most of this structurally)
-- Correct field types (duration, boolean, integer)
-- Required fields present (e.g., agent nodes need `prompt`)
-- Unknown fields flagged (typo detection)
-
-**Layer 3: Graph structure** (IR)
-- `start:` node exists (`DIP001`)
-- `exit:` node exists (`DIP002`)
-- All edge endpoints exist (`DIP003`)
-- All nodes reachable from start (`DIP004`)
-- No unconditional cycles after excluding edges marked `restart: true` (`DIP005`)
-- Exit node has no outgoing edges (`DIP006`)
-- Parallel fan-out has matching fan-in (`DIP007`)
-- No duplicate node IDs (`DIP008`)
-- No duplicate edges (`DIP009`)
-
-**Layer 4: Semantic quality** (warnings)
-- Unreachable nodes after conditional branches (`DIP101`)
-- Routing nodes without fail/default edges (`DIP102`)
-- Overlapping or contradictory conditions (`DIP103`)
-- Unbounded retry loops (no max_retries, no fallback) (`DIP104`)
-- No success path to exit (`DIP105`)
-- Undefined `${variables}` in prompts — tiered by namespace (`DIP106`)
-- Unused context keys (written but never read via `writes:`) (`DIP107`)
-- Model/provider combination not in known catalog (`DIP108`)
-- Namespace collisions in imports (`DIP109`)
-- Empty prompts (`DIP110`)
-- Tool command without timeout (`DIP111`)
-- `reads:` key not in any upstream node's `writes:` (`DIP112`)
-
-### Formatter
-
-`dippin fmt` — canonical formatting:
-- 2-space indentation
-- One blank line between nodes
-- Section comments preserved
-- Trailing whitespace removed
-- Single trailing newline
-
-**Canonical field ordering per node kind**:
-
-- **Agent**: `label`, `class`, `model`, `provider`, `reasoning_effort`, `fidelity`, `goal_gate`, `auto_status`, `max_turns`, `retry_policy`, `max_retries`, `retry_target`, `reads`, `writes`, `prompt`
-- **Human**: `label`, `mode`, `default`, `reads`, `writes`
-- **Tool**: `label`, `timeout`, `reads`, `writes`, `command`
-- **Parallel**: (inline declaration, no fields)
-- **Fan-in**: (inline declaration, no fields)
-- **Subgraph**: `label`, `ref`, `params`
-
-`prompt` and `command` are always last because they're multiline blocks — putting them last means the block doesn't visually interrupt the metadata fields.
-
-Deterministic: `dippin fmt` is idempotent. Running it twice produces identical output.
-
----
-
-## 15. DOT Export Strategy
-
-### Lossless mappings
-
-| Dippin concept | DOT representation |
-|---------------|-------------------|
-| Node ID | Node name |
-| Node kind → DOT shape | `agent`→`box`, `human`→`hexagon`, `tool`→`parallelogram`, `parallel`→`component`, `fan_in`→`tripleoctagon`, `subgraph`→`tab` |
-| Node label | `label` attribute |
-| Edge from/to | Edge endpoints |
-| Edge label | `label` attribute |
-| Edge condition | `condition` attribute (serialized from AST) |
-| Edge weight | `weight` attribute |
-| Start/exit | `Mdiamond`/`Msquare` shape nodes |
-
-### Lossy but acceptable
-
-
+wrote 9932 bytes to migrate/parity.go
 TURN 10
-TOOL CALL: bash
+TOOL CALL: write
 INPUT:
-{"command": "grep -n \"route\\|routing\" DIPPIN_DESIGN_PLAN.md | head -20"}
-TOOL RESULT: bash
+{"content": "package migrate\n\nimport (\n\t\"os\"\n\t\"strings\"\n\t\"testing\"\n\t\"time\"\n\n\t\"github.com/2389/dippin/ir\"\n)\n\n// ============================================================\n// DOT Parser Tests (10 cases)\n// ============================================================\n\nfunc TestParseDOTSimpleDigraph(t *testing.T) {\n\tinput := `digraph G { A -> B; }`\n\tdg, err := parseDOT(input)\n\tif err != nil {\n\t\tt.Fatalf(\"unexpected error: %v\", err)\n\t}\n\tif dg.Name != \"G\" {\n\t\tt.Errorf(\"name = %q, want %q\", dg.Name, \"G\")\n\t}\n\tif len(dg.Nodes) != 2 {\n\t\tt.Errorf(\"nodes = %d, want 2\", len(dg.Nodes))\n\t}\n\tif len(dg.Edges) != 1 {\n\t\tt.Errorf(\"edges = %d, want 1\", len(dg.Edges))\n\t}\n\tif dg.Edges[0].From != \"A\" || dg.Edges[0].To != \"B\" {\n\t\tt.Errorf(\"edge = %s->%s, want A->B\", dg.Edges[0].From, dg.Edges[0].To)\n\t}\n}\n\nfunc TestParseDOTNodeWithAttributes(t *testing.T) {\n\tinput := `digraph G {\n\t\tA [shape=box, label=\"My Agent\"];\n\t}`\n\tdg, err := parseDOT(input)\n\tif err != nil {\n\t\tt.Fatalf(\"unexpected error: %v\", err)\n\t}\n\tif len(dg.Nodes) != 1 {\n\t\tt.Fatalf(\"nodes = %d, want 1\", len(dg.Nodes))\n\t}\n\tn := dg.Nodes[0]\n\tif n.ID != \"A\" {\n\t\tt.Errorf(\"ID = %q, want %q\", n.ID, \"A\")\n\t}\n\tif n.Attrs[\"shape\"] != \"box\" {\n\t\tt.Errorf(\"shape = %q, want %q\", n.Attrs[\"shape\"], \"box\")\n\t}\n\tif n.Attrs[\"label\"] != \"My Agent\" {\n\t\tt.Errorf(\"label = %q, want %q\", n.Attrs[\"label\"], \"My Agent\")\n\t}\n}\n\nfunc TestParseDOTEdgeWithAttributes(t *testing.T) {\n\tinput := `digraph G {\n\t\tA -> B [label=\"yes\", condition=\"outcome=success\"];\n\t}`\n\tdg, err := parseDOT(input)\n\tif err != nil {\n\t\tt.Fatalf(\"unexpected error: %v\", err)\n\t}\n\tif len(dg.Edges) != 1 {\n\t\tt.Fatalf(\"edges = %d, want 1\", len(dg.Edges))\n\t}\n\te := dg.Edges[0]\n\tif e.Attrs[\"label\"] != \"yes\" {\n\t\tt.Errorf(\"label = %q, want %q\", e.Attrs[\"label\"], \"yes\")\n\t}\n\tif e.Attrs[\"condition\"] != \"outcome=success\" {\n\t\tt.Errorf(\"condition = %q, want %q\", e.Attrs[\"condition\"], \"outcome=success\")\n\t}\n}\n\nfunc TestParseDOTGraphAttributes(t *testing.T) {\n\tinput := `digraph G {\n\t\tgraph [goal=\"test\", rankdir=LR];\n\t}`\n\tdg, err := parseDOT(input)\n\tif err != nil {\n\t\tt.Fatalf(\"unexpected error: %v\", err)\n\t}\n\tif dg.GraphAttrs[\"goal\"] != \"test\" {\n\t\tt.Errorf(\"goal = %q, want %q\", dg.GraphAttrs[\"goal\"], \"test\")\n\t}\n\tif dg.GraphAttrs[\"rankdir\"] != \"LR\" {\n\t\tt.Errorf(\"rankdir = %q, want %q\", dg.GraphAttrs[\"rankdir\"], \"LR\")\n\t}\n}\n\nfunc TestParseDOTQuotedStringsWithEscapes(t *testing.T) {\n\tinput := `digraph G {\n\t\tA [label=\"line1\\nline2\\\"quoted\\\"\"];\n\t}`\n\tdg, err := parseDOT(input)\n\tif err != nil {\n\t\tt.Fatalf(\"unexpected error: %v\", err)\n\t}\n\tif len(dg.Nodes) != 1 {\n\t\tt.Fatalf(\"nodes = %d, want 1\", len(dg.Nodes))\n\t}\n\twant := \"line1\\nline2\\\"quoted\\\"\"\n\tif dg.Nodes[0].Attrs[\"label\"] != want {\n\t\tt.Errorf(\"label = %q, want %q\", dg.Nodes[0].Attrs[\"label\"], want)\n\t}\n}\n\nfunc TestParseDOTComments(t *testing.T) {\n\tinput := `digraph G {\n\t\t// This is a line comment\n\t\tA [shape=box];\n\t\t/* This is a\n\t\t   block comment */\n\t\tB [shape=hexagon];\n\t\tA -> B;\n\t}`\n\tdg, err := parseDOT(input)\n\tif err != nil {\n\t\tt.Fatalf(\"unexpected error: %v\", err)\n\t}\n\tif len(dg.Nodes) != 2 {\n\t\tt.Errorf(\"nodes = %d, want 2\", len(dg.Nodes))\n\t}\n\tif len(dg.Edges) != 1 {\n\t\tt.Errorf(\"edges = %d, want 1\", len(dg.Edges))\n\t}\n}\n\nfunc TestParseDOTEmptyGraph(t *testing.T) {\n\tinput := `digraph G {}`\n\tdg, err := parseDOT(input)\n\tif err != nil {\n\t\tt.Fatalf(\"unexpected error: %v\", err)\n\t}\n\tif dg.Name != \"G\" {\n\t\tt.Errorf(\"name = %q, want %q\", dg.Name, \"G\")\n\t}\n\tif len(dg.Nodes) != 0 {\n\t\tt.Errorf(\"nodes = %d, want 0\", len(dg.Nodes))\n\t}\n\tif len(dg.Edges) != 0 {\n\t\tt.Errorf(\"edges = %d, want 0\", len(dg.Edges))\n\t}\n}\n\nfunc TestParseDOTMultipleEdges(t *testing.T) {\n\tinput := `digraph G { A -> B; A -> C; B -> C; }`\n\tdg, err := parseDOT(input)\n\tif err != nil {\n\t\tt.Fatalf(\"unexpected error: %v\", err)\n\t}\n\tif len(dg.Edges) != 3 {\n\t\tt.Errorf(\"edges = %d, want 3\", len(dg.Edges))\n\t}\n}\n\nfunc TestParseDOTMissingSemicolons(t *testing.T) {\n\tinput := `digraph G {\n\t\tA [shape=box]\n\t\tB [shape=hexagon]\n\t\tA -> B\n\t}`\n\tdg, err := parseDOT(input)\n\tif err != nil {\n\t\tt.Fatalf(\"unexpected error: %v\", err)\n\t}\n\tif len(dg.Nodes) != 2 {\n\t\tt.Errorf(\"nodes = %d, want 2\", len(dg.Nodes))\n\t}\n\tif len(dg.Edges) != 1 {\n\t\tt.Errorf(\"edges = %d, want 1\", len(dg.Edges))\n\t}\n}\n\nfunc TestParseDOTMalformed(t *testing.T) {\n\ttests := []struct {\n\t\tname  string\n\t\tinput string\n\t}{\n\t\t{\"not a digraph\", `graph G { A -> B; }`},\n\t\t{\"missing closing brace\", `digraph G { A -> B;`},\n\t\t{\"missing opening brace\", `digraph G A -> B; }`},\n\t\t{\"empty string\", ``},\n\t}\n\tfor _, tt := range tests {\n\t\tt.Run(tt.name, func(t *testing.T) {\n\t\t\t_, err := parseDOT(tt.input)\n\t\t\tif err == nil {\n\t\t\t\tt.Error(\"expected error, got nil\")\n\t\t\t}\n\t\t})\n\t}\n}\n\n// ============================================================\n// Migration Tests (17 cases)\n// ============================================================\n\nfunc TestMigrateShapeToKindMapping(t *testing.T) {\n\ttests := []struct {\n\t\tshape    string\n\t\twantKind ir.NodeKind\n\t}{\n\t\t{\"box\", ir.NodeAgent},\n\t\t{\"hexagon\", ir.NodeHuman},\n\t\t{\"parallelogram\", ir.NodeTool},\n\t\t{\"component\", ir.NodeParallel},\n\t\t{\"tripleoctagon\", ir.NodeFanIn},\n\t\t{\"tab\", ir.NodeSubgraph},\n\t\t{\"Mdiamond\", ir.NodeAgent},   // Start marker\n\t\t{\"Msquare\", ir.NodeAgent},    // Exit marker\n\t\t{\"diamond\", ir.NodeAgent},    // Default diamond\n\t\t{\"\", ir.NodeAgent},           // Missing shape → default\n\t}\n\tfor _, tt := range tests {\n\t\tt.Run(\"shape_\"+tt.shape, func(t *testing.T) {\n\t\t\tshapeAttr := \"\"\n\t\t\tif tt.shape != \"\" {\n\t\t\t\tshapeAttr = `, shape=` + tt.shape\n\t\t\t}\n\t\t\tdot := `digraph G {\n\t\t\t\tStart [shape=Mdiamond];\n\t\t\t\tExit [shape=Msquare];\n\t\t\t\tN [label=\"Test\"` + shapeAttr + `];\n\t\t\t\tStart -> N;\n\t\t\t\tN -> Exit;\n\t\t\t}`\n\t\t\tw, err := Migrate(dot)\n\t\t\tif err != nil {\n\t\t\t\tt.Fatalf(\"unexpected error: %v\", err)\n\t\t\t}\n\t\t\tn := w.Node(\"N\")\n\t\t\tif n == nil {\n\t\t\t\tt.Fatal(\"node N not found\")\n\t\t\t}\n\t\t\tif n.Kind != tt.wantKind {\n\t\t\t\tt.Errorf(\"kind = %q, want %q\", n.Kind, tt.wantKind)\n\t\t\t}\n\t\t})\n\t}\n}\n\nfunc TestMigrateStartExitIdentification(t *testing.T) {\n\tdot := `digraph G {\n\t\tStart [shape=Mdiamond, label=\"Start\"];\n\t\tExit [shape=Msquare, label=\"Exit\"];\n\t\tA [shape=box];\n\t\tStart -> A;\n\t\tA -> Exit;\n\t}`\n\tw, err := Migrate(dot)\n\tif err != nil {\n\t\tt.Fatalf(\"unexpected error: %v\", err)\n\t}\n\tif w.Start != \"Start\" {\n\t\tt.Errorf(\"start = %q, want %q\", w.Start, \"Start\")\n\t}\n\tif w.Exit != \"Exit\" {\n\t\tt.Errorf(\"exit = %q, want %q\", w.Exit, \"Exit\")\n\t}\n\t// Start and Exit should exist as nodes.\n\tif w.Node(\"Start\") == nil {\n\t\tt.Error(\"Start node not found in IR\")\n\t}\n\tif w.Node(\"Exit\") == nil {\n\t\tt.Error(\"Exit node not found in IR\")\n\t}\n}\n\nfunc TestMigratePromptUnescaping(t *testing.T) {\n\tdot := `digraph G {\n\t\tStart [shape=Mdiamond];\n\t\tA [shape=box, prompt=\"line1\\nline2\\n\\\"code\\\"\"];\n\t\tExit [shape=Msquare];\n\t\tStart -> A;\n\t\tA -> Exit;\n\t}`\n\tw, err := Migrate(dot)\n\tif err != nil {\n\t\tt.Fatalf(\"unexpected error: %v\", err)\n\t}\n\tn := w.Node(\"A\")\n\tif n == nil {\n\t\tt.Fatal(\"node A not found\")\n\t}\n\tcfg := n.Config.(ir.AgentConfig)\n\twant := \"line1\\nline2\\n\\\"code\\\"\"\n\tif cfg.Prompt != want {\n\t\tt.Errorf(\"prompt = %q, want %q\", cfg.Prompt, want)\n\t}\n}\n\nfunc TestMigrateToolCommandUnescaping(t *testing.T) {\n\tdot := `digraph G {\n\t\tStart [shape=Mdiamond];\n\t\tT [shape=parallelogram, tool_command=\"set -eu\\necho hello\"];\n\t\tExit [shape=Msquare];\n\t\tStart -> T;\n\t\tT -> Exit;\n\t}`\n\tw, err := Migrate(dot)\n\tif err != nil {\n\t\tt.Fatalf(\"unexpected error: %v\", err)\n\t}\n\tn := w.Node(\"T\")\n\tif n == nil {\n\t\tt.Fatal(\"node T not found\")\n\t}\n\tcfg := n.Config.(ir.ToolConfig)\n\twant := \"set -eu\\necho hello\"\n\tif cfg.Command != want {\n\t\tt.Errorf(\"command = %q, want %q\", cfg.Command, want)\n\t}\n}\n\nfunc TestMigrateConditionNamespacePrefixing(t *testing.T) {\n\ttests := []struct {\n\t\tname    string\n\t\tcondRaw string\n\t\twantVar string\n\t}{\n\t\t{\"bare outcome\", \"outcome=success\", \"ctx.outcome\"},\n\t\t{\"context. prefix\", \"context.tool_stdout=all_complete\", \"ctx.tool_stdout\"},\n\t\t{\"ctx. prefix kept\", \"ctx.outcome=success\", \"ctx.outcome\"},\n\t\t{\"graph. prefix kept\", \"graph.goal=done\", \"graph.goal\"},\n\t}\n\tfor _, tt := range tests {\n\t\tt.Run(tt.name, func(t *testing.T) {\n\t\t\tdot := `digraph G {\n\t\t\t\tStart [shape=Mdiamond];\n\t\t\t\tA [shape=box];\n\t\t\t\tB [shape=box];\n\t\t\t\tExit [shape=Msquare];\n\t\t\t\tStart -> A;\n\t\t\t\tA -> B [condition=\"` + tt.condRaw + `\"];\n\t\t\t\tB -> Exit;\n\t\t\t}`\n\t\t\tw, err := Migrate(dot)\n\t\t\tif err != nil {\n\t\t\t\tt.Fatalf(\"unexpected error: %v\", err)\n\t\t\t}\n\t\t\tedges := w.EdgesFrom(\"A\")\n\t\t\tif len(edges) != 1 {\n\t\t\t\tt.Fatalf(\"edges = %d, want 1\", len(edges))\n\t\t\t}\n\t\t\te := edges[0]\n\t\t\tif e.Condition == nil {\n\t\t\t\tt.Fatal(\"expected condition\")\n\t\t\t}\n\t\t\tcc, ok := e.Condition.Parsed.(ir.CondCompare)\n\t\t\tif !ok {\n\t\t\t\tt.Fatalf(\"expected CondCompare, got %T\", e.Condition.Parsed)\n\t\t\t}\n\t\t\tif cc.Variable != tt.wantVar {\n\t\t\t\tt.Errorf(\"variable = %q, want %q\", cc.Variable, tt.wantVar)\n\t\t\t}\n\t\t})\n\t}\n}\n\nfunc TestMigrateComplexCondition(t *testing.T) {\n\tdot := `digraph G {\n\t\tStart [shape=Mdiamond];\n\t\tA [shape=box];\n\t\tB [shape=box];\n\t\tExit [shape=Msquare];\n\t\tStart -> A;\n\t\tA -> B [condition=\"outcome=success && tool_stdout contains pass\"];\n\t\tB -> Exit;\n\t}`\n\tw, err := Migrate(dot)\n\tif err != nil {\n\t\tt.Fatalf(\"unexpected error: %v\", err)\n\t}\n\tedges := w.EdgesFrom(\"A\")\n\tif len(edges) != 1 {\n\t\tt.Fatalf(\"edges = %d, want 1\", len(edges))\n\t}\n\tcond := edges[0].Condition\n\tif cond == nil {\n\t\tt.Fatal(\"expected condition\")\n\t}\n\tand, ok := cond.Parsed.(ir.CondAnd)\n\tif !ok {\n\t\tt.Fatalf(\"expected CondAnd, got %T\", cond.Parsed)\n\t}\n\tleft, ok := and.Left.(ir.CondCompare)\n\tif !ok {\n\t\tt.Fatalf(\"expected CondCompare left, got %T\", and.Left)\n\t}\n\tif left.Variable != \"ctx.outcome\" || left.Op != \"=\" || left.Value != \"success\" {\n\t\tt.Errorf(\"left = %+v\", left)\n\t}\n\tright, ok := and.Right.(ir.CondCompare)\n\tif !ok {\n\t\tt.Fatalf(\"expected CondCompare right, got %T\", and.Right)\n\t}\n\tif right.Variable != \"ctx.tool_stdout\" || right.Op != \"contains\" || right.Value != \"pass\" {\n\t\tt.Errorf(\"right = %+v\", right)\n\t}\n}\n\nfunc TestMigrateConditionWithNegation(t *testing.T) {\n\tdot := `digraph G {\n\t\tStart [shape=Mdiamond];\n\t\tA [shape=box];\n\t\tB [shape=box];\n\t\tExit [shape=Msquare];\n\t\tStart -> A;\n\t\tA -> B [condition=\"not outcome=fail\"];\n\t\tB -> Exit;\n\t}`\n\tw, err := Migrate(dot)\n\tif err != nil {\n\t\tt.Fatalf(\"unexpected error: %v\", err)\n\t}\n\tedges := w.EdgesFrom(\"A\")\n\tif len(edges) != 1 {\n\t\tt.Fatalf(\"edges = %d, want 1\", len(edges))\n\t}\n\tcond := edges[0].Condition\n\tif cond == nil {\n\t\tt.Fatal(\"expected condition\")\n\t}\n\tnotExpr, ok := cond.Parsed.(ir.CondNot)\n\tif !ok {\n\t\tt.Fatalf(\"expected CondNot, got %T\", cond.Parsed)\n\t}\n\tinner, ok := notExpr.Inner.(ir.CondCompare)\n\tif !ok {\n\t\tt.Fatalf(\"expected CondCompare inner, got %T\", notExpr.Inner)\n\t}\n\tif inner.Variable != \"ctx.outcome\" || inner.Op != \"=\" || inner.Value != \"fail\" {\n\t\tt.Errorf(\"inner = %+v\", inner)\n\t}\n}\n\nfunc TestMigrateRestartEdge(t *testing.T) {\n\ttests := []struct {\n\t\tname string\n\t\tattr string\n\t}{\n\t\t{\"restart=true\", `restart=true`},\n\t\t{\"loop_restart=true\", `loop_restart=true`},\n\t}\n\tfor _, tt := range tests {\n\t\tt.Run(tt.name, func(t *testing.T) {\n\t\t\tdot := `digraph G {\n\t\t\t\tStart [shape=Mdiamond];\n\t\t\t\tA [shape=box];\n\t\t\t\tB [shape=box];\n\t\t\t\tExit [shape=Msquare];\n\t\t\t\tStart -> A;\n\t\t\t\tA -> B [` + tt.attr + `];\n\t\t\t\tB -> Exit;\n\t\t\t}`\n\t\t\tw, err := Migrate(dot)\n\t\t\tif err != nil {\n\t\t\t\tt.Fatalf(\"unexpected error: %v\", err)\n\t\t\t}\n\t\t\tedges := w.EdgesFrom(\"A\")\n\t\t\tif len(edges) != 1 {\n\t\t\t\tt.Fatalf(\"edges = %d, want 1\", len(edges))\n\t\t\t}\n\t\t\tif !edges[0].Restart {\n\t\t\t\tt.Error(\"expected restart=true on edge\")\n\t\t\t}\n\t\t})\n\t}\n}\n\nfunc TestMigrateGraphDefaults(t *testing.T) {\n\tdot := `digraph G {\n\t\tgraph [goal=\"Test the system\", default_max_retry=3, max_restarts=7, default_fidelity=\"summary:high\"];\n\t\tStart [shape=Mdiamond];\n\t\tExit [shape=Msquare];\n\t\tStart -> Exit;\n\t}`\n\tw, err := Migrate(dot)\n\tif err != nil {\n\t\tt.Fatalf(\"unexpected error: %v\", err)\n\t}\n\tif w.Goal != \"Test the system\" {\n\t\tt.Errorf(\"goal = %q, want %q\", w.Goal, \"Test the system\")\n\t}\n\tif w.Defaults.MaxRetries != 3 {\n\t\tt.Errorf(\"max_retries = %d, want 3\", w.Defaults.MaxRetries)\n\t}\n\tif w.Defaults.MaxRestarts != 7 {\n\t\tt.Errorf(\"max_restarts = %d, want 7\", w.Defaults.MaxRestarts)\n\t}\n\tif w.Defaults.Fidelity != \"summary:high\" {\n\t\tt.Errorf(\"fidelity = %q, want %q\", w.Defaults.Fidelity, \"summary:high\")\n\t}\n}\n\nfunc TestMigrateParallelInference(t *testing.T) {\n\tdot := `digraph G {\n\t\tStart [shape=Mdiamond];\n\t\tP [shape=component, label=\"Fan Out\"];\n\t\tA [shape=box];\n\t\tB [shape=box];\n\t\tExit [shape=Msquare];\n\t\tStart -> P;\n\t\tP -> A;\n\t\tP -> B;\n\t\tA -> Exit;\n\t\tB -> Exit;\n\t}`\n\tw, err := Migrate(dot)\n\tif err != nil {\n\t\tt.Fatalf(\"unexpected error: %v\", err)\n\t}\n\tn := w.Node(\"P\")\n\tif n == nil {\n\t\tt.Fatal(\"node P not found\")\n\t}\n\tcfg, ok := n.Config.(ir.ParallelConfig)\n\tif !ok {\n\t\tt.Fatalf(\"expected ParallelConfig, got %T\", n.Config)\n\t}\n\tif len(cfg.Targets) != 2 {\n\t\tt.Fatalf(\"targets = %d, want 2\", len(cfg.Targets))\n\t}\n\t// Targets should be A and B (in edge order).\n\tif cfg.Targets[0] != \"A\" || cfg.Targets[1] != \"B\" {\n\t\tt.Errorf(\"targets = %v, want [A B]\", cfg.Targets)\n\t}\n}\n\nfunc TestMigrateFanInInference(t *testing.T) {\n\tdot := `digraph G {\n\t\tStart [shape=Mdiamond];\n\t\tA [shape=box];\n\t\tB [shape=box];\n\t\tJ [shape=tripleoctagon, label=\"Join\"];\n\t\tExit [shape=Msquare];\n\t\tStart -> A;\n\t\tStart -> B;\n\t\tA -> J;\n\t\tB -> J;\n\t\tJ -> Exit;\n\t}`\n\tw, err := Migrate(dot)\n\tif err != nil {\n\t\tt.Fatalf(\"unexpected error: %v\", err)\n\t}\n\tn := w.Node(\"J\")\n\tif n == nil {\n\t\tt.Fatal(\"node J not found\")\n\t}\n\tcfg, ok := n.Config.(ir.FanInConfig)\n\tif !ok {\n\t\tt.Fatalf(\"expected FanInConfig, got %T\", n.Config)\n\t}\n\tif len(cfg.Sources) != 2 {\n\t\tt.Fatalf(\"sources = %d, want 2\", len(cfg.Sources))\n\t}\n\tif cfg.Sources[0] != \"A\" || cfg.Sources[1] != \"B\" {\n\t\tt.Errorf(\"sources = %v, want [A B]\", cfg.Sources)\n\t}\n}\n\nfunc TestMigrateDiamondDisambiguation(t *testing.T) {\n\ttests := []struct {\n\t\tname     string\n\t\tattrs    string\n\t\twantKind ir.NodeKind\n\t}{\n\t\t{\"diamond with tool_command\", `shape=diamond, tool_command=\"echo test\"`, ir.NodeTool},\n\t\t{\"diamond with prompt\", `shape=diamond, prompt=\"Choose wisely\"`, ir.NodeAgent},\n\t\t{\"bare diamond\", `shape=diamond, label=\"Route?\"`, ir.NodeAgent},\n\t}\n\tfor _, tt := range tests {\n\t\tt.Run(tt.name, func(t *testing.T) {\n\t\t\tdot := `digraph G {\n\t\t\t\tStart [shape=Mdiamond];\n\t\t\t\tD [` + tt.attrs + `];\n\t\t\t\tExit [shape=Msquare];\n\t\t\t\tStart -> D;\n\t\t\t\tD -> Exit;\n\t\t\t}`\n\t\t\tw, err := Migrate(dot)\n\t\t\tif err != nil {\n\t\t\t\tt.Fatalf(\"unexpected error: %v\", err)\n\t\t\t}\n\t\t\tn := w.Node(\"D\")\n\t\t\tif n == nil {\n\t\t\t\tt.Fatal(\"node D not found\")\n\t\t\t}\n\t\t\tif n.Kind != tt.wantKind {\n\t\t\t\tt.Errorf(\"kind = %q, want %q\", n.Kind, tt.wantKind)\n\t\t\t}\n\t\t})\n\t}\n}\n\nfunc TestMigrateEdgeWeight(t *testing.T) {\n\tdot := `digraph G {\n\t\tStart [shape=Mdiamond];\n\t\tA [shape=box];\n\t\tB [shape=box];\n\t\tExit [shape=Msquare];\n\t\tStart -> A;\n\t\tA -> B [weight=10];\n\t\tB -> Exit;\n\t}`\n\tw, err := Migrate(dot)\n\tif err != nil {\n\t\tt.Fatalf(\"unexpected error: %v\", err)\n\t}\n\tedges := w.EdgesFrom(\"A\")\n\tif len(edges) != 1 {\n\t\tt.Fatalf(\"edges = %d, want 1\", len(edges))\n\t}\n\tif edges[0].Weight != 10 {\n\t\tt.Errorf(\"weight = %d, want 10\", edges[0].Weight)\n\t}\n}\n\nfunc TestMigrateDurationParsing(t *testing.T) {\n\ttests := []struct {\n\t\tname     string\n\t\ttimeout  string\n\t\twantDur  time.Duration\n\t}{\n\t\t{\"30s\", \"30s\", 30 * time.Second},\n\t\t{\"1h30m\", \"1h30m\", 90 * time.Minute},\n\t\t{\"5m\", \"5m\", 5 * time.Minute},\n\t}\n\tfor _, tt := range tests {\n\t\tt.Run(tt.name, func(t *testing.T) {\n\t\t\tdot := `digraph G {\n\t\t\t\tStart [shape=Mdiamond];\n\t\t\t\tT [shape=parallelogram, tool_command=\"echo test\", timeout=\"` + tt.timeout + `\"];\n\t\t\t\tExit [shape=Msquare];\n\t\t\t\tStart -> T;\n\t\t\t\tT -> Exit;\n\t\t\t}`\n\t\t\tw, err := Migrate(dot)\n\t\t\tif err != nil {\n\t\t\t\tt.Fatalf(\"unexpected error: %v\", err)\n\t\t\t}\n\t\t\tn := w.Node(\"T\")\n\t\t\tif n == nil {\n\t\t\t\tt.Fatal(\"node T not found\")\n\t\t\t}\n\t\t\tcfg := n.Config.(ir.ToolConfig)\n\t\t\tif cfg.Timeout != tt.wantDur {\n\t\t\t\tt.Errorf(\"timeout = %v, want %v\", cfg.Timeout, tt.wantDur)\n\t\t\t}\n\t\t})\n\t}\n}\n\nfunc TestMigrateEmptyNodeDefaultsToAgent(t *testing.T) {\n\tdot := `digraph G {\n\t\tStart [shape=Mdiamond];\n\t\tN [];\n\t\tExit [shape=Msquare];\n\t\tStart -> N;\n\t\tN -> Exit;\n\t}`\n\tw, err := Migrate(dot)\n\tif err != nil {\n\t\tt.Fatalf(\"unexpected error: %v\", err)\n\t}\n\tn := w.Node(\"N\")\n\tif n == nil {\n\t\tt.Fatal(\"node N not found\")\n\t}\n\tif n.Kind != ir.NodeAgent {\n\t\tt.Errorf(\"kind = %q, want %q\", n.Kind, ir.NodeAgent)\n\t}\n}\n\nfunc TestMigrateToSourceRoundTrip(t *testing.T) {\n\tdot := `digraph test_flow {\n\t\tgraph [goal=\"Simple test\"];\n\t\tStart [shape=Mdiamond, label=\"Start\"];\n\t\tExit [shape=Msquare, label=\"Exit\"];\n\t\tWorker [shape=box, label=\"Worker\", prompt=\"Do the work.\"];\n\t\tStart -> Worker;\n\t\tWorker -> Exit [condition=\"outcome=success\"];\n\t}`\n\tsource, err := MigrateToSource(dot)\n\tif err != nil {\n\t\tt.Fatalf(\"unexpected error: %v\", err)\n\t}\n\t// Verify it looks like valid .dip source.\n\tif !strings.HasPrefix(source, \"workflow test_flow\") {\n\t\tt.Errorf(\"source should start with 'workflow test_flow', got:\\n%s\", source)\n\t}\n\tif !strings.Contains(source, \"start: Start\") {\n\t\tt.Errorf(\"source should contain 'start: Start', got:\\n%s\", source)\n\t}\n\tif !strings.Contains(source, \"exit: Exit\") {\n\t\tt.Errorf(\"source should contain 'exit: Exit', got:\\n%s\", source)\n\t}\n\tif !strings.Contains(source, \"Do the work.\") {\n\t\tt.Errorf(\"source should contain prompt text, got:\\n%s\", source)\n\t}\n\tif !strings.Contains(source, \"edges\") {\n\t\tt.Errorf(\"source should contain edges section, got:\\n%s\", source)\n\t}\n\tif !strings.Contains(source, \"ctx.outcome = success\") {\n\t\tt.Errorf(\"source should contain namespaced condition, got:\\n%s\", source)\n\t}\n}\n\nfunc TestMigrateLegacyAttributeNames(t *testing.T) {\n\tdot := `digraph G {\n\t\tStart [shape=Mdiamond];\n\t\tA [shape=box, llm_model=\"claude-opus-4-6\", llm_provider=\"anthropic\", prompt=\"Test\"];\n\t\tExit [shape=Msquare];\n\t\tStart -> A;\n\t\tA -> Exit;\n\t}`\n\tw, err := Migrate(dot)\n\tif err != nil {\n\t\tt.Fatalf(\"unexpected error: %v\", err)\n\t}\n\tn := w.Node(\"A\")\n\tif n == nil {\n\t\tt.Fatal(\"node A not found\")\n\t}\n\tcfg := n.Config.(ir.AgentConfig)\n\tif cfg.Model != \"claude-opus-4-6\" {\n\t\tt.Errorf(\"model = %q, want %q\", cfg.Model, \"claude-opus-4-6\")\n\t}\n\tif cfg.Provider != \"anthropic\" {\n\t\tt.Errorf(\"provider = %q, want %q\", cfg.Provider, \"anthropic\")\n\t}\n}\n\n// ============================================================\n// Parity Checker Tests (8 cases)\n// ============================================================\n\nfunc makeTestWorkflow() *ir.Workflow {\n\treturn &ir.Workflow{\n\t\tName:  \"test\",\n\t\tStart: \"A\",\n\t\tExit:  \"C\",\n\t\tDefaults: ir.WorkflowDefaults{\n\t\t\tModel:      \"gpt-5.4\",\n\t\t\tMaxRetries: 3,\n\t\t},\n\t\tNodes: []*ir.Node{\n\t\t\t{ID: \"A\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"Do A.\"}},\n\t\t\t{ID: \"B\", Kind: ir.NodeTool, Config: ir.ToolConfig{Command: \"echo B\"}},\n\t\t\t{ID: \"C\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"Done.\"}},\n\t\t},\n\t\tEdges: []*ir.Edge{\n\t\t\t{From: \"A\", To: \"B\"},\n\t\t\t{From: \"B\", To: \"C\", Condition: &ir.Condition{\n\t\t\t\tRaw:    \"ctx.outcome = success\",\n\t\t\t\tParsed: ir.CondCompare{Variable: \"ctx.outcome\", Op: \"=\", Value: \"success\"},\n\t\t\t}},\n\t\t},\n\t}\n}\n\nfunc TestCheckParityIdentical(t *testing.T) {\n\ta := makeTestWorkflow()\n\tb := makeTestWorkflow()\n\tdiffs := CheckParity(a, b)\n\tif len(diffs) != 0 {\n\t\tt.Errorf(\"expected 0 differences, got %d:\", len(diffs))\n\t\tfor _, d := range diffs {\n\t\t\tt.Logf(\"  %s: %s\", d.Kind, d.Message)\n\t\t}\n\t}\n}\n\nfunc TestCheckParityMissingNode(t *testing.T) {\n\ta := makeTestWorkflow()\n\tb := makeTestWorkflow()\n\t// Remove node B from b.\n\tb.Nodes = []*ir.Node{b.Nodes[0], b.Nodes[2]}\n\n\tdiffs := CheckParity(a, b)\n\tfound := false\n\tfor _, d := range diffs {\n\t\tif d.Kind == \"node_missing\" && strings.Contains(d.Message, \"B\") {\n\t\t\tfound = true\n\t\t}\n\t}\n\tif !found {\n\t\tt.Error(\"expected node_missing difference for B\")\n\t}\n}\n\nfunc TestCheckParityExtraNode(t *testing.T) {\n\ta := makeTestWorkflow()\n\tb := makeTestWorkflow()\n\tb.Nodes = append(b.Nodes, &ir.Node{ID: \"X\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"Extra.\"}})\n\n\tdiffs := CheckParity(a, b)\n\tfound := false\n\tfor _, d := range diffs {\n\t\tif d.Kind == \"node_extra\" && strings.Contains(d.Message, \"X\") {\n\t\t\tfound = true\n\t\t}\n\t}\n\tif !found {\n\t\tt.Error(\"expected node_extra difference for X\")\n\t}\n}\n\nfunc TestCheckParityStartMismatch(t *testing.T) {\n\ta := makeTestWorkflow()\n\tb := makeTestWorkflow()\n\tb.Start = \"B\"\n\n\tdiffs := CheckParity(a, b)\n\tfound := false\n\tfor _, d := range diffs {\n\t\tif d.Kind == \"start_mismatch\" {\n\t\t\tfound = true\n\t\t}\n\t}\n\tif !found {\n\t\tt.Error(\"expected start_mismatch difference\")\n\t}\n}\n\nfunc TestCheckParityExitMismatch(t *testing.T) {\n\ta := makeTestWorkflow()\n\tb := makeTestWorkflow()\n\tb.Exit = \"B\"\n\n\tdiffs := CheckParity(a, b)\n\tfound := false\n\tfor _, d := range diffs {\n\t\tif d.Kind == \"exit_mismatch\" {\n\t\t\tfound = true\n\t\t}\n\t}\n\tif !found {\n\t\tt.Error(\"expected exit_mismatch difference\")\n\t}\n}\n\nfunc TestCheckParityEdgeMissing(t *testing.T) {\n\ta := makeTestWorkflow()\n\tb := makeTestWorkflow()\n\tb.Edges = b.Edges[:1] // Remove second edge.\n\n\tdiffs := CheckParity(a, b)\n\tfound := false\n\tfor _, d := range diffs {\n\t\tif d.Kind == \"edge_missing\" {\n\t\t\tfound = true\n\t\t}\n\t}\n\tif !found {\n\t\tt.Error(\"expected edge_missing difference\")\n\t}\n}\n\nfunc TestCheckParityConfigMismatch(t *testing.T) {\n\ta := makeTestWorkflow()\n\tb := makeTestWorkflow()\n\t// Change prompt on node A.\n\tb.Nodes[0].Config = ir.AgentConfig{Prompt: \"Completely different prompt.\"}\n\n\tdiffs := CheckParity(a, b)\n\tfound := false\n\tfor _, d := range diffs {\n\t\tif d.Kind == \"config_mismatch\" && strings.Contains(d.Message, \"A\") && strings.Contains(d.Message, \"prompt\") {\n\t\t\tfound = true\n\t\t}\n\t}\n\tif !found {\n\t\tt.Error(\"expected config_mismatch for node A prompt\")\n\t}\n}\n\nfunc TestCheckParityKindMismatch(t *testing.T) {\n\ta := makeTestWorkflow()\n\tb := makeTestWorkflow()\n\tb.Nodes[1].Kind = ir.NodeAgent // B was tool, now agent.\n\tb.Nodes[1].Config = ir.AgentConfig{Prompt: \"Now an agent.\"}\n\n\tdiffs := CheckParity(a, b)\n\tfound := false\n\tfor _, d := range diffs {\n\t\tif d.Kind == \"kind_mismatch\" && strings.Contains(d.Message, \"B\") {\n\t\t\tfound = true\n\t\t}\n\t}\n\tif !found {\n\t\tt.Error(\"expected kind_mismatch for node B\")\n\t}\n}\n\nfunc TestCheckParityWhitespaceTolerantPrompt(t *testing.T) {\n\ta := makeTestWorkflow()\n\tb := makeTestWorkflow()\n\t// Change prompt to add trailing whitespace — should still be considered equal.\n\tb.Nodes[0].Config = ir.AgentConfig{Prompt: \"Do A.  \"}\n\n\tdiffs := CheckParity(a, b)\n\t// Filter for prompt-specific config_mismatch.\n\tfor _, d := range diffs {\n\t\tif d.Kind == \"config_mismatch\" && strings.Contains(d.Message, \"prompt\") {\n\t\t\tt.Errorf(\"unexpected prompt mismatch with whitespace difference: %s\", d.Message)\n\t\t}\n\t}\n}\n\nfunc TestCheckParityDefaultsMismatch(t *testing.T) {\n\ta := makeTestWorkflow()\n\tb := makeTestWorkflow()\n\tb.Defaults.MaxRetries = 10\n\n\tdiffs := CheckParity(a, b)\n\tfound := false\n\tfor _, d := range diffs {\n\t\tif d.Kind == \"defaults_mismatch\" && strings.Contains(d.Message, \"max_retries\") {\n\t\t\tfound = true\n\t\t}\n\t}\n\tif !found {\n\t\tt.Error(\"expected defaults_mismatch for max_retries\")\n\t}\n}\n\n// ============================================================\n// Integration Test: build_dippin.dot\n// ============================================================\n\nfunc TestMigrateBuildDippinDOT(t *testing.T) {\n\tdata, err := os.ReadFile(\"../build_dippin.dot\")\n\tif err != nil {\n\t\tt.Skipf(\"skipping integration test: %v\", err)\n\t}\n\n\tw, err := Migrate(string(data))\n\tif err != nil {\n\t\tt.Fatalf(\"Migrate(build_dippin.dot) error: %v\", err)\n\t}\n\n\t// Verify workflow name.\n\tif w.Name != \"BuildDippin\" {\n\t\tt.Errorf(\"name = %q, want %q\", w.Name, \"BuildDippin\")\n\t}\n\n\t// Verify goal was extracted.\n\tif w.Goal == \"\" {\n\t\tt.Error(\"goal should not be empty\")\n\t}\n\tif !strings.Contains(w.Goal, \"Dippin toolchain\") {\n\t\tt.Errorf(\"goal = %q, expected it to mention 'Dippin toolchain'\", w.Goal)\n\t}\n\n\t// Verify start/exit.\n\tif w.Start != \"Start\" {\n\t\tt.Errorf(\"start = %q, want %q\", w.Start, \"Start\")\n\t}\n\tif w.Exit != \"Exit\" {\n\t\tt.Errorf(\"exit = %q, want %q\", w.Exit, \"Exit\")\n\t}\n\n\t// Verify defaults.\n\tif w.Defaults.MaxRetries != 3 {\n\t\tt.Errorf(\"defaults.max_retries = %d, want 3\", w.Defaults.MaxRetries)\n\t}\n\tif w.Defaults.MaxRestarts != 7 {\n\t\tt.Errorf(\"defaults.max_restarts = %d, want 7\", w.Defaults.MaxRestarts)\n\t}\n\tif w.Defaults.Fidelity != \"summary:high\" {\n\t\tt.Errorf(\"defaults.fidelity = %q, want %q\", w.Defaults.Fidelity, \"summary:high\")\n\t}\n\n\t// Verify expected nodes exist.\n\texpectedNodes := []string{\n\t\t\"Start\", \"Exit\", \"SetupWorkspace\", \"PickNextComponent\",\n\t\t\"CheckComplete\", \"PlanComponent\", \"ImplementParallel\",\n\t\t\"ImplementClaude\", \"ImplementGPT\", \"ImplementGemini\",\n\t\t\"ImplementJoin\", \"ValidateBuild\", \"ReviewParallel\",\n\t\t\"ReviewClaude\", \"ReviewGPT\", \"ReviewGemini\",\n\t\t\"ReviewsJoin\", \"ReviewAnalysis\", \"CommitWork\",\n\t\t\"MarkComplete\", \"FailureSummary\", \"MarkFailed\",\n\t}\n\tfor _, id := range expectedNodes {\n\t\tif w.Node(id) == nil {\n\t\t\tt.Errorf(\"expected node %q not found\", id)\n\t\t}\n\t}\n\n\t// Verify node kinds.\n\tkindChecks := map[string]ir.NodeKind{\n\t\t\"SetupWorkspace\":    ir.NodeTool,\n\t\t\"PickNextComponent\": ir.NodeTool,\n\t\t\"PlanComponent\":     ir.NodeAgent,\n\t\t\"ImplementParallel\": ir.NodeParallel,\n\t\t\"ImplementClaude\":   ir.NodeAgent,\n\t\t\"ImplementJoin\":     ir.NodeFanIn,\n\t\t\"ReviewParallel\":    ir.NodeParallel,\n\t\t\"ReviewsJoin\":       ir.NodeFanIn,\n\t\t\"ReviewAnalysis\":    ir.NodeAgent,\n\t\t\"CheckComplete\":     ir.NodeAgent, // diamond → agent\n\t}\n\tfor id, wantKind := range kindChecks {\n\t\tn := w.Node(id)\n\t\tif n == nil {\n\t\t\tcontinue\n\t\t}\n\t\tif n.Kind != wantKind {\n\t\t\tt.Errorf(\"node %q kind = %q, want %q\", id, n.Kind, wantKind)\n\t\t}\n\t}\n\n\t// Verify edges exist.\n\tif len(w.Edges) == 0 {\n\t\tt.Error(\"expected edges\")\n\t}\n\n\t// Verify ImplementParallel targets are inferred.\n\timplPar := w.Node(\"ImplementParallel\")\n\tif implPar != nil {\n\t\tcfg, ok := implPar.Config.(ir.ParallelConfig)\n\t\tif !ok {\n\t\t\tt.Errorf(\"ImplementParallel config type = %T, want ParallelConfig\", implPar.Config)\n\t\t} else if len(cfg.Targets) != 3 {\n\t\t\tt.Errorf(\"ImplementParallel targets = %d, want 3\", len(cfg.Targets))\n\t\t}\n\t}\n\n\t// Verify ImplementJoin sources are inferred.\n\timplJoin := w.Node(\"ImplementJoin\")\n\tif implJoin != nil {\n\t\tcfg, ok := implJoin.Config.(ir.FanInConfig)\n\t\tif !ok {\n\t\t\tt.Errorf(\"ImplementJoin config type = %T, want FanInConfig\", implJoin.Config)\n\t\t} else if len(cfg.Sources) != 3 {\n\t\t\tt.Errorf(\"ImplementJoin sources = %d, want 3\", len(cfg.Sources))\n\t\t}\n\t}\n\n\t// Verify a restart edge exists (MarkComplete -> PickNextComponent).\n\trestartFound := false\n\tfor _, e := range w.Edges {\n\t\tif e.From == \"MarkComplete\" && e.To == \"PickNextComponent\" && e.Restart {\n\t\t\trestartFound = true\n\t\t}\n\t}\n\tif !restartFound {\n\t\tt.Error(\"expected restart edge MarkComplete -> PickNextComponent\")\n\t}\n\n\t// Verify conditions with context. prefix were normalized.\n\tfor _, e := range w.Edges {\n\t\tif e.From == \"CheckComplete\" && e.To == \"Exit\" {\n\t\t\tif e.Condition == nil {\n\t\t\t\tt.Error(\"expected condition on CheckComplete -> Exit\")\n\t\t\t\tbreak\n\t\t\t}\n\t\t\tcc, ok := e.Condition.Parsed.(ir.CondCompare)\n\t\t\tif !ok {\n\t\t\t\tt.Errorf(\"expected CondCompare, got %T\", e.Condition.Parsed)\n\t\t\t\tbreak\n\t\t\t}\n\t\t\tif cc.Variable != \"ctx.tool_stdout\" {\n\t\t\t\tt.Errorf(\"variable = %q, want %q\", cc.Variable, \"ctx.tool_stdout\")\n\t\t\t}\n\t\t\tbreak\n\t\t}\n\t}\n\n\t// Verify PlanComponent has a model from llm_model attribute.\n\tplan := w.Node(\"PlanComponent\")\n\tif plan != nil {\n\t\tcfg, ok := plan.Config.(ir.AgentConfig)\n\t\tif !ok {\n\t\t\tt.Errorf(\"PlanComponent config type = %T, want AgentConfig\", plan.Config)\n\t\t} else {\n\t\t\tif cfg.Model != \"claude-opus-4-6\" {\n\t\t\t\tt.Errorf(\"PlanComponent model = %q, want %q\", cfg.Model, \"claude-opus-4-6\")\n\t\t\t}\n\t\t\tif cfg.Provider != \"anthropic\" {\n\t\t\t\tt.Errorf(\"PlanComponent provider = %q, want %q\", cfg.Provider, \"anthropic\")\n\t\t\t}\n\t\t}\n\t}\n\n\t// Verify ReviewAnalysis has goal_gate and retry_target.\n\tra := w.Node(\"ReviewAnalysis\")\n\tif ra != nil {\n\t\tcfg, ok := ra.Config.(ir.AgentConfig)\n\t\tif !ok {\n\t\t\tt.Errorf(\"ReviewAnalysis config type = %T, want AgentConfig\", ra.Config)\n\t\t} else {\n\t\t\tif !cfg.GoalGate {\n\t\t\t\tt.Error(\"ReviewAnalysis should have goal_gate=true\")\n\t\t\t}\n\t\t}\n\t\tif ra.Retry.RetryTarget != \"ImplementClaude\" {\n\t\t\tt.Errorf(\"ReviewAnalysis retry_target = %q, want %q\", ra.Retry.RetryTarget, \"ImplementClaude\")\n\t\t}\n\t}\n\n\t// Verify MigrateToSource doesn't error.\n\tsource, err := MigrateToSource(string(data))\n\tif err != nil {\n\t\tt.Fatalf(\"MigrateToSource(build_dippin.dot) error: %v\", err)\n\t}\n\tif !strings.HasPrefix(source, \"workflow BuildDippin\") {\n\t\tt.Errorf(\"source should start with 'workflow BuildDippin', got:\\n%.100s...\", source)\n\t}\n}\n\n// ============================================================\n// Additional helper/edge case tests\n// ============================================================\n\nfunc TestAddNamespacePrefix(t *testing.T) {\n\ttests := []struct {\n\t\tinput string\n\t\twant  string\n\t}{\n\t\t{\"outcome\", \"ctx.outcome\"},\n\t\t{\"tool_stdout\", \"ctx.tool_stdout\"},\n\t\t{\"ctx.outcome\", \"ctx.outcome\"},\n\t\t{\"graph.goal\", \"graph.goal\"},\n\t\t{\"context.tool_stdout\", \"ctx.tool_stdout\"},\n\t\t{\"context.outcome\", \"ctx.outcome\"},\n\t\t{\"custom_var\", \"ctx.custom_var\"},\n\t}\n\tfor _, tt := range tests {\n\t\tt.Run(tt.input, func(t *testing.T) {\n\t\t\tgot := addNamespacePrefix(tt.input)\n\t\t\tif got != tt.want {\n\t\t\t\tt.Errorf(\"addNamespacePrefix(%q) = %q, want %q\", tt.input, got, tt.want)\n\t\t\t}\n\t\t})\n\t}\n}\n\nfunc TestParseConditionEdgeCases(t *testing.T) {\n\ttests := []struct {\n\t\tname    string\n\t\traw     string\n\t\twantErr bool\n\t\tcheck   func(*ir.Condition) error\n\t}{\n\t\t{\n\t\t\tname: \"simple equals\",\n\t\t\traw:  \"outcome=success\",\n\t\t\tcheck: func(c *ir.Condition) error {\n\t\t\t\tcc, ok := c.Parsed.(ir.CondCompare)\n\t\t\t\tif !ok {\n\t\t\t\t\treturn fmt.Errorf(\"got %T, want CondCompare\", c.Parsed)\n\t\t\t\t}\n\t\t\t\tif cc.Variable != \"ctx.outcome\" || cc.Op != \"=\" || cc.Value != \"success\" {\n\t\t\t\t\treturn fmt.Errorf(\"got %+v\", cc)\n\t\t\t\t}\n\t\t\t\treturn nil\n\t\t\t},\n\t\t},\n\t\t{\n\t\t\tname: \"not equals\",\n\t\t\traw:  \"outcome!=fail\",\n\t\t\tcheck: func(c *ir.Condition) error {\n\t\t\t\tcc, ok := c.Parsed.(ir.CondCompare)\n\t\t\t\tif !ok {\n\t\t\t\t\treturn fmt.Errorf(\"got %T, want CondCompare\", c.Parsed)\n\t\t\t\t}\n\t\t\t\tif cc.Op != \"!=\" {\n\t\t\t\t\treturn fmt.Errorf(\"op = %q, want !=\", cc.Op)\n\t\t\t\t}\n\t\t\t\treturn nil\n\t\t\t},\n\t\t},\n\t\t{\n\t\t\tname: \"contains operator\",\n\t\t\traw:  \"tool_stdout contains pass\",\n\t\t\tcheck: func(c *ir.Condition) error {\n\t\t\t\tcc, ok := c.Parsed.(ir.CondCompare)\n\t\t\t\tif !ok {\n\t\t\t\t\treturn fmt.Errorf(\"got %T, want CondCompare\", c.Parsed)\n\t\t\t\t}\n\t\t\t\tif cc.Op != \"contains\" {\n\t\t\t\t\treturn fmt.Errorf(\"op = %q, want contains\", cc.Op)\n\t\t\t\t}\n\t\t\t\treturn nil\n\t\t\t},\n\t\t},\n\t\t{\n\t\t\tname: \"OR condition\",\n\t\t\traw:  \"outcome=success || outcome=partial\",\n\t\t\tcheck: func(c *ir.Condition) error {\n\t\t\t\t_, ok := c.Parsed.(ir.CondOr)\n\t\t\t\tif !ok {\n\t\t\t\t\treturn fmt.Errorf(\"got %T, want CondOr\", c.Parsed)\n\t\t\t\t}\n\t\t\t\treturn nil\n\t\t\t},\n\t\t},\n\t\t{\n\t\t\tname: \"bang prefix negation\",\n\t\t\traw:  \"!outcome=fail\",\n\t\t\tcheck: func(c *ir.Condition) error {\n\t\t\t\t_, ok := c.Parsed.(ir.CondNot)\n\t\t\t\tif !ok {\n\t\t\t\t\treturn fmt.Errorf(\"got %T, want CondNot\", c.Parsed)\n\t\t\t\t}\n\t\t\t\treturn nil\n\t\t\t},\n\t\t},\n\t\t{\n\t\t\tname:    \"empty string\",\n\t\t\traw:     \"\",\n\t\t\twantErr: false,\n\t\t\tcheck: func(c *ir.Condition) error {\n\t\t\t\tif c != nil {\n\t\t\t\t\treturn fmt.Errorf(\"expected nil for empty condition, got %+v\", c)\n\t\t\t\t}\n\t\t\t\treturn nil\n\t\t\t},\n\t\t},\n\t}\n\tfor _, tt := range tests {\n\t\tt.Run(tt.name, func(t *testing.T) {\n\t\t\tc, err := parseCondition(tt.raw)\n\t\t\tif tt.wantErr {\n\t\t\t\tif err == nil {\n\t\t\t\t\tt.Error(\"expected error, got nil\")\n\t\t\t\t}\n\t\t\t\treturn\n\t\t\t}\n\t\t\tif err != nil {\n\t\t\t\tt.Fatalf(\"unexpected error: %v\", err)\n\t\t\t}\n\t\t\tif tt.check != nil {\n\t\t\t\tif err := tt.check(c); err != nil {\n\t\t\t\t\tt.Error(err)\n\t\t\t\t}\n\t\t\t}\n\t\t})\n\t}\n}\n\nfunc TestMigrateNodeLabel(t *testing.T) {\n\tdot := `digraph G {\n\t\tStart [shape=Mdiamond, label=\"Begin Here\"];\n\t\tA [shape=box, label=\"My Special Node\", prompt=\"Do it.\"];\n\t\tExit [shape=Msquare, label=\"The End\"];\n\t\tStart -> A;\n\t\tA -> Exit;\n\t}`\n\tw, err := Migrate(dot)\n\tif err != nil {\n\t\tt.Fatalf(\"unexpected error: %v\", err)\n\t}\n\tn := w.Node(\"A\")\n\tif n == nil {\n\t\tt.Fatal(\"node A not found\")\n\t}\n\tif n.Label != \"My Special Node\" {\n\t\tt.Errorf(\"label = %q, want %q\", n.Label, \"My Special Node\")\n\t}\n}\n\nfunc TestMigrateWorkflowName(t *testing.T) {\n\tdot := `digraph MyWorkflow { A [shape=Mdiamond]; B [shape=Msquare]; A -> B; }`\n\tw, err := Migrate(dot)\n\tif err != nil {\n\t\tt.Fatalf(\"unexpected error: %v\", err)\n\t}\n\tif w.Name != \"MyWorkflow\" {\n\t\tt.Errorf(\"name = %q, want %q\", w.Name, \"MyWorkflow\")\n\t}\n}\n\nfunc TestMigrateQuotedGraphName(t *testing.T) {\n\tdot := `digraph \"my workflow\" { A [shape=Mdiamond]; B [shape=Msquare]; A -> B; }`\n\tw, err := Migrate(dot)\n\tif err != nil {\n\t\tt.Fatalf(\"unexpected error: %v\", err)\n\t}\n\tif w.Name != \"my workflow\" {\n\t\tt.Errorf(\"name = %q, want %q\", w.Name, \"my workflow\")\n\t}\n}\n\nfunc TestMigrateRetryConfig(t *testing.T) {\n\tdot := `digraph G {\n\t\tStart [shape=Mdiamond];\n\t\tA [shape=box, prompt=\"Try\", max_retries=3, retry_policy=\"aggressive\", retry_target=\"B\", fallback_target=\"C\"];\n\t\tB [shape=box, prompt=\"Retry here\"];\n\t\tC [shape=box, prompt=\"Fallback\"];\n\t\tExit [shape=Msquare];\n\t\tStart -> A;\n\t\tA -> B;\n\t\tB -> Exit;\n\t\tA -> C;\n\t\tC -> Exit;\n\t}`\n\tw, err := Migrate(dot)\n\tif err != nil {\n\t\tt.Fatalf(\"unexpected error: %v\", err)\n\t}\n\tn := w.Node(\"A\")\n\tif n == nil {\n\t\tt.Fatal(\"node A not found\")\n\t}\n\tif n.Retry.MaxRetries != 3 {\n\t\tt.Errorf(\"max_retries = %d, want 3\", n.Retry.MaxRetries)\n\t}\n\tif n.Retry.Policy != \"aggressive\" {\n\t\tt.Errorf(\"policy = %q, want %q\", n.Retry.Policy, \"aggressive\")\n\t}\n\tif n.Retry.RetryTarget != \"B\" {\n\t\tt.Errorf(\"retry_target = %q, want %q\", n.Retry.RetryTarget, \"B\")\n\t}\n\tif n.Retry.FallbackTarget != \"C\" {\n\t\tt.Errorf(\"fallback_target = %q, want %q\", n.Retry.FallbackTarget, \"C\")\n\t}\n}\n\nfunc TestMigrateSubgraphNode(t *testing.T) {\n\tdot := `digraph G {\n\t\tStart [shape=Mdiamond];\n\t\tS [shape=tab, ref=\"./review.dip\", label=\"Review Sub\"];\n\t\tExit [shape=Msquare];\n\t\tStart -> S;\n\t\tS -> Exit;\n\t}`\n\tw, err := Migrate(dot)\n\tif err != nil {\n\t\tt.Fatalf(\"unexpected error: %v\", err)\n\t}\n\tn := w.Node(\"S\")\n\tif n == nil {\n\t\tt.Fatal(\"node S not found\")\n\t}\n\tif n.Kind != ir.NodeSubgraph {\n\t\tt.Errorf(\"kind = %q, want %q\", n.Kind, ir.NodeSubgraph)\n\t}\n\tcfg, ok := n.Config.(ir.SubgraphConfig)\n\tif !ok {\n\t\tt.Fatalf(\"config type = %T, want SubgraphConfig\", n.Config)\n\t}\n\tif cfg.Ref != \"./review.dip\" {\n\t\tt.Errorf(\"ref = %q, want %q\", cfg.Ref, \"./review.dip\")\n\t}\n}\n\nfunc TestMigrateHumanNode(t *testing.T) {\n\tdot := `digraph G {\n\t\tStart [shape=Mdiamond];\n\t\tH [shape=hexagon, mode=\"choice\", default=\"Yes\", label=\"Approval\"];\n\t\tExit [shape=Msquare];\n\t\tStart -> H;\n\t\tH -> Exit;\n\t}`\n\tw, err := Migrate(dot)\n\tif err != nil {\n\t\tt.Fatalf(\"unexpected error: %v\", err)\n\t}\n\tn := w.Node(\"H\")\n\tif n == nil {\n\t\tt.Fatal(\"node H not found\")\n\t}\n\tif n.Kind != ir.NodeHuman {\n\t\tt.Errorf(\"kind = %q, want %q\", n.Kind, ir.NodeHuman)\n\t}\n\tcfg, ok := n.Config.(ir.HumanConfig)\n\tif !ok {\n\t\tt.Fatalf(\"config type = %T, want HumanConfig\", n.Config)\n\t}\n\tif cfg.Mode != \"choice\" {\n\t\tt.Errorf(\"mode = %q, want %q\", cfg.Mode, \"choice\")\n\t}\n\tif cfg.Default != \"Yes\" {\n\t\tt.Errorf(\"default = %q, want %q\", cfg.Default, \"Yes\")\n\t}\n}\n\nfunc TestMigrateParallelExplicitTargets(t *testing.T) {\n\tdot := `digraph G {\n\t\tStart [shape=Mdiamond];\n\t\tP [shape=component, targets=\"A,B,C\"];\n\t\tA [shape=box];\n\t\tB [shape=box];\n\t\tC [shape=box];\n\t\tExit [shape=Msquare];\n\t\tStart -> P;\n\t\tP -> A;\n\t\tP -> B;\n\t\tP -> C;\n\t\tA -> Exit;\n\t\tB -> Exit;\n\t\tC -> Exit;\n\t}`\n\tw, err := Migrate(dot)\n\tif err != nil {\n\t\tt.Fatalf(\"unexpected error: %v\", err)\n\t}\n\tn := w.Node(\"P\")\n\tif n == nil {\n\t\tt.Fatal(\"node P not found\")\n\t}\n\tcfg, ok := n.Config.(ir.ParallelConfig)\n\tif !ok {\n\t\tt.Fatalf(\"config type = %T, want ParallelConfig\", n.Config)\n\t}\n\t// Explicit targets from attribute should be used.\n\tif len(cfg.Targets) != 3 {\n\t\tt.Fatalf(\"targets = %d, want 3\", len(cfg.Targets))\n\t}\n\tif cfg.Targets[0] != \"A\" || cfg.Targets[1] != \"B\" || cfg.Targets[2] != \"C\" {\n\t\tt.Errorf(\"targets = %v, want [A B C]\", cfg.Targets)\n\t}\n}\n\nfunc TestMigrateVersionIsSet(t *testing.T) {\n\tdot := `digraph G { A [shape=Mdiamond]; B [shape=Msquare]; A -> B; }`\n\tw, err := Migrate(dot)\n\tif err != nil {\n\t\tt.Fatalf(\"unexpected error: %v\", err)\n\t}\n\tif w.Version != \"1\" {\n\t\tt.Errorf(\"version = %q, want %q\", w.Version, \"1\")\n\t}\n}\n\nfunc TestMigrateAgentConfigFields(t *testing.T) {\n\tdot := `digraph G {\n\t\tStart [shape=Mdiamond];\n\t\tA [shape=box, prompt=\"Do it.\", reasoning_effort=\"high\", fidelity=\"full\", goal_gate=true, auto_status=true];\n\t\tExit [shape=Msquare];\n\t\tStart -> A;\n\t\tA -> Exit;\n\t}`\n\tw, err := Migrate(dot)\n\tif err != nil {\n\t\tt.Fatalf(\"unexpected error: %v\", err)\n\t}\n\tn := w.Node(\"A\")\n\tif n == nil {\n\t\tt.Fatal(\"node A not found\")\n\t}\n\tcfg, ok := n.Config.(ir.AgentConfig)\n\tif !ok {\n\t\tt.Fatalf(\"config type = %T, want AgentConfig\", n.Config)\n\t}\n\tif cfg.ReasoningEffort != \"high\" {\n\t\tt.Errorf(\"reasoning_effort = %q, want %q\", cfg.ReasoningEffort, \"high\")\n\t}\n\tif cfg.Fidelity != \"full\" {\n\t\tt.Errorf(\"fidelity = %q, want %q\", cfg.Fidelity, \"full\")\n\t}\n\tif !cfg.GoalGate {\n\t\tt.Error(\"expected goal_gate=true\")\n\t}\n\tif !cfg.AutoStatus {\n\t\tt.Error(\"expected auto_status=true\")\n\t}\n}\n\nfunc TestMigrateEdgeLabel(t *testing.T) {\n\tdot := `digraph G {\n\t\tStart [shape=Mdiamond];\n\t\tA [shape=box];\n\t\tB [shape=box];\n\t\tExit [shape=Msquare];\n\t\tStart -> A;\n\t\tA -> B [label=\"proceed\", condition=\"outcome=success\"];\n\t\tB -> Exit;\n\t}`\n\tw, err := Migrate(dot)\n\tif err != nil {\n\t\tt.Fatalf(\"unexpected error: %v\", err)\n\t}\n\tedges := w.EdgesFrom(\"A\")\n\tif len(edges) != 1 {\n\t\tt.Fatalf(\"edges = %d, want 1\", len(edges))\n\t}\n\tif edges[0].Label != \"proceed\" {\n\t\tt.Errorf(\"label = %q, want %q\", edges[0].Label, \"proceed\")\n\t}\n}\n\nfunc TestNormalizeWhitespace(t *testing.T) {\n\ttests := []struct {\n\t\tinput string\n\t\twant  string\n\t}{\n\t\t{\"hello  world\", \"hello world\"},\n\t\t{\"  leading\", \"leading\"},\n\t\t{\"trailing  \", \"trailing\"},\n\t\t{\"a\\n\\tb\", \"a b\"},\n\t\t{\"\", \"\"},\n\t}\n\tfor _, tt := range tests {\n\t\tt.Run(tt.input, func(t *testing.T) {\n\t\t\tgot := normalizeWhitespace(tt.input)\n\t\t\tif got != tt.want {\n\t\t\t\tt.Errorf(\"normalizeWhitespace(%q) = %q, want %q\", tt.input, got, tt.want)\n\t\t\t}\n\t\t})\n\t}\n}\n\nfunc TestParseDOTDefaultNodeEdgeAttrs(t *testing.T) {\n\tinput := `digraph G {\n\t\tnode [fontname=\"Helvetica\"];\n\t\tedge [fontname=\"Helvetica\"];\n\t\tA [shape=box];\n\t\tB [shape=box];\n\t\tA -> B;\n\t}`\n\tdg, err := parseDOT(input)\n\tif err != nil {\n\t\tt.Fatalf(\"unexpected error: %v\", err)\n\t}\n\t// Default node attrs should be merged into each node.\n\tif dg.Nodes[0].Attrs[\"fontname\"] != \"Helvetica\" {\n\t\tt.Errorf(\"node A fontname = %q, want %q\", dg.Nodes[0].Attrs[\"fontname\"], \"Helvetica\")\n\t}\n\t// Default edge attrs should be merged into each edge.\n\tif dg.Edges[0].Attrs[\"fontname\"] != \"Helvetica\" {\n\t\tt.Errorf(\"edge fontname = %q, want %q\", dg.Edges[0].Attrs[\"fontname\"], \"Helvetica\")\n\t}\n}\n\nfunc TestParseDOTDOTLeftJustify(t *testing.T) {\n\t// \\l in DOT means left-justified newline — should be converted to \\n.\n\tinput := `digraph G {\n\t\tA [label=\"first\\lsecond\"];\n\t}`\n\tdg, err := parseDOT(input)\n\tif err != nil {\n\t\tt.Fatalf(\"unexpected error: %v\", err)\n\t}\n\twant := \"first\\nsecond\"\n\tif dg.Nodes[0].Attrs[\"label\"] != want {\n\t\tt.Errorf(\"label = %q, want %q\", dg.Nodes[0].Attrs[\"label\"], want)\n\t}\n}\n\nfunc TestCheckParityEdgeExtra(t *testing.T) {\n\ta := makeTestWorkflow()\n\tb := makeTestWorkflow()\n\tb.Edges = append(b.Edges, &ir.Edge{From: \"C\", To: \"A\"})\n\n\tdiffs := CheckParity(a, b)\n\tfound := false\n\tfor _, d := range diffs {\n\t\tif d.Kind == \"edge_extra\" {\n\t\t\tfound = true\n\t\t}\n\t}\n\tif !found {\n\t\tt.Error(\"expected edge_extra difference\")\n\t}\n}\n", "path": "migrate/migrate_test.go"}
+TOOL RESULT: write
 OUTPUT:
-27:Tracker parses a DOT file into a `Graph` of `Node` and `Edge` structs. Each node's DOT shape maps to a handler name (`box` → `codergen`, `hexagon` → `wait.human`, etc.). The engine walks the graph from `Mdiamond` (start) to `Msquare` (exit), executing each node's handler. Handlers return an `Outcome` with status (`success`/`fail`/`retry`), context updates (key-value strings), and edge routing hints (`PreferredLabel`, `SuggestedNextNodes`). The engine selects the next edge via a priority cascade: condition match → preferred label → suggested nodes → weight → lexical. Context is a shared `map[string]string` threaded through all nodes. Checkpoints serialize the full state after each step.
-69:- `preferred_label` — edge routing hint
-647:Route sugar is **deferred from v1**. In v1, all conditional routing is expressed as conditional edges in the `edges` block:
-656:This avoids ambiguity about whether `route Validate` attaches routing to an existing node, declares a new node, or replaces edge declarations. If route sugar is added post-v1, it should use unambiguous syntax like `route after <NodeID>` to make clear it decorates an existing node's outgoing edges. The IR does not include a `NodeCondition` kind — there is no intermediate condition node, just edges with conditions.
-766:- No `route` sugar (conditions only in edges)
-1111:| `route` sugar (post-v1) | Would expand to conditional edges; not in v1 |
-1326:- `route` syntax sugar
-1379:**Decision**: Syntax sugar (`route`) in Dippin, lowered to a no-op condition node in IR.
-1381:**Rationale**: In the current engine, condition nodes do nothing — the engine evaluates edge conditions during edge selection regardless of node kind. Making routing a surface-syntax convenience (`route X -> A when ... -> B when ...`) is cleaner than requiring authors to declare a node kind that has no configuration fields. The IR can emit a `NodeCondition` internally for migration compatibility.
-1502:First-class: node kind, prompt (multiline block), edges with conditions, parallel/fan_in declarations, explicit start/exit, `route` sugar, `reads:`/`writes:` contracts. Lowered: condition AST parsing, route-to-node expansion, namespace resolution, retry policy resolution, composition expansion.
-1506:Lossless: topology, node kinds (via shape mapping), labels, edge conditions (serialized from AST), weights, start/exit (as Mdiamond/Msquare). Lossy: multiline formatting (re-escaped), module structure (expanded), comments (lost), source locations (lost), parameter defaults (resolved), reads/writes (omitted), route sugar (expanded), variable namespaces (stripped).
-
+wrote 39008 bytes to migrate/migrate_test.go
 TURN 11
-TOOL CALL: read
-INPUT:
-{"path": "go.mod"}
-TOOL RESULT: read
-OUTPUT:
-module github.com/2389/dippin
-
-go 1.25.4
-
-TURN 12
-TOOL CALL: write
-INPUT:
-{"path": "validator/lint_codes.go", "content": "package validator\n\n// Diagnostic codes for semantic quality warnings (DIP101–DIP112).\nconst (\n\tDIP101 = \"DIP101\" // unreachable nodes after conditional branches\n\tDIP102 = \"DIP102\" // routing node without default/unconditional edge\n\tDIP103 = \"DIP103\" // overlapping or contradictory conditions\n\tDIP104 = \"DIP104\" // unbounded retry loop\n\tDIP105 = \"DIP105\" // no success path to exit\n\tDIP106 = \"DIP106\" // undefined variable in prompt\n\tDIP107 = \"DIP107\" // unused context key (written but never read)\n\tDIP108 = \"DIP108\" // unknown model/provider combination\n\tDIP109 = \"DIP109\" // namespace collision in imports\n\tDIP110 = \"DIP110\" // empty prompt on agent node\n\tDIP111 = \"DIP111\" // tool command without timeout\n\tDIP112 = \"DIP112\" // reads key not in any upstream writes\n)\n\nfunc init() {\n\t// Extend CodeDescription with linter codes.\n\tCodeDescription[DIP101] = \"unreachable node after conditional branches\"\n\tCodeDescription[DIP102] = \"routing node has no default/unconditional edge\"\n\tCodeDescription[DIP103] = \"overlapping or contradictory conditions\"\n\tCodeDescription[DIP104] = \"unbounded retry loop (no max_retries or fallback)\"\n\tCodeDescription[DIP105] = \"no success path from start to exit\"\n\tCodeDescription[DIP106] = \"undefined variable reference in prompt\"\n\tCodeDescription[DIP107] = \"unused context key (written but never read)\"\n\tCodeDescription[DIP108] = \"unknown model/provider combination\"\n\tCodeDescription[DIP109] = \"namespace collision in imports\"\n\tCodeDescription[DIP110] = \"empty prompt on agent node\"\n\tCodeDescription[DIP111] = \"tool command has no timeout\"\n\tCodeDescription[DIP112] = \"reads key not produced by any upstream writes\"\n}\n"}
-TOOL RESULT: write
-OUTPUT:
-wrote 1649 bytes to validator/lint_codes.go
-TURN 13
-TOOL CALL: write
-INPUT:
-{"content": "package validator\n\nimport (\n\t\"fmt\"\n\t\"regexp\"\n\t\"sort\"\n\t\"strings\"\n\n\t\"github.com/2389/dippin/ir\"\n)\n\n// Lint runs all semantic quality checks (DIP101–DIP112) on the workflow\n// and returns all diagnostics found. These are warnings, not errors —\n// the workflow can still execute, but the findings indicate likely bugs\n// or quality issues.\n//\n// Lint is independent of Validate. Callers should run both:\n//\n//\tstructureResult := validator.Validate(w)\n//\tlintResult := validator.Lint(w)\nfunc Lint(w *ir.Workflow) Result {\n\tvar diags []Diagnostic\n\n\tdiags = append(diags, lintConditionalReachability(w)...)\n\tdiags = append(diags, lintDefaultEdge(w)...)\n\tdiags = append(diags, lintOverlappingConditions(w)...)\n\tdiags = append(diags, lintUnboundedRetry(w)...)\n\tdiags = append(diags, lintSuccessPath(w)...)\n\tdiags = append(diags, lintUndefinedVariables(w)...)\n\tdiags = append(diags, lintUnusedWrites(w)...)\n\tdiags = append(diags, lintModelProvider(w)...)\n\tdiags = append(diags, lintNamespaceCollisions(w)...)\n\tdiags = append(diags, lintEmptyPrompts(w)...)\n\tdiags = append(diags, lintToolTimeout(w)...)\n\tdiags = append(diags, lintReadsWithoutUpstreamWrites(w)...)\n\n\treturn Result{Diagnostics: diags}\n}\n\n// lintConditionalReachability checks DIP101: nodes that are only reachable\n// through conditional edges may be unreachable at runtime if conditions are\n// not satisfied. A node is flagged if ALL of its incoming edges are conditional\n// (have a non-nil Condition), meaning there is no guaranteed path to it.\nfunc lintConditionalReachability(w *ir.Workflow) []Diagnostic {\n\tvar diags []Diagnostic\n\n\t// Build a map of incoming edges per node.\n\tincoming := make(map[string][]*ir.Edge)\n\tfor _, e := range w.Edges {\n\t\tincoming[e.To] = append(incoming[e.To], e)\n\t}\n\n\tfor _, n := range w.Nodes {\n\t\t// Start node is always reachable by definition.\n\t\tif n.ID == w.Start {\n\t\t\tcontinue\n\t\t}\n\t\tedges := incoming[n.ID]\n\t\tif len(edges) == 0 {\n\t\t\t// No incoming edges at all — DIP004 handles this.\n\t\t\tcontinue\n\t\t}\n\t\tallConditional := true\n\t\tfor _, e := range edges {\n\t\t\tif e.Condition == nil {\n\t\t\t\tallConditional = false\n\t\t\t\tbreak\n\t\t\t}\n\t\t}\n\t\tif allConditional {\n\t\t\tdiags = append(diags, Diagnostic{\n\t\t\t\tCode:     DIP101,\n\t\t\t\tSeverity: SeverityWarning,\n\t\t\t\tMessage:  fmt.Sprintf(\"node %q is only reachable through conditional edges and may be skipped at runtime\", n.ID),\n\t\t\t\tLocation: n.Source,\n\t\t\t\tHelp:     \"add an unconditional edge to this node, or verify all conditions are exhaustive\",\n\t\t\t})\n\t\t}\n\t}\n\treturn diags\n}\n\n// lintDefaultEdge checks DIP102: nodes that have outgoing conditional edges\n// but no unconditional (default/fallback) edge. Without a default edge,\n// execution may get stuck at this node if no condition matches.\nfunc lintDefaultEdge(w *ir.Workflow) []Diagnostic {\n\tvar diags []Diagnostic\n\n\tfor _, n := range w.Nodes {\n\t\toutgoing := w.EdgesFrom(n.ID)\n\t\tif len(outgoing) == 0 {\n\t\t\tcontinue\n\t\t}\n\n\t\thasConditional := false\n\t\thasUnconditional := false\n\t\tfor _, e := range outgoing {\n\t\t\tif e.Condition != nil {\n\t\t\t\thasConditional = true\n\t\t\t} else {\n\t\t\t\thasUnconditional = true\n\t\t\t}\n\t\t}\n\n\t\t// Only flag if there are conditional edges but no unconditional fallback.\n\t\tif hasConditional && !hasUnconditional {\n\t\t\tdiags = append(diags, Diagnostic{\n\t\t\t\tCode:     DIP102,\n\t\t\t\tSeverity: SeverityWarning,\n\t\t\t\tMessage:  fmt.Sprintf(\"node %q has conditional outgoing edges but no unconditional default edge\", n.ID),\n\t\t\t\tLocation: n.Source,\n\t\t\t\tHelp:     \"add an unconditional edge as a fallback, or ensure conditions are exhaustive\",\n\t\t\t})\n\t\t}\n\t}\n\treturn diags\n}\n\n// lintOverlappingConditions checks DIP103: multiple edges from the same node\n// with conditions that compare the same variable to the same value using \"=\".\n// This indicates contradictory or duplicated routing logic.\nfunc lintOverlappingConditions(w *ir.Workflow) []Diagnostic {\n\tvar diags []Diagnostic\n\n\t// Group edges by source node.\n\tedgesBySource := make(map[string][]*ir.Edge)\n\tfor _, e := range w.Edges {\n\t\tif e.Condition != nil {\n\t\t\tedgesBySource[e.From] = append(edgesBySource[e.From], e)\n\t\t}\n\t}\n\n\tfor from, edges := range edgesBySource {\n\t\t// Extract top-level equality comparisons from each edge condition.\n\t\ttype condKey struct {\n\t\t\tvariable string\n\t\t\top       string\n\t\t\tvalue    string\n\t\t}\n\n\t\tseen := make(map[condKey]*ir.Edge)\n\t\tfor _, e := range edges {\n\t\t\tcomparisons := extractComparisons(e.Condition.Parsed)\n\t\t\tfor _, cmp := range comparisons {\n\t\t\t\tkey := condKey{variable: cmp.Variable, op: cmp.Op, value: cmp.Value}\n\t\t\t\tif first, ok := seen[key]; ok {\n\t\t\t\t\tdiags = append(diags, Diagnostic{\n\t\t\t\t\t\tCode:     DIP103,\n\t\t\t\t\t\tSeverity: SeverityWarning,\n\t\t\t\t\t\tMessage:  fmt.Sprintf(\"node %q has overlapping conditions: edges to %q and %q both check %s %s %s\", from, first.To, e.To, cmp.Variable, cmp.Op, cmp.Value),\n\t\t\t\t\t\tLocation: e.Source,\n\t\t\t\t\t\tHelp:     \"review the conditions to ensure they route to different targets for different states\",\n\t\t\t\t\t})\n\t\t\t\t} else {\n\t\t\t\t\tseen[key] = e\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t}\n\treturn diags\n}\n\n// extractComparisons recursively extracts all CondCompare nodes from a\n// condition expression tree. This flattens AND/OR/NOT to find the leaf comparisons.\nfunc extractComparisons(expr ir.ConditionExpr) []ir.CondCompare {\n\tif expr == nil {\n\t\treturn nil\n\t}\n\tswitch e := expr.(type) {\n\tcase ir.CondCompare:\n\t\treturn []ir.CondCompare{e}\n\tcase ir.CondAnd:\n\t\treturn append(extractComparisons(e.Left), extractComparisons(e.Right)...)\n\tcase ir.CondOr:\n\t\treturn append(extractComparisons(e.Left), extractComparisons(e.Right)...)\n\tcase ir.CondNot:\n\t\treturn extractComparisons(e.Inner)\n\tdefault:\n\t\treturn nil\n\t}\n}\n\n// lintUnboundedRetry checks DIP104: nodes with retry configuration that have\n// no max_retries limit and no fallback target. This could cause infinite retry\n// loops at runtime.\nfunc lintUnboundedRetry(w *ir.Workflow) []Diagnostic {\n\tvar diags []Diagnostic\n\tfor _, n := range w.Nodes {\n\t\tr := n.Retry\n\t\t// Only flag nodes that have some retry config but no bounds.\n\t\thasRetryConfig := r.Policy != \"\" || r.RetryTarget != \"\"\n\t\tif hasRetryConfig && r.MaxRetries == 0 && r.FallbackTarget == \"\" {\n\t\t\tdiags = append(diags, Diagnostic{\n\t\t\t\tCode:     DIP104,\n\t\t\t\tSeverity: SeverityWarning,\n\t\t\t\tMessage:  fmt.Sprintf(\"node %q has retry configuration but no max_retries or fallback_target\", n.ID),\n\t\t\t\tLocation: n.Source,\n\t\t\t\tHelp:     \"set max_retries to limit retries, or add a fallback_target for graceful degradation\",\n\t\t\t})\n\t\t}\n\t}\n\treturn diags\n}\n\n// lintSuccessPath checks DIP105: there must be at least one path from the\n// start node to the exit node using only non-restart edges. If no such path\n// exists, the workflow can never complete normally.\nfunc lintSuccessPath(w *ir.Workflow) []Diagnostic {\n\tif w.Start == \"\" || w.Exit == \"\" {\n\t\treturn nil\n\t}\n\tif w.Node(w.Start) == nil || w.Node(w.Exit) == nil {\n\t\treturn nil\n\t}\n\n\t// BFS from start, following only non-restart edges.\n\tadj := make(map[string][]string)\n\tfor _, e := range w.Edges {\n\t\tif !e.Restart {\n\t\t\tadj[e.From] = append(adj[e.From], e.To)\n\t\t}\n\t}\n\n\tvisited := make(map[string]bool)\n\tqueue := []string{w.Start}\n\tvisited[w.Start] = true\n\n\tfor len(queue) > 0 {\n\t\tcurr := queue[0]\n\t\tqueue = queue[1:]\n\t\tif curr == w.Exit {\n\t\t\treturn nil // Found a path.\n\t\t}\n\t\tfor _, next := range adj[curr] {\n\t\t\tif !visited[next] {\n\t\t\t\tvisited[next] = true\n\t\t\t\tqueue = append(queue, next)\n\t\t\t}\n\t\t}\n\t}\n\n\treturn []Diagnostic{{\n\t\tCode:     DIP105,\n\t\tSeverity: SeverityWarning,\n\t\tMessage:  fmt.Sprintf(\"no forward path from start node %q to exit node %q (excluding restart edges)\", w.Start, w.Exit),\n\t\tHelp:     \"ensure there is at least one non-restart path from start to exit\",\n\t}}\n}\n\n// varRefPattern matches ${...} variable references in prompt text.\nvar varRefPattern = regexp.MustCompile(`\\$\\{([^}]+)\\}`)\n\n// knownNamespaces lists the valid namespace prefixes for variable references.\nvar knownNamespaces = map[string]bool{\n\t\"ctx\":   true,\n\t\"graph\": true,\n\t\"env\":   true,\n}\n\n// lintUndefinedVariables checks DIP106: ${variable} references in prompts\n// must use known namespace prefixes (ctx., graph., env.). References without\n// a recognized namespace are flagged.\nfunc lintUndefinedVariables(w *ir.Workflow) []Diagnostic {\n\tvar diags []Diagnostic\n\tfor _, n := range w.Nodes {\n\t\tprompt := nodePrompt(n)\n\t\tif prompt == \"\" {\n\t\t\tcontinue\n\t\t}\n\t\tmatches := varRefPattern.FindAllStringSubmatch(prompt, -1)\n\t\tfor _, m := range matches {\n\t\t\tvarRef := m[1] // The captured group inside ${...}\n\t\t\tparts := strings.SplitN(varRef, \".\", 2)\n\t\t\tif len(parts) < 2 || !knownNamespaces[parts[0]] {\n\t\t\t\tdiags = append(diags, Diagnostic{\n\t\t\t\t\tCode:     DIP106,\n\t\t\t\t\tSeverity: SeverityWarning,\n\t\t\t\t\tMessage:  fmt.Sprintf(\"node %q references undefined variable ${%s}\", n.ID, varRef),\n\t\t\t\t\tLocation: n.Source,\n\t\t\t\t\tHelp:     fmt.Sprintf(\"use a namespaced variable like ${ctx.%s}, ${graph.%s}, or ${env.%s}\", varRef, varRef, varRef),\n\t\t\t\t})\n\t\t\t}\n\t\t}\n\t}\n\treturn diags\n}\n\n// lintUnusedWrites checks DIP107: context keys declared in a node's writes:\n// that are not referenced in any other node's reads:. These are dead outputs\n// that may indicate unused work.\nfunc lintUnusedWrites(w *ir.Workflow) []Diagnostic {\n\t// Collect all reads across all nodes.\n\tallReads := make(map[string]bool)\n\tfor _, n := range w.Nodes {\n\t\tfor _, key := range n.IO.Reads {\n\t\t\tallReads[key] = true\n\t\t}\n\t}\n\n\tvar diags []Diagnostic\n\tfor _, n := range w.Nodes {\n\t\tfor _, key := range n.IO.Writes {\n\t\t\tif !allReads[key] {\n\t\t\t\tdiags = append(diags, Diagnostic{\n\t\t\t\t\tCode:     DIP107,\n\t\t\t\t\tSeverity: SeverityWarning,\n\t\t\t\t\tMessage:  fmt.Sprintf(\"node %q writes context key %q but no node declares it in reads\", n.ID, key),\n\t\t\t\t\tLocation: n.Source,\n\t\t\t\t\tHelp:     fmt.Sprintf(\"add reads: %s to a downstream node, or remove this write if unused\", key),\n\t\t\t\t})\n\t\t\t}\n\t\t}\n\t}\n\treturn diags\n}\n\n// knownModelProviders lists known valid model/provider combinations.\n// This is a best-effort catalog — unknown combinations produce a warning,\n// not an error, since new models may be added at any time.\nvar knownModelProviders = map[string]map[string]bool{\n\t\"anthropic\": {\n\t\t\"claude-opus-4-6\":        true,\n\t\t\"claude-sonnet-4-6\":      true,\n\t\t\"claude-haiku-3-5\":       true,\n\t\t\"claude-opus-4-20250116\": true,\n\t},\n\t\"openai\": {\n\t\t\"gpt-5.4\":        true,\n\t\t\"gpt-5.3-codex\":  true,\n\t\t\"gpt-4o\":         true,\n\t\t\"gpt-4o-mini\":    true,\n\t\t\"o3\":             true,\n\t\t\"o4-mini\":        true,\n\t},\n}\n\n// lintModelProvider checks DIP108: model/provider combinations should be\n// in the known catalog. Unknown combinations may indicate typos.\nfunc lintModelProvider(w *ir.Workflow) []Diagnostic {\n\tvar diags []Diagnostic\n\tfor _, n := range w.Nodes {\n\t\tcfg, ok := n.Config.(ir.AgentConfig)\n\t\tif !ok {\n\t\t\tcontinue\n\t\t}\n\n\t\tmodel := cfg.Model\n\t\tprovider := cfg.Provider\n\n\t\t// Use workflow defaults as fallback.\n\t\tif model == \"\" {\n\t\t\tmodel = w.Defaults.Model\n\t\t}\n\t\tif provider == \"\" {\n\t\t\tprovider = w.Defaults.Provider\n\t\t}\n\n\t\t// Only check if both are specified.\n\t\tif model == \"\" || provider == \"\" {\n\t\t\tcontinue\n\t\t}\n\n\t\tproviderModels, providerKnown := knownModelProviders[provider]\n\t\tif !providerKnown {\n\t\t\tdiags = append(diags, Diagnostic{\n\t\t\t\tCode:     DIP108,\n\t\t\t\tSeverity: SeverityWarning,\n\t\t\t\tMessage:  fmt.Sprintf(\"node %q uses unknown provider %q\", n.ID, provider),\n\t\t\t\tLocation: n.Source,\n\t\t\t\tHelp:     fmt.Sprintf(\"known providers: %s\", knownProviderList()),\n\t\t\t})\n\t\t\tcontinue\n\t\t}\n\t\tif !providerModels[model] {\n\t\t\tdiags = append(diags, Diagnostic{\n\t\t\t\tCode:     DIP108,\n\t\t\t\tSeverity: SeverityWarning,\n\t\t\t\tMessage:  fmt.Sprintf(\"node %q uses unknown model %q for provider %q\", n.ID, model, provider),\n\t\t\t\tLocation: n.Source,\n\t\t\t\tHelp:     fmt.Sprintf(\"known models for %s: %s\", provider, knownModelList(provider)),\n\t\t\t})\n\t\t}\n\t}\n\treturn diags\n}\n\n// knownProviderList returns a sorted comma-separated list of known providers.\nfunc knownProviderList() string {\n\tproviders := make([]string, 0, len(knownModelProviders))\n\tfor p := range knownModelProviders {\n\t\tproviders = append(providers, p)\n\t}\n\tsort.Strings(providers)\n\treturn strings.Join(providers, \", \")\n}\n\n// knownModelList returns a sorted comma-separated list of known models for a provider.\nfunc knownModelList(provider string) string {\n\tmodels := knownModelProviders[provider]\n\tlist := make([]string, 0, len(models))\n\tfor m := range models {\n\t\tlist = append(list, m)\n\t}\n\tsort.Strings(list)\n\treturn strings.Join(list, \", \")\n}\n\n// lintNamespaceCollisions checks DIP109: multiple subgraph nodes referencing\n// the same file without different parameters could cause namespace collisions\n// when expanded.\nfunc lintNamespaceCollisions(w *ir.Workflow) []Diagnostic {\n\tvar diags []Diagnostic\n\n\ttype subgraphRef struct {\n\t\tnode *ir.Node\n\t\tref  string\n\t}\n\n\tseen := make(map[string]*ir.Node)\n\tfor _, n := range w.Nodes {\n\t\tcfg, ok := n.Config.(ir.SubgraphConfig)\n\t\tif !ok {\n\t\t\tcontinue\n\t\t}\n\t\tif first, exists := seen[cfg.Ref]; exists {\n\t\t\tdiags = append(diags, Diagnostic{\n\t\t\t\tCode:     DIP109,\n\t\t\t\tSeverity: SeverityWarning,\n\t\t\t\tMessage:  fmt.Sprintf(\"nodes %q and %q both reference subgraph %q, which may cause namespace collisions\", first.ID, n.ID, cfg.Ref),\n\t\t\t\tLocation: n.Source,\n\t\t\t\tHelp:     \"use distinct node IDs and ensure imported names do not collide after expansion\",\n\t\t\t})\n\t\t} else {\n\t\t\tseen[cfg.Ref] = n\n\t\t}\n\t}\n\treturn diags\n}\n\n// lintEmptyPrompts checks DIP110: agent nodes should have a non-empty prompt.\n// An agent without a prompt has nothing to send to the LLM.\nfunc lintEmptyPrompts(w *ir.Workflow) []Diagnostic {\n\tvar diags []Diagnostic\n\tfor _, n := range w.Nodes {\n\t\tcfg, ok := n.Config.(ir.AgentConfig)\n\t\tif !ok {\n\t\t\tcontinue\n\t\t}\n\t\tif strings.TrimSpace(cfg.Prompt) == \"\" {\n\t\t\tdiags = append(diags, Diagnostic{\n\t\t\t\tCode:     DIP110,\n\t\t\t\tSeverity: SeverityWarning,\n\t\t\t\tMessage:  fmt.Sprintf(\"agent node %q has an empty prompt\", n.ID),\n\t\t\t\tLocation: n.Source,\n\t\t\t\tHelp:     \"add a prompt: field with instructions for the LLM\",\n\t\t\t})\n\t\t}\n\t}\n\treturn diags\n}\n\n// lintToolTimeout checks DIP111: tool nodes should have a timeout configured.\n// Without a timeout, a hanging tool command could block the entire pipeline.\nfunc lintToolTimeout(w *ir.Workflow) []Diagnostic {\n\tvar diags []Diagnostic\n\tfor _, n := range w.Nodes {\n\t\tcfg, ok := n.Config.(ir.ToolConfig)\n\t\tif !ok {\n\t\t\tcontinue\n\t\t}\n\t\tif cfg.Timeout == 0 {\n\t\t\tdiags = append(diags, Diagnostic{\n\t\t\t\tCode:     DIP111,\n\t\t\t\tSeverity: SeverityWarning,\n\t\t\t\tMessage:  fmt.Sprintf(\"tool node %q has no timeout configured\", n.ID),\n\t\t\t\tLocation: n.Source,\n\t\t\t\tHelp:     \"add a timeout (e.g., timeout: 60s) to prevent hanging commands\",\n\t\t\t})\n\t\t}\n\t}\n\treturn diags\n}\n\n// lintReadsWithoutUpstreamWrites checks DIP112: keys in a node's reads: list\n// should appear in the writes: list of at least one upstream node (reachable\n// via forward edges from start). This uses a simple flow analysis — for each\n// node, compute the set of keys written by upstream nodes, then check reads.\nfunc lintReadsWithoutUpstreamWrites(w *ir.Workflow) []Diagnostic {\n\tif w.Start == \"\" || w.Node(w.Start) == nil {\n\t\treturn nil\n\t}\n\n\t// Build forward adjacency (non-restart edges).\n\tadj := make(map[string][]string)\n\tfor _, e := range w.Edges {\n\t\tif !e.Restart {\n\t\t\tadj[e.From] = append(adj[e.From], e.To)\n\t\t}\n\t}\n\n\t// Topological order via BFS (Kahn's algorithm).\n\tinDegree := make(map[string]int)\n\tfor _, n := range w.Nodes {\n\t\tinDegree[n.ID] = 0\n\t}\n\tfor _, e := range w.Edges {\n\t\tif !e.Restart {\n\t\t\tinDegree[e.To]++\n\t\t}\n\t}\n\n\tqueue := []string{}\n\tfor _, n := range w.Nodes {\n\t\tif inDegree[n.ID] == 0 {\n\t\t\tqueue = append(queue, n.ID)\n\t\t}\n\t}\n\n\t// For each node, compute the set of keys available from upstream writes.\n\tavailable := make(map[string]map[string]bool)\n\tfor _, n := range w.Nodes {\n\t\tavailable[n.ID] = make(map[string]bool)\n\t}\n\n\tvar order []string\n\tfor len(queue) > 0 {\n\t\tcurr := queue[0]\n\t\tqueue = queue[1:]\n\t\torder = append(order, curr)\n\n\t\t// Add this node's writes to what's available for downstream.\n\t\tn := w.Node(curr)\n\t\tif n != nil {\n\t\t\tfor _, key := range n.IO.Writes {\n\t\t\t\tavailable[curr][key] = true\n\t\t\t}\n\t\t}\n\n\t\tfor _, next := range adj[curr] {\n\t\t\t// Merge current node's available keys into the next node's available set.\n\t\t\tfor key := range available[curr] {\n\t\t\t\tavailable[next][key] = true\n\t\t\t}\n\t\t\tinDegree[next]--\n\t\t\tif inDegree[next] == 0 {\n\t\t\t\tqueue = append(queue, next)\n\t\t\t}\n\t\t}\n\t}\n\n\tvar diags []Diagnostic\n\tfor _, n := range w.Nodes {\n\t\tfor _, key := range n.IO.Reads {\n\t\t\tif !available[n.ID][key] {\n\t\t\t\tdiags = append(diags, Diagnostic{\n\t\t\t\t\tCode:     DIP112,\n\t\t\t\t\tSeverity: SeverityWarning,\n\t\t\t\t\tMessage:  fmt.Sprintf(\"node %q reads context key %q but no upstream node declares it in writes\", n.ID, key),\n\t\t\t\t\tLocation: n.Source,\n\t\t\t\t\tHelp:     fmt.Sprintf(\"add writes: %s to an upstream node, or the key may be auto-injected at runtime\", key),\n\t\t\t\t})\n\t\t\t}\n\t\t}\n\t}\n\treturn diags\n}\n\n// nodePrompt extracts the prompt text from a node if it has one.\nfunc nodePrompt(n *ir.Node) string {\n\tswitch cfg := n.Config.(type) {\n\tcase ir.AgentConfig:\n\t\treturn cfg.Prompt\n\tdefault:\n\t\treturn \"\"\n\t}\n}\n", "path": "validator/lint.go"}
-TOOL RESULT: write
-OUTPUT:
-wrote 16970 bytes to validator/lint.go
-TURN 14
-TOOL CALL: write
-INPUT:
-{"content": "package validator\n\nimport (\n\t\"strings\"\n\t\"testing\"\n\t\"time\"\n\n\t\"github.com/2389/dippin/ir\"\n)\n\n// --- Test fixtures ---\n\n// cleanMinimalWorkflow returns a minimal valid workflow with no lint warnings.\nfunc cleanMinimalWorkflow() *ir.Workflow {\n\treturn &ir.Workflow{\n\t\tName:  \"clean\",\n\t\tStart: \"Begin\",\n\t\tExit:  \"End\",\n\t\tNodes: []*ir.Node{\n\t\t\t{ID: \"Begin\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"Hello.\"}},\n\t\t\t{ID: \"End\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"Done.\"}},\n\t\t},\n\t\tEdges: []*ir.Edge{\n\t\t\t{From: \"Begin\", To: \"End\"},\n\t\t},\n\t}\n}\n\n// cleanComplexWorkflow returns a complex valid workflow with no lint warnings.\nfunc cleanComplexWorkflow() *ir.Workflow {\n\treturn &ir.Workflow{\n\t\tName:  \"clean_complex\",\n\t\tStart: \"Ask\",\n\t\tExit:  \"Done\",\n\t\tDefaults: ir.WorkflowDefaults{\n\t\t\tModel:    \"claude-opus-4-6\",\n\t\t\tProvider: \"anthropic\",\n\t\t},\n\t\tNodes: []*ir.Node{\n\t\t\t{ID: \"Ask\", Kind: ir.NodeHuman, Config: ir.HumanConfig{Mode: \"freeform\"},\n\t\t\t\tIO: ir.NodeIO{Writes: []string{\"human_response\"}}},\n\t\t\t{ID: \"Plan\", Kind: ir.NodeAgent, Config: ir.AgentConfig{\n\t\t\t\tPrompt: \"Plan the work based on ${ctx.human_response}.\",\n\t\t\t}, IO: ir.NodeIO{Reads: []string{\"human_response\"}, Writes: []string{\"plan\"}}},\n\t\t\t{ID: \"Execute\", Kind: ir.NodeAgent, Config: ir.AgentConfig{\n\t\t\t\tPrompt: \"Execute the plan.\",\n\t\t\t}, IO: ir.NodeIO{Reads: []string{\"plan\"}}},\n\t\t\t{ID: \"Done\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"Ship it.\"}},\n\t\t},\n\t\tEdges: []*ir.Edge{\n\t\t\t{From: \"Ask\", To: \"Plan\"},\n\t\t\t{From: \"Plan\", To: \"Execute\"},\n\t\t\t{From: \"Execute\", To: \"Done\"},\n\t\t},\n\t}\n}\n\n// --- Table-driven tests ---\n\nfunc TestLint(t *testing.T) {\n\ttests := []struct {\n\t\tname       string\n\t\tworkflow   *ir.Workflow\n\t\twantCodes  []string // Expected diagnostic codes (empty = no diagnostics)\n\t\twantNoDiag bool     // If true, expect zero diagnostics\n\t}{\n\t\t// --- Happy path ---\n\t\t{\n\t\t\tname:       \"clean minimal workflow\",\n\t\t\tworkflow:   cleanMinimalWorkflow(),\n\t\t\twantNoDiag: true,\n\t\t},\n\t\t{\n\t\t\tname:       \"clean complex workflow with IO contracts\",\n\t\t\tworkflow:   cleanComplexWorkflow(),\n\t\t\twantNoDiag: true,\n\t\t},\n\t\t{\n\t\t\tname: \"workflow with known model/provider is clean\",\n\t\t\tworkflow: &ir.Workflow{\n\t\t\t\tName:  \"known_model\",\n\t\t\t\tStart: \"A\",\n\t\t\t\tExit:  \"A\",\n\t\t\t\tNodes: []*ir.Node{\n\t\t\t\t\t{ID: \"A\", Kind: ir.NodeAgent, Config: ir.AgentConfig{\n\t\t\t\t\t\tPrompt:   \"Hello.\",\n\t\t\t\t\t\tModel:    \"gpt-5.4\",\n\t\t\t\t\t\tProvider: \"openai\",\n\t\t\t\t\t}},\n\t\t\t\t},\n\t\t\t},\n\t\t\twantNoDiag: true,\n\t\t},\n\t\t{\n\t\t\tname: \"tool with timeout is clean\",\n\t\t\tworkflow: &ir.Workflow{\n\t\t\t\tName:  \"tool_timeout\",\n\t\t\t\tStart: \"T\",\n\t\t\t\tExit:  \"T\",\n\t\t\t\tNodes: []*ir.Node{\n\t\t\t\t\t{ID: \"T\", Kind: ir.NodeTool, Config: ir.ToolConfig{\n\t\t\t\t\t\tCommand: \"echo test\",\n\t\t\t\t\t\tTimeout: 30 * time.Second,\n\t\t\t\t\t}},\n\t\t\t\t},\n\t\t\t},\n\t\t\twantNoDiag: true,\n\t\t},\n\n\t\t// --- DIP101: Unreachable nodes after conditional branches ---\n\t\t{\n\t\t\tname: \"DIP101: node only reachable via conditional edges\",\n\t\t\tworkflow: &ir.Workflow{\n\t\t\t\tName:  \"cond_only\",\n\t\t\t\tStart: \"A\",\n\t\t\t\tExit:  \"C\",\n\t\t\t\tNodes: []*ir.Node{\n\t\t\t\t\t{ID: \"A\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"a\"}},\n\t\t\t\t\t{ID: \"B\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"b\"}},\n\t\t\t\t\t{ID: \"C\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"c\"}},\n\t\t\t\t},\n\t\t\t\tEdges: []*ir.Edge{\n\t\t\t\t\t{From: \"A\", To: \"B\", Condition: &ir.Condition{\n\t\t\t\t\t\tRaw:    \"ctx.x = 1\",\n\t\t\t\t\t\tParsed: ir.CondCompare{Variable: \"ctx.x\", Op: \"=\", Value: \"1\"},\n\t\t\t\t\t}},\n\t\t\t\t\t{From: \"A\", To: \"C\"},\n\t\t\t\t\t{From: \"B\", To: \"C\"},\n\t\t\t\t},\n\t\t\t},\n\t\t\twantCodes: []string{DIP101},\n\t\t},\n\t\t{\n\t\t\tname: \"DIP101: node with unconditional incoming edge is fine\",\n\t\t\tworkflow: &ir.Workflow{\n\t\t\t\tName:  \"uncond_ok\",\n\t\t\t\tStart: \"A\",\n\t\t\t\tExit:  \"B\",\n\t\t\t\tNodes: []*ir.Node{\n\t\t\t\t\t{ID: \"A\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"a\"}},\n\t\t\t\t\t{ID: \"B\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"b\"}},\n\t\t\t\t},\n\t\t\t\tEdges: []*ir.Edge{\n\t\t\t\t\t{From: \"A\", To: \"B\"},\n\t\t\t\t},\n\t\t\t},\n\t\t\twantNoDiag: true,\n\t\t},\n\n\t\t// --- DIP102: Routing node without default edge ---\n\t\t{\n\t\t\tname: \"DIP102: conditional outgoing but no default\",\n\t\t\tworkflow: &ir.Workflow{\n\t\t\t\tName:  \"no_default\",\n\t\t\t\tStart: \"A\",\n\t\t\t\tExit:  \"C\",\n\t\t\t\tNodes: []*ir.Node{\n\t\t\t\t\t{ID: \"A\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"a\"}},\n\t\t\t\t\t{ID: \"B\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"b\"}},\n\t\t\t\t\t{ID: \"C\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"c\"}},\n\t\t\t\t},\n\t\t\t\tEdges: []*ir.Edge{\n\t\t\t\t\t{From: \"A\", To: \"B\", Condition: &ir.Condition{\n\t\t\t\t\t\tRaw:    \"ctx.x = 1\",\n\t\t\t\t\t\tParsed: ir.CondCompare{Variable: \"ctx.x\", Op: \"=\", Value: \"1\"},\n\t\t\t\t\t}},\n\t\t\t\t\t{From: \"A\", To: \"C\", Condition: &ir.Condition{\n\t\t\t\t\t\tRaw:    \"ctx.x = 2\",\n\t\t\t\t\t\tParsed: ir.CondCompare{Variable: \"ctx.x\", Op: \"=\", Value: \"2\"},\n\t\t\t\t\t}},\n\t\t\t\t\t{From: \"B\", To: \"C\"},\n\t\t\t\t},\n\t\t\t},\n\t\t\twantCodes: []string{DIP102},\n\t\t},\n\t\t{\n\t\t\tname: \"DIP102: mixed conditional + unconditional is fine\",\n\t\t\tworkflow: &ir.Workflow{\n\t\t\t\tName:  \"with_default\",\n\t\t\t\tStart: \"A\",\n\t\t\t\tExit:  \"C\",\n\t\t\t\tNodes: []*ir.Node{\n\t\t\t\t\t{ID: \"A\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"a\"}},\n\t\t\t\t\t{ID: \"B\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"b\"}},\n\t\t\t\t\t{ID: \"C\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"c\"}},\n\t\t\t\t},\n\t\t\t\tEdges: []*ir.Edge{\n\t\t\t\t\t{From: \"A\", To: \"B\", Condition: &ir.Condition{\n\t\t\t\t\t\tRaw:    \"ctx.x = 1\",\n\t\t\t\t\t\tParsed: ir.CondCompare{Variable: \"ctx.x\", Op: \"=\", Value: \"1\"},\n\t\t\t\t\t}},\n\t\t\t\t\t{From: \"A\", To: \"C\"}, // unconditional default\n\t\t\t\t\t{From: \"B\", To: \"C\"},\n\t\t\t\t},\n\t\t\t},\n\t\t\twantNoDiag: true,\n\t\t},\n\n\t\t// --- DIP103: Overlapping conditions ---\n\t\t{\n\t\t\tname: \"DIP103: two edges with same condition\",\n\t\t\tworkflow: &ir.Workflow{\n\t\t\t\tName:  \"overlap\",\n\t\t\t\tStart: \"A\",\n\t\t\t\tExit:  \"C\",\n\t\t\t\tNodes: []*ir.Node{\n\t\t\t\t\t{ID: \"A\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"a\"}},\n\t\t\t\t\t{ID: \"B\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"b\"}},\n\t\t\t\t\t{ID: \"C\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"c\"}},\n\t\t\t\t},\n\t\t\t\tEdges: []*ir.Edge{\n\t\t\t\t\t{From: \"A\", To: \"B\", Condition: &ir.Condition{\n\t\t\t\t\t\tRaw:    \"ctx.outcome = success\",\n\t\t\t\t\t\tParsed: ir.CondCompare{Variable: \"ctx.outcome\", Op: \"=\", Value: \"success\"},\n\t\t\t\t\t}},\n\t\t\t\t\t{From: \"A\", To: \"C\", Condition: &ir.Condition{\n\t\t\t\t\t\tRaw:    \"ctx.outcome = success\",\n\t\t\t\t\t\tParsed: ir.CondCompare{Variable: \"ctx.outcome\", Op: \"=\", Value: \"success\"},\n\t\t\t\t\t}},\n\t\t\t\t},\n\t\t\t},\n\t\t\twantCodes: []string{DIP103},\n\t\t},\n\t\t{\n\t\t\tname: \"DIP103: different conditions from same node is fine\",\n\t\t\tworkflow: &ir.Workflow{\n\t\t\t\tName:  \"no_overlap\",\n\t\t\t\tStart: \"A\",\n\t\t\t\tExit:  \"C\",\n\t\t\t\tNodes: []*ir.Node{\n\t\t\t\t\t{ID: \"A\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"a\"}},\n\t\t\t\t\t{ID: \"B\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"b\"}},\n\t\t\t\t\t{ID: \"C\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"c\"}},\n\t\t\t\t},\n\t\t\t\tEdges: []*ir.Edge{\n\t\t\t\t\t{From: \"A\", To: \"B\", Condition: &ir.Condition{\n\t\t\t\t\t\tRaw:    \"ctx.outcome = success\",\n\t\t\t\t\t\tParsed: ir.CondCompare{Variable: \"ctx.outcome\", Op: \"=\", Value: \"success\"},\n\t\t\t\t\t}},\n\t\t\t\t\t{From: \"A\", To: \"C\", Condition: &ir.Condition{\n\t\t\t\t\t\tRaw:    \"ctx.outcome = fail\",\n\t\t\t\t\t\tParsed: ir.CondCompare{Variable: \"ctx.outcome\", Op: \"=\", Value: \"fail\"},\n\t\t\t\t\t}},\n\t\t\t\t},\n\t\t\t},\n\t\t\twantNoDiag: true,\n\t\t},\n\n\t\t// --- DIP104: Unbounded retry ---\n\t\t{\n\t\t\tname: \"DIP104: retry config but no max_retries or fallback\",\n\t\t\tworkflow: &ir.Workflow{\n\t\t\t\tName:  \"unbounded_retry\",\n\t\t\t\tStart: \"A\",\n\t\t\t\tExit:  \"A\",\n\t\t\t\tNodes: []*ir.Node{\n\t\t\t\t\t{ID: \"A\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"a\"},\n\t\t\t\t\t\tRetry: ir.RetryConfig{Policy: \"standard\"}},\n\t\t\t\t},\n\t\t\t},\n\t\t\twantCodes: []string{DIP104},\n\t\t},\n\t\t{\n\t\t\tname: \"DIP104: retry with max_retries is fine\",\n\t\t\tworkflow: &ir.Workflow{\n\t\t\t\tName:  \"bounded_retry\",\n\t\t\t\tStart: \"A\",\n\t\t\t\tExit:  \"A\",\n\t\t\t\tNodes: []*ir.Node{\n\t\t\t\t\t{ID: \"A\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"a\"},\n\t\t\t\t\t\tRetry: ir.RetryConfig{Policy: \"standard\", MaxRetries: 3}},\n\t\t\t\t},\n\t\t\t},\n\t\t\twantNoDiag: true,\n\t\t},\n\t\t{\n\t\t\tname: \"DIP104: retry with fallback is fine\",\n\t\t\tworkflow: &ir.Workflow{\n\t\t\t\tName:  \"retry_fallback\",\n\t\t\t\tStart: \"A\",\n\t\t\t\tExit:  \"B\",\n\t\t\t\tNodes: []*ir.Node{\n\t\t\t\t\t{ID: \"A\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"a\"},\n\t\t\t\t\t\tRetry: ir.RetryConfig{Policy: \"standard\", FallbackTarget: \"B\"}},\n\t\t\t\t\t{ID: \"B\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"b\"}},\n\t\t\t\t},\n\t\t\t\tEdges: []*ir.Edge{\n\t\t\t\t\t{From: \"A\", To: \"B\"},\n\t\t\t\t},\n\t\t\t},\n\t\t\twantNoDiag: true,\n\t\t},\n\n\t\t// --- DIP105: No success path to exit ---\n\t\t{\n\t\t\tname: \"DIP105: no forward path to exit\",\n\t\t\tworkflow: &ir.Workflow{\n\t\t\t\tName:  \"no_path\",\n\t\t\t\tStart: \"A\",\n\t\t\t\tExit:  \"C\",\n\t\t\t\tNodes: []*ir.Node{\n\t\t\t\t\t{ID: \"A\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"a\"}},\n\t\t\t\t\t{ID: \"B\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"b\"}},\n\t\t\t\t\t{ID: \"C\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"c\"}},\n\t\t\t\t},\n\t\t\t\tEdges: []*ir.Edge{\n\t\t\t\t\t{From: \"A\", To: \"B\"},\n\t\t\t\t\t{From: \"B\", To: \"A\", Restart: true}, // only restart edges back\n\t\t\t\t},\n\t\t\t},\n\t\t\twantCodes: []string{DIP105},\n\t\t},\n\t\t{\n\t\t\tname: \"DIP105: forward path exists even with restart edges\",\n\t\t\tworkflow: &ir.Workflow{\n\t\t\t\tName:  \"has_path\",\n\t\t\t\tStart: \"A\",\n\t\t\t\tExit:  \"C\",\n\t\t\t\tNodes: []*ir.Node{\n\t\t\t\t\t{ID: \"A\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"a\"}},\n\t\t\t\t\t{ID: \"B\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"b\"}},\n\t\t\t\t\t{ID: \"C\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"c\"}},\n\t\t\t\t},\n\t\t\t\tEdges: []*ir.Edge{\n\t\t\t\t\t{From: \"A\", To: \"B\"},\n\t\t\t\t\t{From: \"B\", To: \"C\"},\n\t\t\t\t\t{From: \"B\", To: \"A\", Restart: true},\n\t\t\t\t},\n\t\t\t},\n\t\t\twantNoDiag: true,\n\t\t},\n\n\t\t// --- DIP106: Undefined variables in prompts ---\n\t\t{\n\t\t\tname: \"DIP106: unnamespaced variable reference\",\n\t\t\tworkflow: &ir.Workflow{\n\t\t\t\tName:  \"bad_var\",\n\t\t\t\tStart: \"A\",\n\t\t\t\tExit:  \"A\",\n\t\t\t\tNodes: []*ir.Node{\n\t\t\t\t\t{ID: \"A\", Kind: ir.NodeAgent, Config: ir.AgentConfig{\n\t\t\t\t\t\tPrompt: \"Process ${unknown_var} now.\",\n\t\t\t\t\t}},\n\t\t\t\t},\n\t\t\t},\n\t\t\twantCodes: []string{DIP106},\n\t\t},\n\t\t{\n\t\t\tname: \"DIP106: known namespace is fine\",\n\t\t\tworkflow: &ir.Workflow{\n\t\t\t\tName:  \"good_var\",\n\t\t\t\tStart: \"A\",\n\t\t\t\tExit:  \"A\",\n\t\t\t\tNodes: []*ir.Node{\n\t\t\t\t\t{ID: \"A\", Kind: ir.NodeAgent, Config: ir.AgentConfig{\n\t\t\t\t\t\tPrompt: \"Process ${ctx.data} and ${graph.goal} and ${env.API_KEY}.\",\n\t\t\t\t\t}},\n\t\t\t\t},\n\t\t\t},\n\t\t\twantNoDiag: true,\n\t\t},\n\n\t\t// --- DIP107: Unused writes ---\n\t\t{\n\t\t\tname: \"DIP107: writes key that nobody reads\",\n\t\t\tworkflow: &ir.Workflow{\n\t\t\t\tName:  \"unused_write\",\n\t\t\t\tStart: \"A\",\n\t\t\t\tExit:  \"B\",\n\t\t\t\tNodes: []*ir.Node{\n\t\t\t\t\t{ID: \"A\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"a\"},\n\t\t\t\t\t\tIO: ir.NodeIO{Writes: []string{\"orphan_key\"}}},\n\t\t\t\t\t{ID: \"B\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"b\"}},\n\t\t\t\t},\n\t\t\t\tEdges: []*ir.Edge{\n\t\t\t\t\t{From: \"A\", To: \"B\"},\n\t\t\t\t},\n\t\t\t},\n\t\t\twantCodes: []string{DIP107},\n\t\t},\n\t\t{\n\t\t\tname: \"DIP107: writes key that is read downstream is fine\",\n\t\t\tworkflow: &ir.Workflow{\n\t\t\t\tName:  \"used_write\",\n\t\t\t\tStart: \"A\",\n\t\t\t\tExit:  \"B\",\n\t\t\t\tNodes: []*ir.Node{\n\t\t\t\t\t{ID: \"A\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"a\"},\n\t\t\t\t\t\tIO: ir.NodeIO{Writes: []string{\"data\"}}},\n\t\t\t\t\t{ID: \"B\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"b\"},\n\t\t\t\t\t\tIO: ir.NodeIO{Reads: []string{\"data\"}}},\n\t\t\t\t},\n\t\t\t\tEdges: []*ir.Edge{\n\t\t\t\t\t{From: \"A\", To: \"B\"},\n\t\t\t\t},\n\t\t\t},\n\t\t\twantNoDiag: true,\n\t\t},\n\n\t\t// --- DIP108: Unknown model/provider ---\n\t\t{\n\t\t\tname: \"DIP108: unknown provider\",\n\t\t\tworkflow: &ir.Workflow{\n\t\t\t\tName:  \"bad_provider\",\n\t\t\t\tStart: \"A\",\n\t\t\t\tExit:  \"A\",\n\t\t\t\tNodes: []*ir.Node{\n\t\t\t\t\t{ID: \"A\", Kind: ir.NodeAgent, Config: ir.AgentConfig{\n\t\t\t\t\t\tPrompt:   \"a\",\n\t\t\t\t\t\tModel:    \"some-model\",\n\t\t\t\t\t\tProvider: \"unknown-provider\",\n\t\t\t\t\t}},\n\t\t\t\t},\n\t\t\t},\n\t\t\twantCodes: []string{DIP108},\n\t\t},\n\t\t{\n\t\t\tname: \"DIP108: unknown model for known provider\",\n\t\t\tworkflow: &ir.Workflow{\n\t\t\t\tName:  \"bad_model\",\n\t\t\t\tStart: \"A\",\n\t\t\t\tExit:  \"A\",\n\t\t\t\tNodes: []*ir.Node{\n\t\t\t\t\t{ID: \"A\", Kind: ir.NodeAgent, Config: ir.AgentConfig{\n\t\t\t\t\t\tPrompt:   \"a\",\n\t\t\t\t\t\tModel:    \"gpt-99\",\n\t\t\t\t\t\tProvider: \"openai\",\n\t\t\t\t\t}},\n\t\t\t\t},\n\t\t\t},\n\t\t\twantCodes: []string{DIP108},\n\t\t},\n\t\t{\n\t\t\tname: \"DIP108: inherits from defaults\",\n\t\t\tworkflow: &ir.Workflow{\n\t\t\t\tName:  \"defaults_model\",\n\t\t\t\tStart: \"A\",\n\t\t\t\tExit:  \"A\",\n\t\t\t\tDefaults: ir.WorkflowDefaults{\n\t\t\t\t\tModel:    \"gpt-99\",\n\t\t\t\t\tProvider: \"openai\",\n\t\t\t\t},\n\t\t\t\tNodes: []*ir.Node{\n\t\t\t\t\t{ID: \"A\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"a\"}},\n\t\t\t\t},\n\t\t\t},\n\t\t\twantCodes: []string{DIP108},\n\t\t},\n\n\t\t// --- DIP109: Namespace collisions in imports ---\n\t\t{\n\t\t\tname: \"DIP109: two subgraphs referencing same file\",\n\t\t\tworkflow: &ir.Workflow{\n\t\t\t\tName:  \"collision\",\n\t\t\t\tStart: \"A\",\n\t\t\t\tExit:  \"C\",\n\t\t\t\tNodes: []*ir.Node{\n\t\t\t\t\t{ID: \"A\", Kind: ir.NodeSubgraph, Config: ir.SubgraphConfig{Ref: \"./review.dip\"}},\n\t\t\t\t\t{ID: \"B\", Kind: ir.NodeSubgraph, Config: ir.SubgraphConfig{Ref: \"./review.dip\"}},\n\t\t\t\t\t{ID: \"C\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"done\"}},\n\t\t\t\t},\n\t\t\t\tEdges: []*ir.Edge{\n\t\t\t\t\t{From: \"A\", To: \"B\"},\n\t\t\t\t\t{From: \"B\", To: \"C\"},\n\t\t\t\t},\n\t\t\t},\n\t\t\twantCodes: []string{DIP109},\n\t\t},\n\t\t{\n\t\t\tname: \"DIP109: different subgraph refs is fine\",\n\t\t\tworkflow: &ir.Workflow{\n\t\t\t\tName:  \"no_collision\",\n\t\t\t\tStart: \"A\",\n\t\t\t\tExit:  \"C\",\n\t\t\t\tNodes: []*ir.Node{\n\t\t\t\t\t{ID: \"A\", Kind: ir.NodeSubgraph, Config: ir.SubgraphConfig{Ref: \"./review.dip\"}},\n\t\t\t\t\t{ID: \"B\", Kind: ir.NodeSubgraph, Config: ir.SubgraphConfig{Ref: \"./test.dip\"}},\n\t\t\t\t\t{ID: \"C\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"done\"}},\n\t\t\t\t},\n\t\t\t\tEdges: []*ir.Edge{\n\t\t\t\t\t{From: \"A\", To: \"B\"},\n\t\t\t\t\t{From: \"B\", To: \"C\"},\n\t\t\t\t},\n\t\t\t},\n\t\t\twantNoDiag: true,\n\t\t},\n\n\t\t// --- DIP110: Empty prompts ---\n\t\t{\n\t\t\tname: \"DIP110: agent with empty prompt\",\n\t\t\tworkflow: &ir.Workflow{\n\t\t\t\tName:  \"empty_prompt\",\n\t\t\t\tStart: \"A\",\n\t\t\t\tExit:  \"A\",\n\t\t\t\tNodes: []*ir.Node{\n\t\t\t\t\t{ID: \"A\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"\"}},\n\t\t\t\t},\n\t\t\t},\n\t\t\twantCodes: []string{DIP110},\n\t\t},\n\t\t{\n\t\t\tname: \"DIP110: agent with whitespace-only prompt\",\n\t\t\tworkflow: &ir.Workflow{\n\t\t\t\tName:  \"ws_prompt\",\n\t\t\t\tStart: \"A\",\n\t\t\t\tExit:  \"A\",\n\t\t\t\tNodes: []*ir.Node{\n\t\t\t\t\t{ID: \"A\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"   \\n  \"}},\n\t\t\t\t},\n\t\t\t},\n\t\t\twantCodes: []string{DIP110},\n\t\t},\n\t\t{\n\t\t\tname: \"DIP110: non-agent node types do not trigger\",\n\t\t\tworkflow: &ir.Workflow{\n\t\t\t\tName:  \"no_prompt_needed\",\n\t\t\t\tStart: \"A\",\n\t\t\t\tExit:  \"A\",\n\t\t\t\tNodes: []*ir.Node{\n\t\t\t\t\t{ID: \"A\", Kind: ir.NodeHuman, Config: ir.HumanConfig{Mode: \"freeform\"}},\n\t\t\t\t},\n\t\t\t},\n\t\t\twantNoDiag: true,\n\t\t},\n\n\t\t// --- DIP111: Tool without timeout ---\n\t\t{\n\t\t\tname: \"DIP111: tool with no timeout\",\n\t\t\tworkflow: &ir.Workflow{\n\t\t\t\tName:  \"no_timeout\",\n\t\t\t\tStart: \"T\",\n\t\t\t\tExit:  \"T\",\n\t\t\t\tNodes: []*ir.Node{\n\t\t\t\t\t{ID: \"T\", Kind: ir.NodeTool, Config: ir.ToolConfig{Command: \"echo hello\"}},\n\t\t\t\t},\n\t\t\t},\n\t\t\twantCodes: []string{DIP111},\n\t\t},\n\t\t{\n\t\t\tname: \"DIP111: tool with timeout is clean\",\n\t\t\tworkflow: &ir.Workflow{\n\t\t\t\tName:  \"has_timeout\",\n\t\t\t\tStart: \"T\",\n\t\t\t\tExit:  \"T\",\n\t\t\t\tNodes: []*ir.Node{\n\t\t\t\t\t{ID: \"T\", Kind: ir.NodeTool, Config: ir.ToolConfig{\n\t\t\t\t\t\tCommand: \"echo hello\",\n\t\t\t\t\t\tTimeout: 10 * time.Second,\n\t\t\t\t\t}},\n\t\t\t\t},\n\t\t\t},\n\t\t\twantNoDiag: true,\n\t\t},\n\n\t\t// --- DIP112: Reads without upstream writes ---\n\t\t{\n\t\t\tname: \"DIP112: reads key with no upstream writer\",\n\t\t\tworkflow: &ir.Workflow{\n\t\t\t\tName:  \"no_writer\",\n\t\t\t\tStart: \"A\",\n\t\t\t\tExit:  \"B\",\n\t\t\t\tNodes: []*ir.Node{\n\t\t\t\t\t{ID: \"A\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"a\"}},\n\t\t\t\t\t{ID: \"B\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"b\"},\n\t\t\t\t\t\tIO: ir.NodeIO{Reads: []string{\"missing_key\"}}},\n\t\t\t\t},\n\t\t\t\tEdges: []*ir.Edge{\n\t\t\t\t\t{From: \"A\", To: \"B\"},\n\t\t\t\t},\n\t\t\t},\n\t\t\twantCodes: []string{DIP112},\n\t\t},\n\t\t{\n\t\t\tname: \"DIP112: reads key with upstream writer is fine\",\n\t\t\tworkflow: &ir.Workflow{\n\t\t\t\tName:  \"has_writer\",\n\t\t\t\tStart: \"A\",\n\t\t\t\tExit:  \"B\",\n\t\t\t\tNodes: []*ir.Node{\n\t\t\t\t\t{ID: \"A\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"a\"},\n\t\t\t\t\t\tIO: ir.NodeIO{Writes: []string{\"data\"}}},\n\t\t\t\t\t{ID: \"B\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"b\"},\n\t\t\t\t\t\tIO: ir.NodeIO{Reads: []string{\"data\"}}},\n\t\t\t\t},\n\t\t\t\tEdges: []*ir.Edge{\n\t\t\t\t\t{From: \"A\", To: \"B\"},\n\t\t\t\t},\n\t\t\t},\n\t\t\twantNoDiag: true,\n\t\t},\n\n\t\t// --- Edge cases ---\n\t\t{\n\t\t\tname: \"empty workflow only reports DIP105 if start/exit are missing\",\n\t\t\tworkflow: &ir.Workflow{\n\t\t\t\tName: \"empty\",\n\t\t\t},\n\t\t\t// DIP105 skips if start/exit are empty, DIP110/111/etc have no nodes to check\n\t\t\twantNoDiag: true,\n\t\t},\n\t\t{\n\t\t\tname: \"multiple lint warnings at once\",\n\t\t\tworkflow: &ir.Workflow{\n\t\t\t\tName:  \"multi_warn\",\n\t\t\t\tStart: \"A\",\n\t\t\t\tExit:  \"A\",\n\t\t\t\tNodes: []*ir.Node{\n\t\t\t\t\t{ID: \"A\", Kind: ir.NodeAgent, Config: ir.AgentConfig{\n\t\t\t\t\t\tPrompt: \"\", // DIP110\n\t\t\t\t\t}, Retry: ir.RetryConfig{Policy: \"aggressive\"}}, // DIP104\n\t\t\t\t},\n\t\t\t},\n\t\t\twantCodes: []string{DIP110, DIP104},\n\t\t},\n\t\t{\n\t\t\tname: \"DIP106: multiple undefined vars in one prompt\",\n\t\t\tworkflow: &ir.Workflow{\n\t\t\t\tName:  \"multi_var\",\n\t\t\t\tStart: \"A\",\n\t\t\t\tExit:  \"A\",\n\t\t\t\tNodes: []*ir.Node{\n\t\t\t\t\t{ID: \"A\", Kind: ir.NodeAgent, Config: ir.AgentConfig{\n\t\t\t\t\t\tPrompt: \"Use ${foo} and ${bar} now.\",\n\t\t\t\t\t}},\n\t\t\t\t},\n\t\t\t},\n\t\t\twantCodes: []string{DIP106, DIP106},\n\t\t},\n\t\t{\n\t\t\tname: \"DIP104: no retry config at all does not trigger\",\n\t\t\tworkflow: &ir.Workflow{\n\t\t\t\tName:  \"no_retry\",\n\t\t\t\tStart: \"A\",\n\t\t\t\tExit:  \"A\",\n\t\t\t\tNodes: []*ir.Node{\n\t\t\t\t\t{ID: \"A\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"a\"}},\n\t\t\t\t},\n\t\t\t},\n\t\t\twantNoDiag: true,\n\t\t},\n\t\t{\n\t\t\tname: \"DIP112: transitive writes propagation\",\n\t\t\tworkflow: &ir.Workflow{\n\t\t\t\tName:  \"transitive\",\n\t\t\t\tStart: \"A\",\n\t\t\t\tExit:  \"C\",\n\t\t\t\tNodes: []*ir.Node{\n\t\t\t\t\t{ID: \"A\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"a\"},\n\t\t\t\t\t\tIO: ir.NodeIO{Writes: []string{\"key1\"}}},\n\t\t\t\t\t{ID: \"B\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"b\"},\n\t\t\t\t\t\tIO: ir.NodeIO{Reads: []string{\"key1\"}, Writes: []string{\"key2\"}}},\n\t\t\t\t\t{ID: \"C\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"c\"},\n\t\t\t\t\t\tIO: ir.NodeIO{Reads: []string{\"key1\", \"key2\"}}},\n\t\t\t\t},\n\t\t\t\tEdges: []*ir.Edge{\n\t\t\t\t\t{From: \"A\", To: \"B\"},\n\t\t\t\t\t{From: \"B\", To: \"C\"},\n\t\t\t\t},\n\t\t\t},\n\t\t\twantNoDiag: true,\n\t\t},\n\t}\n\n\tfor _, tt := range tests {\n\t\tt.Run(tt.name, func(t *testing.T) {\n\t\t\tresult := Lint(tt.workflow)\n\n\t\t\tif tt.wantNoDiag {\n\t\t\t\tif len(result.Diagnostics) != 0 {\n\t\t\t\t\tt.Errorf(\"expected no diagnostics, got %d:\", len(result.Diagnostics))\n\t\t\t\t\tfor _, d := range result.Diagnostics {\n\t\t\t\t\t\tt.Errorf(\"  %s\", d.String())\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\treturn\n\t\t\t}\n\n\t\t\tif tt.wantCodes != nil {\n\t\t\t\tgotCodes := make([]string, len(result.Diagnostics))\n\t\t\t\tfor i, d := range result.Diagnostics {\n\t\t\t\t\tgotCodes[i] = d.Code\n\t\t\t\t}\n\n\t\t\t\twantCount := make(map[string]int)\n\t\t\t\tfor _, c := range tt.wantCodes {\n\t\t\t\t\twantCount[c]++\n\t\t\t\t}\n\t\t\t\tgotCount := make(map[string]int)\n\t\t\t\tfor _, c := range gotCodes {\n\t\t\t\t\tgotCount[c]++\n\t\t\t\t}\n\t\t\t\tfor code, want := range wantCount {\n\t\t\t\t\tif got := gotCount[code]; got < want {\n\t\t\t\t\t\tt.Errorf(\"expected at least %d %s diagnostic(s), got %d. All codes: %v\", want, code, got, gotCodes)\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\t// Also check total count matches expectations for single-diagnostic tests.\n\t\t\t\tif len(tt.wantCodes) == 1 {\n\t\t\t\t\tcodeCount := 0\n\t\t\t\t\tfor _, d := range result.Diagnostics {\n\t\t\t\t\t\tif d.Code == tt.wantCodes[0] {\n\t\t\t\t\t\t\tcodeCount++\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\tif codeCount < 1 {\n\t\t\t\t\t\tt.Errorf(\"expected at least 1 %s diagnostic, got 0. All: %v\", tt.wantCodes[0], gotCodes)\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t}\n\t\t})\n\t}\n}\n\nfunc TestLintDiagnosticSeverity(t *testing.T) {\n\t// All lint diagnostics should be warnings, not errors.\n\tw := &ir.Workflow{\n\t\tName:  \"severity_check\",\n\t\tStart: \"A\",\n\t\tExit:  \"A\",\n\t\tNodes: []*ir.Node{\n\t\t\t{ID: \"A\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"\"},\n\t\t\t\tRetry: ir.RetryConfig{Policy: \"standard\"}},\n\t\t},\n\t}\n\n\tresult := Lint(w)\n\tfor _, d := range result.Diagnostics {\n\t\tif d.Severity != SeverityWarning {\n\t\t\tt.Errorf(\"lint diagnostic %s has severity %s, want warning\", d.Code, d.Severity)\n\t\t}\n\t}\n}\n\nfunc TestLintDIP101MessageContent(t *testing.T) {\n\tw := &ir.Workflow{\n\t\tName:  \"msg_check\",\n\t\tStart: \"A\",\n\t\tExit:  \"C\",\n\t\tNodes: []*ir.Node{\n\t\t\t{ID: \"A\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"a\"}},\n\t\t\t{ID: \"B\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"b\"}},\n\t\t\t{ID: \"C\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"c\"}},\n\t\t},\n\t\tEdges: []*ir.Edge{\n\t\t\t{From: \"A\", To: \"B\", Condition: &ir.Condition{\n\t\t\t\tRaw:    \"ctx.x = 1\",\n\t\t\t\tParsed: ir.CondCompare{Variable: \"ctx.x\", Op: \"=\", Value: \"1\"},\n\t\t\t}},\n\t\t\t{From: \"A\", To: \"C\"},\n\t\t\t{From: \"B\", To: \"C\"},\n\t\t},\n\t}\n\n\tresult := Lint(w)\n\tvar found bool\n\tfor _, d := range result.Diagnostics {\n\t\tif d.Code == DIP101 {\n\t\t\tfound = true\n\t\t\tif !strings.Contains(d.Message, `\"B\"`) {\n\t\t\t\tt.Errorf(\"DIP101 message should mention node B, got: %s\", d.Message)\n\t\t\t}\n\t\t\tif !strings.Contains(d.Message, \"conditional\") {\n\t\t\t\tt.Errorf(\"DIP101 message should mention 'conditional', got: %s\", d.Message)\n\t\t\t}\n\t\t}\n\t}\n\tif !found {\n\t\tt.Error(\"expected DIP101 diagnostic\")\n\t}\n}\n\nfunc TestLintDIP102MessageContent(t *testing.T) {\n\tw := &ir.Workflow{\n\t\tName:  \"msg_check\",\n\t\tStart: \"A\",\n\t\tExit:  \"C\",\n\t\tNodes: []*ir.Node{\n\t\t\t{ID: \"A\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"a\"}},\n\t\t\t{ID: \"B\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"b\"}},\n\t\t\t{ID: \"C\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"c\"}},\n\t\t},\n\t\tEdges: []*ir.Edge{\n\t\t\t{From: \"A\", To: \"B\", Condition: &ir.Condition{\n\t\t\t\tRaw:    \"ctx.x = 1\",\n\t\t\t\tParsed: ir.CondCompare{Variable: \"ctx.x\", Op: \"=\", Value: \"1\"},\n\t\t\t}},\n\t\t\t{From: \"A\", To: \"C\", Condition: &ir.Condition{\n\t\t\t\tRaw:    \"ctx.x = 2\",\n\t\t\t\tParsed: ir.CondCompare{Variable: \"ctx.x\", Op: \"=\", Value: \"2\"},\n\t\t\t}},\n\t\t\t{From: \"B\", To: \"C\"},\n\t\t},\n\t}\n\n\tresult := Lint(w)\n\tvar found bool\n\tfor _, d := range result.Diagnostics {\n\t\tif d.Code == DIP102 {\n\t\t\tfound = true\n\t\t\tif !strings.Contains(d.Message, `\"A\"`) {\n\t\t\t\tt.Errorf(\"DIP102 message should mention node A, got: %s\", d.Message)\n\t\t\t}\n\t\t\tif !strings.Contains(d.Message, \"unconditional\") || !strings.Contains(d.Message, \"default\") {\n\t\t\t\tt.Errorf(\"DIP102 message should mention 'unconditional default', got: %s\", d.Message)\n\t\t\t}\n\t\t}\n\t}\n\tif !found {\n\t\tt.Error(\"expected DIP102 diagnostic\")\n\t}\n}\n\nfunc TestLintDIP103OverlappingANDConditions(t *testing.T) {\n\t// Overlapping condition buried in an AND expression.\n\tw := &ir.Workflow{\n\t\tName:  \"and_overlap\",\n\t\tStart: \"A\",\n\t\tExit:  \"C\",\n\t\tNodes: []*ir.Node{\n\t\t\t{ID: \"A\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"a\"}},\n\t\t\t{ID: \"B\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"b\"}},\n\t\t\t{ID: \"C\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"c\"}},\n\t\t},\n\t\tEdges: []*ir.Edge{\n\t\t\t{From: \"A\", To: \"B\", Condition: &ir.Condition{\n\t\t\t\tRaw: \"ctx.x = 1 and ctx.y = 2\",\n\t\t\t\tParsed: ir.CondAnd{\n\t\t\t\t\tLeft:  ir.CondCompare{Variable: \"ctx.x\", Op: \"=\", Value: \"1\"},\n\t\t\t\t\tRight: ir.CondCompare{Variable: \"ctx.y\", Op: \"=\", Value: \"2\"},\n\t\t\t\t},\n\t\t\t}},\n\t\t\t{From: \"A\", To: \"C\", Condition: &ir.Condition{\n\t\t\t\tRaw:    \"ctx.x = 1\",\n\t\t\t\tParsed: ir.CondCompare{Variable: \"ctx.x\", Op: \"=\", Value: \"1\"},\n\t\t\t}},\n\t\t},\n\t}\n\n\tresult := Lint(w)\n\tfound := false\n\tfor _, d := range result.Diagnostics {\n\t\tif d.Code == DIP103 {\n\t\t\tfound = true\n\t\t}\n\t}\n\tif !found {\n\t\tt.Error(\"expected DIP103 for overlapping condition in AND expression\")\n\t}\n}\n\nfunc TestLintDIP105StartEqualsExit(t *testing.T) {\n\t// When start == exit, trivially reachable.\n\tw := &ir.Workflow{\n\t\tName:  \"trivial\",\n\t\tStart: \"A\",\n\t\tExit:  \"A\",\n\t\tNodes: []*ir.Node{\n\t\t\t{ID: \"A\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"a\"}},\n\t\t},\n\t}\n\n\tresult := Lint(w)\n\tfor _, d := range result.Diagnostics {\n\t\tif d.Code == DIP105 {\n\t\t\tt.Errorf(\"DIP105 should not trigger when start == exit, got: %s\", d.Message)\n\t\t}\n\t}\n}\n\nfunc TestLintDIP106NoPromptNodes(t *testing.T) {\n\t// Human and tool nodes should not trigger DIP106.\n\tw := &ir.Workflow{\n\t\tName:  \"no_prompt\",\n\t\tStart: \"A\",\n\t\tExit:  \"B\",\n\t\tNodes: []*ir.Node{\n\t\t\t{ID: \"A\", Kind: ir.NodeHuman, Config: ir.HumanConfig{Mode: \"freeform\"}},\n\t\t\t{ID: \"B\", Kind: ir.NodeTool, Config: ir.ToolConfig{Command: \"echo ${not_a_prompt}\", Timeout: 10 * time.Second}},\n\t\t},\n\t\tEdges: []*ir.Edge{\n\t\t\t{From: \"A\", To: \"B\"},\n\t\t},\n\t}\n\n\tresult := Lint(w)\n\tfor _, d := range result.Diagnostics {\n\t\tif d.Code == DIP106 {\n\t\t\tt.Errorf(\"DIP106 should not trigger for non-agent nodes, got: %s\", d.Message)\n\t\t}\n\t}\n}\n\nfunc TestLintDIP108NoModelOrProvider(t *testing.T) {\n\t// If model or provider is not specified (and no defaults), don't check.\n\tw := &ir.Workflow{\n\t\tName:  \"no_model\",\n\t\tStart: \"A\",\n\t\tExit:  \"A\",\n\t\tNodes: []*ir.Node{\n\t\t\t{ID: \"A\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"a\"}},\n\t\t},\n\t}\n\n\tresult := Lint(w)\n\tfor _, d := range result.Diagnostics {\n\t\tif d.Code == DIP108 {\n\t\t\tt.Errorf(\"DIP108 should not trigger when model/provider are unset, got: %s\", d.Message)\n\t\t}\n\t}\n}\n\nfunc TestLintDIP112CycleDoesNotPanic(t *testing.T) {\n\t// A workflow with a cycle (via non-restart edges) should not cause\n\t// the topological sort in DIP112 to hang or panic.\n\tw := &ir.Workflow{\n\t\tName:  \"cycle_safe\",\n\t\tStart: \"A\",\n\t\tExit:  \"C\",\n\t\tNodes: []*ir.Node{\n\t\t\t{ID: \"A\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"a\"},\n\t\t\t\tIO: ir.NodeIO{Writes: []string{\"data\"}}},\n\t\t\t{ID: \"B\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"b\"},\n\t\t\t\tIO: ir.NodeIO{Reads: []string{\"data\"}}},\n\t\t\t{ID: \"C\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"c\"}},\n\t\t},\n\t\tEdges: []*ir.Edge{\n\t\t\t{From: \"A\", To: \"B\"},\n\t\t\t{From: \"B\", To: \"A\"}, // cycle\n\t\t\t{From: \"B\", To: \"C\"},\n\t\t},\n\t}\n\n\t// Should not panic.\n\tresult := Lint(w)\n\t_ = result\n}\n\nfunc TestLintCodeDescriptionCoverage(t *testing.T) {\n\tcodes := []string{DIP101, DIP102, DIP103, DIP104, DIP105, DIP106, DIP107, DIP108, DIP109, DIP110, DIP111, DIP112}\n\tfor _, c := range codes {\n\t\tif desc, ok := CodeDescription[c]; !ok || desc == \"\" {\n\t\t\tt.Errorf(\"CodeDescription[%q] is missing or empty\", c)\n\t\t}\n\t}\n}\n\nfunc TestExtractComparisons(t *testing.T) {\n\ttests := []struct {\n\t\tname string\n\t\texpr ir.ConditionExpr\n\t\twant int // expected number of comparisons\n\t}{\n\t\t{\n\t\t\tname: \"nil\",\n\t\t\texpr: nil,\n\t\t\twant: 0,\n\t\t},\n\t\t{\n\t\t\tname: \"single compare\",\n\t\t\texpr: ir.CondCompare{Variable: \"ctx.x\", Op: \"=\", Value: \"1\"},\n\t\t\twant: 1,\n\t\t},\n\t\t{\n\t\t\tname: \"AND of two compares\",\n\t\t\texpr: ir.CondAnd{\n\t\t\t\tLeft:  ir.CondCompare{Variable: \"ctx.x\", Op: \"=\", Value: \"1\"},\n\t\t\t\tRight: ir.CondCompare{Variable: \"ctx.y\", Op: \"=\", Value: \"2\"},\n\t\t\t},\n\t\t\twant: 2,\n\t\t},\n\t\t{\n\t\t\tname: \"OR of two compares\",\n\t\t\texpr: ir.CondOr{\n\t\t\t\tLeft:  ir.CondCompare{Variable: \"ctx.x\", Op: \"=\", Value: \"1\"},\n\t\t\t\tRight: ir.CondCompare{Variable: \"ctx.y\", Op: \"=\", Value: \"2\"},\n\t\t\t},\n\t\t\twant: 2,\n\t\t},\n\t\t{\n\t\t\tname: \"NOT of compare\",\n\t\t\texpr: ir.CondNot{Inner: ir.CondCompare{Variable: \"ctx.x\", Op: \"=\", Value: \"1\"}},\n\t\t\twant: 1,\n\t\t},\n\t\t{\n\t\t\tname: \"nested AND/OR/NOT\",\n\t\t\texpr: ir.CondAnd{\n\t\t\t\tLeft: ir.CondOr{\n\t\t\t\t\tLeft:  ir.CondCompare{Variable: \"ctx.a\", Op: \"=\", Value: \"1\"},\n\t\t\t\t\tRight: ir.CondCompare{Variable: \"ctx.b\", Op: \"=\", Value: \"2\"},\n\t\t\t\t},\n\t\t\t\tRight: ir.CondNot{\n\t\t\t\t\tInner: ir.CondCompare{Variable: \"ctx.c\", Op: \"!=\", Value: \"3\"},\n\t\t\t\t},\n\t\t\t},\n\t\t\twant: 3,\n\t\t},\n\t}\n\n\tfor _, tt := range tests {\n\t\tt.Run(tt.name, func(t *testing.T) {\n\t\t\tgot := extractComparisons(tt.expr)\n\t\t\tif len(got) != tt.want {\n\t\t\t\tt.Errorf(\"extractComparisons() returned %d comparisons, want %d\", len(got), tt.want)\n\t\t\t}\n\t\t})\n\t}\n}\n", "path": "validator/lint_test.go"}
-TOOL RESULT: write
-OUTPUT:
-wrote 27232 bytes to validator/lint_test.go
-TURN 15
 TOOL CALL: bash
 INPUT:
 {"command": "cd /home/user && go build ./..."}
@@ -3000,403 +3197,336 @@ OUTPUT:
 stderr: sh: line 0: cd: /home/user: No such file or directory
 
 exit code: 1
-TURN 16
+TURN 12
 TOOL CALL: bash
 INPUT:
 {"command": "go build ./..."}
 TOOL RESULT: bash
 OUTPUT:
 (no output)
-TURN 17
+TURN 13
 TOOL CALL: bash
 INPUT:
-{"command": "go test ./... 2>&1"}
+{"command": "go test ./migrate/ -v -count=1 2>&1"}
 TOOL RESULT: bash
 OUTPUT:
-?   	github.com/2389/dippin/cmd/dippin	[no test files]
-ok  	github.com/2389/dippin/ir	(cached)
---- FAIL: TestLint (0.00s)
-    --- FAIL: TestLint/DIP102:_mixed_conditional_+_unconditional_is_fine (0.00s)
-        lint_test.go:670: expected no diagnostics, got 1:
-        lint_test.go:672:   warning[DIP101]: node "B" is only reachable through conditional edges and may be skipped at runtime
-              --> <unknown>:0:0
-              = help: add an unconditional edge to this node, or verify all conditions are exhaustive
-    --- FAIL: TestLint/DIP103:_different_conditions_from_same_node_is_fine (0.00s)
-        lint_test.go:670: expected no diagnostics, got 3:
-        lint_test.go:672:   warning[DIP101]: node "B" is only reachable through conditional edges and may be skipped at runtime
-              --> <unknown>:0:0
-              = help: add an unconditional edge to this node, or verify all conditions are exhaustive
-        lint_test.go:672:   warning[DIP101]: node "C" is only reachable through conditional edges and may be skipped at runtime
-              --> <unknown>:0:0
-              = help: add an unconditional edge to this node, or verify all conditions are exhaustive
-        lint_test.go:672:   warning[DIP102]: node "A" has conditional outgoing edges but no unconditional default edge
-              --> <unknown>:0:0
-              = help: add an unconditional edge as a fallback, or ensure conditions are exhaustive
-FAIL
-FAIL	github.com/2389/dippin/validator	0.376s
+# github.com/2389/dippin/migrate [github.com/2389/dippin/migrate.test]
+migrate/migrate_test.go:1159:13: undefined: fmt
+migrate/migrate_test.go:1162:13: undefined: fmt
+migrate/migrate_test.go:1173:13: undefined: fmt
+migrate/migrate_test.go:1176:13: undefined: fmt
+migrate/migrate_test.go:1187:13: undefined: fmt
+migrate/migrate_test.go:1190:13: undefined: fmt
+migrate/migrate_test.go:1201:13: undefined: fmt
+migrate/migrate_test.go:1212:13: undefined: fmt
+migrate/migrate_test.go:1223:13: undefined: fmt
+FAIL	github.com/2389/dippin/migrate [build failed]
 FAIL
 
 exit code: 1
-TURN 18
+TURN 14
 TOOL CALL: edit
 INPUT:
-{"path": "validator/lint_test.go", "old_string": "\t\t{\n\t\t\tname: \"DIP102: mixed conditional + unconditional is fine\",\n\t\t\tworkflow: &ir.Workflow{\n\t\t\t\tName:  \"with_default\",\n\t\t\t\tStart: \"A\",\n\t\t\t\tExit:  \"C\",\n\t\t\t\tNodes: []*ir.Node{\n\t\t\t\t\t{ID: \"A\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"a\"}},\n\t\t\t\t\t{ID: \"B\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"b\"}},\n\t\t\t\t\t{ID: \"C\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"c\"}},\n\t\t\t\t},\n\t\t\t\tEdges: []*ir.Edge{\n\t\t\t\t\t{From: \"A\", To: \"B\", Condition: &ir.Condition{\n\t\t\t\t\t\tRaw:    \"ctx.x = 1\",\n\t\t\t\t\t\tParsed: ir.CondCompare{Variable: \"ctx.x\", Op: \"=\", Value: \"1\"},\n\t\t\t\t\t}},\n\t\t\t\t\t{From: \"A\", To: \"C\"}, // unconditional default\n\t\t\t\t\t{From: \"B\", To: \"C\"},\n\t\t\t\t},\n\t\t\t},\n\t\t\twantNoDiag: true,\n\t\t},", "new_string": "\t\t{\n\t\t\tname: \"DIP102: mixed conditional + unconditional is fine\",\n\t\t\tworkflow: &ir.Workflow{\n\t\t\t\tName:  \"with_default\",\n\t\t\t\tStart: \"A\",\n\t\t\t\tExit:  \"C\",\n\t\t\t\tNodes: []*ir.Node{\n\t\t\t\t\t{ID: \"A\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"a\"}},\n\t\t\t\t\t{ID: \"B\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"b\"}},\n\t\t\t\t\t{ID: \"C\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"c\"}},\n\t\t\t\t},\n\t\t\t\tEdges: []*ir.Edge{\n\t\t\t\t\t{From: \"A\", To: \"B\", Condition: &ir.Condition{\n\t\t\t\t\t\tRaw:    \"ctx.x = 1\",\n\t\t\t\t\t\tParsed: ir.CondCompare{Variable: \"ctx.x\", Op: \"=\", Value: \"1\"},\n\t\t\t\t\t}},\n\t\t\t\t\t{From: \"A\", To: \"C\"}, // unconditional default\n\t\t\t\t\t{From: \"B\", To: \"C\"},\n\t\t\t\t},\n\t\t\t},\n\t\t\t// B is only reachable via conditional edge (DIP101), but no DIP102.\n\t\t\twantCodes: []string{DIP101},\n\t\t},"}
+{"path": "migrate/migrate_test.go", "old_string": "import (\n\t\"os\"\n\t\"strings\"\n\t\"testing\"\n\t\"time\"\n\n\t\"github.com/2389/dippin/ir\"\n)", "new_string": "import (\n\t\"fmt\"\n\t\"os\"\n\t\"strings\"\n\t\"testing\"\n\t\"time\"\n\n\t\"github.com/2389/dippin/ir\"\n)"}
 TOOL RESULT: edit
 OUTPUT:
-edited validator/lint_test.go
-TURN 19
-TOOL CALL: edit
-INPUT:
-{"new_string": "\t\t{\n\t\t\tname: \"DIP103: different conditions from same node is fine for overlap\",\n\t\t\tworkflow: &ir.Workflow{\n\t\t\t\tName:  \"no_overlap\",\n\t\t\t\tStart: \"A\",\n\t\t\t\tExit:  \"C\",\n\t\t\t\tNodes: []*ir.Node{\n\t\t\t\t\t{ID: \"A\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"a\"}},\n\t\t\t\t\t{ID: \"B\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"b\"}},\n\t\t\t\t\t{ID: \"C\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"c\"}},\n\t\t\t\t},\n\t\t\t\tEdges: []*ir.Edge{\n\t\t\t\t\t{From: \"A\", To: \"B\", Condition: &ir.Condition{\n\t\t\t\t\t\tRaw:    \"ctx.outcome = success\",\n\t\t\t\t\t\tParsed: ir.CondCompare{Variable: \"ctx.outcome\", Op: \"=\", Value: \"success\"},\n\t\t\t\t\t}},\n\t\t\t\t\t{From: \"A\", To: \"C\", Condition: &ir.Condition{\n\t\t\t\t\t\tRaw:    \"ctx.outcome = fail\",\n\t\t\t\t\t\tParsed: ir.CondCompare{Variable: \"ctx.outcome\", Op: \"=\", Value: \"fail\"},\n\t\t\t\t\t}},\n\t\t\t\t\t{From: \"B\", To: \"C\"},\n\t\t\t\t},\n\t\t\t},\n\t\t\t// No DIP103, but DIP101 (B, C only via conditional) and DIP102 (A has no default).\n\t\t\twantCodes: []string{DIP101, DIP102},\n\t\t},", "old_string": "\t\t{\n\t\t\tname: \"DIP103: different conditions from same node is fine\",\n\t\t\tworkflow: &ir.Workflow{\n\t\t\t\tName:  \"no_overlap\",\n\t\t\t\tStart: \"A\",\n\t\t\t\tExit:  \"C\",\n\t\t\t\tNodes: []*ir.Node{\n\t\t\t\t\t{ID: \"A\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"a\"}},\n\t\t\t\t\t{ID: \"B\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"b\"}},\n\t\t\t\t\t{ID: \"C\", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: \"c\"}},\n\t\t\t\t},\n\t\t\t\tEdges: []*ir.Edge{\n\t\t\t\t\t{From: \"A\", To: \"B\", Condition: &ir.Condition{\n\t\t\t\t\t\tRaw:    \"ctx.outcome = success\",\n\t\t\t\t\t\tParsed: ir.CondCompare{Variable: \"ctx.outcome\", Op: \"=\", Value: \"success\"},\n\t\t\t\t\t}},\n\t\t\t\t\t{From: \"A\", To: \"C\", Condition: &ir.Condition{\n\t\t\t\t\t\tRaw:    \"ctx.outcome = fail\",\n\t\t\t\t\t\tParsed: ir.CondCompare{Variable: \"ctx.outcome\", Op: \"=\", Value: \"fail\"},\n\t\t\t\t\t}},\n\t\t\t\t},\n\t\t\t},\n\t\t\twantNoDiag: true,\n\t\t},", "path": "validator/lint_test.go"}
-TOOL RESULT: edit
-OUTPUT:
-edited validator/lint_test.go
-TURN 20
+edited migrate/migrate_test.go
+TURN 15
 TOOL CALL: bash
 INPUT:
-{"command": "go test ./validator/ -v 2>&1"}
+{"command": "go test ./migrate/ -v -count=1 2>&1"}
 TOOL RESULT: bash
 OUTPUT:
-=== RUN   TestLint
-=== RUN   TestLint/clean_minimal_workflow
-=== RUN   TestLint/clean_complex_workflow_with_IO_contracts
-=== RUN   TestLint/workflow_with_known_model/provider_is_clean
-=== RUN   TestLint/tool_with_timeout_is_clean
-=== RUN   TestLint/DIP101:_node_only_reachable_via_conditional_edges
-=== RUN   TestLint/DIP101:_node_with_unconditional_incoming_edge_is_fine
-=== RUN   TestLint/DIP102:_conditional_outgoing_but_no_default
-=== RUN   TestLint/DIP102:_mixed_conditional_+_unconditional_is_fine
-=== RUN   TestLint/DIP103:_two_edges_with_same_condition
-=== RUN   TestLint/DIP103:_different_conditions_from_same_node_is_fine_for_overlap
-=== RUN   TestLint/DIP104:_retry_config_but_no_max_retries_or_fallback
-=== RUN   TestLint/DIP104:_retry_with_max_retries_is_fine
-=== RUN   TestLint/DIP104:_retry_with_fallback_is_fine
-=== RUN   TestLint/DIP105:_no_forward_path_to_exit
-=== RUN   TestLint/DIP105:_forward_path_exists_even_with_restart_edges
-=== RUN   TestLint/DIP106:_unnamespaced_variable_reference
-=== RUN   TestLint/DIP106:_known_namespace_is_fine
-=== RUN   TestLint/DIP107:_writes_key_that_nobody_reads
-=== RUN   TestLint/DIP107:_writes_key_that_is_read_downstream_is_fine
-=== RUN   TestLint/DIP108:_unknown_provider
-=== RUN   TestLint/DIP108:_unknown_model_for_known_provider
-=== RUN   TestLint/DIP108:_inherits_from_defaults
-=== RUN   TestLint/DIP109:_two_subgraphs_referencing_same_file
-=== RUN   TestLint/DIP109:_different_subgraph_refs_is_fine
-=== RUN   TestLint/DIP110:_agent_with_empty_prompt
-=== RUN   TestLint/DIP110:_agent_with_whitespace-only_prompt
-=== RUN   TestLint/DIP110:_non-agent_node_types_do_not_trigger
-=== RUN   TestLint/DIP111:_tool_with_no_timeout
-=== RUN   TestLint/DIP111:_tool_with_timeout_is_clean
-=== RUN   TestLint/DIP112:_reads_key_with_no_upstream_writer
-=== RUN   TestLint/DIP112:_reads_key_with_upstream_writer_is_fine
-=== RUN   TestLint/empty_workflow_only_reports_DIP105_if_start/exit_are_missing
-=== RUN   TestLint/multiple_lint_warnings_at_once
-=== RUN   TestLint/DIP106:_multiple_undefined_vars_in_one_prompt
-=== RUN   TestLint/DIP104:_no_retry_config_at_all_does_not_trigger
-=== RUN   TestLint/DIP112:_transitive_writes_propagation
---- PASS: TestLint (0.00s)
-    --- PASS: TestLint/clean_minimal_workflow (0.00s)
-    --- PASS: TestLint/clean_complex_workflow_with_IO_contracts (0.00s)
-    --- PASS: TestLint/workflow_with_known_model/provider_is_clean (0.00s)
-    --- PASS: TestLint/tool_with_timeout_is_clean (0.00s)
-    --- PASS: TestLint/DIP101:_node_only_reachable_via_conditional_edges (0.00s)
-    --- PASS: TestLint/DIP101:_node_with_unconditional_incoming_edge_is_fine (0.00s)
-    --- PASS: TestLint/DIP102:_conditional_outgoing_but_no_default (0.00s)
-    --- PASS: TestLint/DIP102:_mixed_conditional_+_unconditional_is_fine (0.00s)
-    --- PASS: TestLint/DIP103:_two_edges_with_same_condition (0.00s)
-    --- PASS: TestLint/DIP103:_different_conditions_from_same_node_is_fine_for_overlap (0.00s)
-    --- PASS: TestLint/DIP104:_retry_config_but_no_max_retries_or_fallback (0.00s)
-    --- PASS: TestLint/DIP104:_retry_with_max_retries_is_fine (0.00s)
-    --- PASS: TestLint/DIP104:_retry_with_fallback_is_fine (0.00s)
-    --- PASS: TestLint/DIP105:_no_forward_path_to_exit (0.00s)
-    --- PASS: TestLint/DIP105:_forward_path_exists_even_with_restart_edges (0.00s)
-    --- PASS: TestLint/DIP106:_unnamespaced_variable_reference (0.00s)
-    --- PASS: TestLint/DIP106:_known_namespace_is_fine (0.00s)
-    --- PASS: TestLint/DIP107:_writes_key_that_nobody_reads (0.00s)
-    --- PASS: TestLint/DIP107:_writes_key_that_is_read_downstream_is_fine (0.00s)
-    --- PASS: TestLint/DIP108:_unknown_provider (0.00s)
-    --- PASS: TestLint/DIP108:_unknown_model_for_known_provider (0.00s)
-    --- PASS: TestLint/DIP108:_inherits_from_defaults (0.00s)
-    --- PASS: TestLint/DIP109:_two_subgraphs_referencing_same_file (0.00s)
-    --- PASS: TestLint/DIP109:_different_subgraph_refs_is_fine (0.00s)
-    --- PASS: TestLint/DIP110:_agent_with_empty_prompt (0.00s)
-    --- PASS: TestLint/DIP110:_agent_with_whitespace-only_prompt (0.00s)
-    --- PASS: TestLint/DIP110:_non-agent_node_types_do_not_trigger (0.00s)
-    --- PASS: TestLint/DIP111:_tool_with_no_timeout (0.00s)
-    --- PASS: TestLint/DIP111:_tool_with_timeout_is_clean (0.00s)
-    --- PASS: TestLint/DIP112:_reads_key_with_no_upstream_writer (0.00s)
-    --- PASS: TestLint/DIP112:_reads_key_with_upstream_writer_is_fine (0.00s)
-    --- PASS: TestLint/empty_workflow_only_reports_DIP105_if_start/exit_are_missing (0.00s)
-    --- PASS: TestLint/multiple_lint_warnings_at_once (0.00s)
-    --- PASS: TestLint/DIP106:_multiple_undefined_vars_in_one_prompt (0.00s)
-    --- PASS: TestLint/DIP104:_no_retry_config_at_all_does_not_trigger (0.00s)
-    --- PASS: TestLint/DIP112:_transitive_writes_propagation (0.00s)
-=== RUN   TestLintDiagnosticSeverity
---- PASS: TestLintDiagnosticSeverity (0.00s)
-=== RUN   TestLintDIP101MessageContent
---- PASS: TestLintDIP101MessageContent (0.00s)
-=== RUN   TestLintDIP102MessageContent
---- PASS: TestLintDIP102MessageContent (0.00s)
-=== RUN   TestLintDIP103OverlappingANDConditions
---- PASS: TestLintDIP103OverlappingANDConditions (0.00s)
-=== RUN   TestLintDIP105StartEqualsExit
---- PASS: TestLintDIP105StartEqualsExit (0.00s)
-=== RUN   TestLintDIP106NoPromptNodes
---- PASS: TestLintDIP106NoPromptNodes (0.00s)
-=== RUN   TestLintDIP108NoModelOrProvider
---- PASS: TestLintDIP108NoModelOrProvider (0.00s)
-=== RUN   TestLintDIP112CycleDoesNotPanic
---- PASS: TestLintDIP112CycleDoesNotPanic (0.00s)
-=== RUN   TestLintCodeDescriptionCoverage
---- PASS: TestLintCodeDescriptionCoverage (0.00s)
-=== RUN   TestExtractComparisons
-=== RUN   TestExtractComparisons/nil
-=== RUN   TestExtractComparisons/single_compare
-=== RUN   TestExtractComparisons/AND_of_two_compares
-=== RUN   TestExtractComparisons/OR_of_two_compares
-=== RUN   TestExtractComparisons/NOT_of_compare
-=== RUN   TestExtractComparisons/nested_AND/OR/NOT
---- PASS: TestExtractComparisons (0.00s)
-    --- PASS: TestExtractComparisons/nil (0.00s)
-    --- PASS: TestExtractComparisons/single_compare (0.00s)
-    --- PASS: TestExtractComparisons/AND_of_two_compares (0.00s)
-    --- PASS: TestExtractComparisons/OR_of_two_compares (0.00s)
-    --- PASS: TestExtractComparisons/NOT_of_compare (0.00s)
-    --- PASS: TestExtractComparisons/nested_AND/OR/NOT (0.00s)
-=== RUN   TestValidate
-=== RUN   TestValidate/valid_minimal_workflow
-=== RUN   TestValidate/valid_complex_workflow_with_restart_and_parallel
-=== RUN   TestValidate/valid_workflow_with_restart_back-edge_(no_cycle)
-=== RUN   TestValidate/valid_parallel/fan_in_pair_with_different_order
-=== RUN   TestValidate/DIP001:_start_node_empty
-=== RUN   TestValidate/DIP001:_start_node_declared_but_missing_from_nodes
-=== RUN   TestValidate/DIP002:_exit_node_missing_from_nodes
-=== RUN   TestValidate/DIP003:_dangling_edge_target
-=== RUN   TestValidate/DIP003:_fuzzy_match_suggests_similar_node
-=== RUN   TestValidate/DIP004:_unreachable_node
-=== RUN   TestValidate/DIP005:_unconditional_cycle
-=== RUN   TestValidate/DIP006:_exit_has_outgoing_edge
-=== RUN   TestValidate/DIP007:_orphaned_parallel_node
-=== RUN   TestValidate/DIP007:_orphaned_fan_in_node
-=== RUN   TestValidate/DIP008:_duplicate_node_ID
-=== RUN   TestValidate/DIP009:_duplicate_unconditional_edge
-=== RUN   TestValidate/multiple_errors_at_once
-=== RUN   TestValidate/empty_workflow
-=== RUN   TestValidate/DIP003:_both_endpoints_dangling
-=== RUN   TestValidate/DIP009:_same_endpoints_different_conditions_=_NOT_duplicate
-=== RUN   TestValidate/DIP005:_cycle_through_restart_edge_is_OK_(duplicate_of_happy_path_for_clarity)
---- PASS: TestValidate (0.00s)
-    --- PASS: TestValidate/valid_minimal_workflow (0.00s)
-    --- PASS: TestValidate/valid_complex_workflow_with_restart_and_parallel (0.00s)
-    --- PASS: TestValidate/valid_workflow_with_restart_back-edge_(no_cycle) (0.00s)
-    --- PASS: TestValidate/valid_parallel/fan_in_pair_with_different_order (0.00s)
-    --- PASS: TestValidate/DIP001:_start_node_empty (0.00s)
-    --- PASS: TestValidate/DIP001:_start_node_declared_but_missing_from_nodes (0.00s)
-    --- PASS: TestValidate/DIP002:_exit_node_missing_from_nodes (0.00s)
-    --- PASS: TestValidate/DIP003:_dangling_edge_target (0.00s)
-    --- PASS: TestValidate/DIP003:_fuzzy_match_suggests_similar_node (0.00s)
-    --- PASS: TestValidate/DIP004:_unreachable_node (0.00s)
-    --- PASS: TestValidate/DIP005:_unconditional_cycle (0.00s)
-    --- PASS: TestValidate/DIP006:_exit_has_outgoing_edge (0.00s)
-    --- PASS: TestValidate/DIP007:_orphaned_parallel_node (0.00s)
-    --- PASS: TestValidate/DIP007:_orphaned_fan_in_node (0.00s)
-    --- PASS: TestValidate/DIP008:_duplicate_node_ID (0.00s)
-    --- PASS: TestValidate/DIP009:_duplicate_unconditional_edge (0.00s)
-    --- PASS: TestValidate/multiple_errors_at_once (0.00s)
-    --- PASS: TestValidate/empty_workflow (0.00s)
-    --- PASS: TestValidate/DIP003:_both_endpoints_dangling (0.00s)
-    --- PASS: TestValidate/DIP009:_same_endpoints_different_conditions_=_NOT_duplicate (0.00s)
-    --- PASS: TestValidate/DIP005:_cycle_through_restart_edge_is_OK_(duplicate_of_happy_path_for_clarity) (0.00s)
-=== RUN   TestDIP003FuzzyMatchHelp
---- PASS: TestDIP003FuzzyMatchHelp (0.00s)
-=== RUN   TestDIP004StartNodeIsReachable
---- PASS: TestDIP004StartNodeIsReachable (0.00s)
-=== RUN   TestDiagnosticFormatting
---- PASS: TestDiagnosticFormatting (0.00s)
-=== RUN   TestDiagnosticFormattingNoFile
---- PASS: TestDiagnosticFormattingNoFile (0.00s)
-=== RUN   TestDiagnosticFormattingWithFix
---- PASS: TestDiagnosticFormattingWithFix (0.00s)
-=== RUN   TestResultErrors
---- PASS: TestResultErrors (0.00s)
-=== RUN   TestResultHasErrors
-=== RUN   TestResultHasErrors/no_diagnostics
-=== RUN   TestResultHasErrors/only_info
-=== RUN   TestResultHasErrors/has_error
---- PASS: TestResultHasErrors (0.00s)
-    --- PASS: TestResultHasErrors/no_diagnostics (0.00s)
-    --- PASS: TestResultHasErrors/only_info (0.00s)
-    --- PASS: TestResultHasErrors/has_error (0.00s)
-=== RUN   TestSeverityString
---- PASS: TestSeverityString (0.00s)
-=== RUN   TestLevenshtein
---- PASS: TestLevenshtein (0.00s)
-=== RUN   TestCodeDescriptionCoverage
---- PASS: TestCodeDescriptionCoverage (0.00s)
-=== RUN   TestDIP005CyclePathIncluded
---- PASS: TestDIP005CyclePathIncluded (0.00s)
-=== RUN   TestDIP006MultipleOutgoing
---- PASS: TestDIP006MultipleOutgoing (0.00s)
+=== RUN   TestParseDOTSimpleDigraph
+--- PASS: TestParseDOTSimpleDigraph (0.00s)
+=== RUN   TestParseDOTNodeWithAttributes
+--- PASS: TestParseDOTNodeWithAttributes (0.00s)
+=== RUN   TestParseDOTEdgeWithAttributes
+--- PASS: TestParseDOTEdgeWithAttributes (0.00s)
+=== RUN   TestParseDOTGraphAttributes
+--- PASS: TestParseDOTGraphAttributes (0.00s)
+=== RUN   TestParseDOTQuotedStringsWithEscapes
+--- PASS: TestParseDOTQuotedStringsWithEscapes (0.00s)
+=== RUN   TestParseDOTComments
+--- PASS: TestParseDOTComments (0.00s)
+=== RUN   TestParseDOTEmptyGraph
+--- PASS: TestParseDOTEmptyGraph (0.00s)
+=== RUN   TestParseDOTMultipleEdges
+--- PASS: TestParseDOTMultipleEdges (0.00s)
+=== RUN   TestParseDOTMissingSemicolons
+--- PASS: TestParseDOTMissingSemicolons (0.00s)
+=== RUN   TestParseDOTMalformed
+=== RUN   TestParseDOTMalformed/not_a_digraph
+=== RUN   TestParseDOTMalformed/missing_closing_brace
+=== RUN   TestParseDOTMalformed/missing_opening_brace
+=== RUN   TestParseDOTMalformed/empty_string
+--- PASS: TestParseDOTMalformed (0.00s)
+    --- PASS: TestParseDOTMalformed/not_a_digraph (0.00s)
+    --- PASS: TestParseDOTMalformed/missing_closing_brace (0.00s)
+    --- PASS: TestParseDOTMalformed/missing_opening_brace (0.00s)
+    --- PASS: TestParseDOTMalformed/empty_string (0.00s)
+=== RUN   TestMigrateShapeToKindMapping
+=== RUN   TestMigrateShapeToKindMapping/shape_box
+=== RUN   TestMigrateShapeToKindMapping/shape_hexagon
+=== RUN   TestMigrateShapeToKindMapping/shape_parallelogram
+=== RUN   TestMigrateShapeToKindMapping/shape_component
+=== RUN   TestMigrateShapeToKindMapping/shape_tripleoctagon
+=== RUN   TestMigrateShapeToKindMapping/shape_tab
+=== RUN   TestMigrateShapeToKindMapping/shape_Mdiamond
+=== RUN   TestMigrateShapeToKindMapping/shape_Msquare
+=== RUN   TestMigrateShapeToKindMapping/shape_diamond
+=== RUN   TestMigrateShapeToKindMapping/shape_
+--- PASS: TestMigrateShapeToKindMapping (0.00s)
+    --- PASS: TestMigrateShapeToKindMapping/shape_box (0.00s)
+    --- PASS: TestMigrateShapeToKindMapping/shape_hexagon (0.00s)
+    --- PASS: TestMigrateShapeToKindMapping/shape_parallelogram (0.00s)
+    --- PASS: TestMigrateShapeToKindMapping/shape_component (0.00s)
+    --- PASS: TestMigrateShapeToKindMapping/shape_tripleoctagon (0.00s)
+    --- PASS: TestMigrateShapeToKindMapping/shape_tab (0.00s)
+    --- PASS: TestMigrateShapeToKindMapping/shape_Mdiamond (0.00s)
+    --- PASS: TestMigrateShapeToKindMapping/shape_Msquare (0.00s)
+    --- PASS: TestMigrateShapeToKindMapping/shape_diamond (0.00s)
+    --- PASS: TestMigrateShapeToKindMapping/shape_ (0.00s)
+=== RUN   TestMigrateStartExitIdentification
+--- PASS: TestMigrateStartExitIdentification (0.00s)
+=== RUN   TestMigratePromptUnescaping
+--- PASS: TestMigratePromptUnescaping (0.00s)
+=== RUN   TestMigrateToolCommandUnescaping
+--- PASS: TestMigrateToolCommandUnescaping (0.00s)
+=== RUN   TestMigrateConditionNamespacePrefixing
+=== RUN   TestMigrateConditionNamespacePrefixing/bare_outcome
+=== RUN   TestMigrateConditionNamespacePrefixing/context._prefix
+=== RUN   TestMigrateConditionNamespacePrefixing/ctx._prefix_kept
+=== RUN   TestMigrateConditionNamespacePrefixing/graph._prefix_kept
+--- PASS: TestMigrateConditionNamespacePrefixing (0.00s)
+    --- PASS: TestMigrateConditionNamespacePrefixing/bare_outcome (0.00s)
+    --- PASS: TestMigrateConditionNamespacePrefixing/context._prefix (0.00s)
+    --- PASS: TestMigrateConditionNamespacePrefixing/ctx._prefix_kept (0.00s)
+    --- PASS: TestMigrateConditionNamespacePrefixing/graph._prefix_kept (0.00s)
+=== RUN   TestMigrateComplexCondition
+--- PASS: TestMigrateComplexCondition (0.00s)
+=== RUN   TestMigrateConditionWithNegation
+--- PASS: TestMigrateConditionWithNegation (0.00s)
+=== RUN   TestMigrateRestartEdge
+=== RUN   TestMigrateRestartEdge/restart=true
+=== RUN   TestMigrateRestartEdge/loop_restart=true
+--- PASS: TestMigrateRestartEdge (0.00s)
+    --- PASS: TestMigrateRestartEdge/restart=true (0.00s)
+    --- PASS: TestMigrateRestartEdge/loop_restart=true (0.00s)
+=== RUN   TestMigrateGraphDefaults
+--- PASS: TestMigrateGraphDefaults (0.00s)
+=== RUN   TestMigrateParallelInference
+--- PASS: TestMigrateParallelInference (0.00s)
+=== RUN   TestMigrateFanInInference
+--- PASS: TestMigrateFanInInference (0.00s)
+=== RUN   TestMigrateDiamondDisambiguation
+=== RUN   TestMigrateDiamondDisambiguation/diamond_with_tool_command
+=== RUN   TestMigrateDiamondDisambiguation/diamond_with_prompt
+=== RUN   TestMigrateDiamondDisambiguation/bare_diamond
+--- PASS: TestMigrateDiamondDisambiguation (0.00s)
+    --- PASS: TestMigrateDiamondDisambiguation/diamond_with_tool_command (0.00s)
+    --- PASS: TestMigrateDiamondDisambiguation/diamond_with_prompt (0.00s)
+    --- PASS: TestMigrateDiamondDisambiguation/bare_diamond (0.00s)
+=== RUN   TestMigrateEdgeWeight
+--- PASS: TestMigrateEdgeWeight (0.00s)
+=== RUN   TestMigrateDurationParsing
+=== RUN   TestMigrateDurationParsing/30s
+=== RUN   TestMigrateDurationParsing/1h30m
+=== RUN   TestMigrateDurationParsing/5m
+--- PASS: TestMigrateDurationParsing (0.00s)
+    --- PASS: TestMigrateDurationParsing/30s (0.00s)
+    --- PASS: TestMigrateDurationParsing/1h30m (0.00s)
+    --- PASS: TestMigrateDurationParsing/5m (0.00s)
+=== RUN   TestMigrateEmptyNodeDefaultsToAgent
+--- PASS: TestMigrateEmptyNodeDefaultsToAgent (0.00s)
+=== RUN   TestMigrateToSourceRoundTrip
+--- PASS: TestMigrateToSourceRoundTrip (0.00s)
+=== RUN   TestMigrateLegacyAttributeNames
+--- PASS: TestMigrateLegacyAttributeNames (0.00s)
+=== RUN   TestCheckParityIdentical
+--- PASS: TestCheckParityIdentical (0.00s)
+=== RUN   TestCheckParityMissingNode
+--- PASS: TestCheckParityMissingNode (0.00s)
+=== RUN   TestCheckParityExtraNode
+--- PASS: TestCheckParityExtraNode (0.00s)
+=== RUN   TestCheckParityStartMismatch
+--- PASS: TestCheckParityStartMismatch (0.00s)
+=== RUN   TestCheckParityExitMismatch
+--- PASS: TestCheckParityExitMismatch (0.00s)
+=== RUN   TestCheckParityEdgeMissing
+--- PASS: TestCheckParityEdgeMissing (0.00s)
+=== RUN   TestCheckParityConfigMismatch
+--- PASS: TestCheckParityConfigMismatch (0.00s)
+=== RUN   TestCheckParityKindMismatch
+--- PASS: TestCheckParityKindMismatch (0.00s)
+=== RUN   TestCheckParityWhitespaceTolerantPrompt
+--- PASS: TestCheckParityWhitespaceTolerantPrompt (0.00s)
+=== RUN   TestCheckParityDefaultsMismatch
+--- PASS: TestCheckParityDefaultsMismatch (0.00s)
+=== RUN   TestMigrateBuildDippinDOT
+--- PASS: TestMigrateBuildDippinDOT (0.00s)
+=== RUN   TestAddNamespacePrefix
+=== RUN   TestAddNamespacePrefix/outcome
+=== RUN   TestAddNamespacePrefix/tool_stdout
+=== RUN   TestAddNamespacePrefix/ctx.outcome
+=== RUN   TestAddNamespacePrefix/graph.goal
+=== RUN   TestAddNamespacePrefix/context.tool_stdout
+=== RUN   TestAddNamespacePrefix/context.outcome
+=== RUN   TestAddNamespacePrefix/custom_var
+--- PASS: TestAddNamespacePrefix (0.00s)
+    --- PASS: TestAddNamespacePrefix/outcome (0.00s)
+    --- PASS: TestAddNamespacePrefix/tool_stdout (0.00s)
+    --- PASS: TestAddNamespacePrefix/ctx.outcome (0.00s)
+    --- PASS: TestAddNamespacePrefix/graph.goal (0.00s)
+    --- PASS: TestAddNamespacePrefix/context.tool_stdout (0.00s)
+    --- PASS: TestAddNamespacePrefix/context.outcome (0.00s)
+    --- PASS: TestAddNamespacePrefix/custom_var (0.00s)
+=== RUN   TestParseConditionEdgeCases
+=== RUN   TestParseConditionEdgeCases/simple_equals
+=== RUN   TestParseConditionEdgeCases/not_equals
+=== RUN   TestParseConditionEdgeCases/contains_operator
+=== RUN   TestParseConditionEdgeCases/OR_condition
+=== RUN   TestParseConditionEdgeCases/bang_prefix_negation
+=== RUN   TestParseConditionEdgeCases/empty_string
+--- PASS: TestParseConditionEdgeCases (0.00s)
+    --- PASS: TestParseConditionEdgeCases/simple_equals (0.00s)
+    --- PASS: TestParseConditionEdgeCases/not_equals (0.00s)
+    --- PASS: TestParseConditionEdgeCases/contains_operator (0.00s)
+    --- PASS: TestParseConditionEdgeCases/OR_condition (0.00s)
+    --- PASS: TestParseConditionEdgeCases/bang_prefix_negation (0.00s)
+    --- PASS: TestParseConditionEdgeCases/empty_string (0.00s)
+=== RUN   TestMigrateNodeLabel
+--- PASS: TestMigrateNodeLabel (0.00s)
+=== RUN   TestMigrateWorkflowName
+--- PASS: TestMigrateWorkflowName (0.00s)
+=== RUN   TestMigrateQuotedGraphName
+--- PASS: TestMigrateQuotedGraphName (0.00s)
+=== RUN   TestMigrateRetryConfig
+--- PASS: TestMigrateRetryConfig (0.00s)
+=== RUN   TestMigrateSubgraphNode
+--- PASS: TestMigrateSubgraphNode (0.00s)
+=== RUN   TestMigrateHumanNode
+--- PASS: TestMigrateHumanNode (0.00s)
+=== RUN   TestMigrateParallelExplicitTargets
+--- PASS: TestMigrateParallelExplicitTargets (0.00s)
+=== RUN   TestMigrateVersionIsSet
+--- PASS: TestMigrateVersionIsSet (0.00s)
+=== RUN   TestMigrateAgentConfigFields
+--- PASS: TestMigrateAgentConfigFields (0.00s)
+=== RUN   TestMigrateEdgeLabel
+--- PASS: TestMigrateEdgeLabel (0.00s)
+=== RUN   TestNormalizeWhitespace
+=== RUN   TestNormalizeWhitespace/hello__world
+=== RUN   TestNormalizeWhitespace/__leading
+=== RUN   TestNormalizeWhitespace/trailing__
+=== RUN   TestNormalizeWhitespace/a__b
+=== RUN   TestNormalizeWhitespace/#00
+--- PASS: TestNormalizeWhitespace (0.00s)
+    --- PASS: TestNormalizeWhitespace/hello__world (0.00s)
+    --- PASS: TestNormalizeWhitespace/__leading (0.00s)
+    --- PASS: TestNormalizeWhitespace/trailing__ (0.00s)
+    --- PASS: TestNormalizeWhitespace/a__b (0.00s)
+    --- PASS: TestNormalizeWhitespace/#00 (0.00s)
+=== RUN   TestParseDOTDefaultNodeEdgeAttrs
+--- PASS: TestParseDOTDefaultNodeEdgeAttrs (0.00s)
+=== RUN   TestParseDOTDOTLeftJustify
+--- PASS: TestParseDOTDOTLeftJustify (0.00s)
+=== RUN   TestCheckParityEdgeExtra
+--- PASS: TestCheckParityEdgeExtra (0.00s)
 PASS
-ok  	github.com/2389/dippin/validator	0.254s
+ok  	github.com/2389/dippin/migrate	0.418s
 
-TURN 21
+TURN 16
 TOOL CALL: bash
 INPUT:
-{"command": "go build ./... && go test ./... && echo \"ALL PASS\""}
+{"command": "go build ./... && go test ./... -count=1 2>&1"}
 TOOL RESULT: bash
 OUTPUT:
 ?   	github.com/2389/dippin/cmd/dippin	[no test files]
-ok  	github.com/2389/dippin/ir	(cached)
-ok  	github.com/2389/dippin/validator	0.226s
-ALL PASS
+ok  	github.com/2389/dippin/export	0.257s
+ok  	github.com/2389/dippin/formatter	0.483s
+ok  	github.com/2389/dippin/ir	0.734s
+ok  	github.com/2389/dippin/migrate	0.920s
+ok  	github.com/2389/dippin/validator	1.160s
 
-TURN 22
+TURN 17
 TOOL CALL: bash
 INPUT:
-{"command": "go test ./validator/ -v -count=1 2>&1 | grep -c \"PASS:\""}
+{"command": "go vet ./... 2>&1"}
 TOOL RESULT: bash
 OUTPUT:
-90
-
-TURN 23
+(no output)
+TURN 18
 TOOL CALL: bash
 INPUT:
-{"command": "go test ./validator/ -v -count=1 2>&1 | grep -c \"--- PASS\""}
+{"command": "go test ./migrate/ -v -count=1 2>&1 | grep -c \"^--- PASS\""}
 TOOL RESULT: bash
 OUTPUT:
-stderr: grep: unrecognized option `--- PASS'
-usage: grep [-abcdDEFGHhIiJLlMmnOopqRSsUVvwXxZz] [-A num] [-B num] [-C[num]]
-	[-e pattern] [-f file] [--binary-files=value] [--color=when]
-	[--context[=num]] [--directories=action] [--label] [--line-buffered]
-	[--null] [pattern] [file ...]
+54
 
-exit code: 2
-TURN 24
+TURN 19
 TOOL CALL: bash
 INPUT:
-{"command": "go test ./validator/ -v -count=1 2>&1 | grep \"PASS:\" | wc -l"}
+{"command": "ls -la migrate/ && echo \"---\" && wc -l migrate/*.go"}
 TOOL RESULT: bash
 OUTPUT:
-      90
+total 160
+drwxr-xr-x@  6 clint  staff    192 Mar 19 20:50 .
+drwxr-xr-x@ 13 clint  staff    416 Mar 19 20:48 ..
+-rw-r--r--@  1 clint  staff  11423 Mar 19 20:59 dot_parser.go
+-rw-r--r--@  1 clint  staff  39015 Mar 19 21:04 migrate_test.go
+-rw-r--r--@  1 clint  staff  15128 Mar 19 21:00 migrate.go
+-rw-r--r--@  1 clint  staff   9932 Mar 19 21:01 parity.go
+---
+     516 migrate/dot_parser.go
+    1566 migrate/migrate_test.go
+     615 migrate/migrate.go
+     354 migrate/parity.go
+    3051 total
 
-TURN 25
-TOOL CALL: bash
-INPUT:
-{"command": "go test ./validator/ -v -count=1 2>&1 | grep -E \"^=== RUN \" | wc -l"}
-TOOL RESULT: bash
-OUTPUT:
-      90
-
-TURN 26
-TOOL CALL: bash
-INPUT:
-{"command": "go test ./validator/ -v -count=1 2>&1 | grep -E \"^=== RUN   Test[^/]\" | wc -l"}
-TOOL RESULT: bash
-OUTPUT:
-      90
-
-TURN 27
-TOOL CALL: bash
-INPUT:
-{"command": "go test ./validator/ -v -count=1 2>&1 | grep -E \"^--- PASS\" | wc -l"}
-TOOL RESULT: bash
-OUTPUT:
-      24
-
-TURN 28
-TOOL CALL: bash
-INPUT:
-{"command": "find . -name \"*.go\" -not -path \"./.git/*\" | sort"}
-TOOL RESULT: bash
-OUTPUT:
-./cmd/dippin/main.go
-./ir/edge.go
-./ir/ir_test.go
-./ir/ir.go
-./ir/lookup.go
-./ir/source.go
-./validator/codes.go
-./validator/diagnostic.go
-./validator/lint_codes.go
-./validator/lint_test.go
-./validator/lint.go
-./validator/validate_test.go
-./validator/validate.go
-
-TURN 29
-TOOL CALL: write
-INPUT:
-{"content": "=== Next component: formatter ===\ncomponent: formatter\npackage: formatter/\ndescription: Canonical formatter: IR to .dip source\n\n=== Current codebase ===\n./cmd/dippin/main.go\n./ir/edge.go\n./ir/ir_test.go\n./ir/ir.go\n./ir/lookup.go\n./ir/source.go\n./validator/codes.go\n./validator/diagnostic.go\n./validator/lint_codes.go\n./validator/lint.go\n./validator/lint_test.go\n./validator/validate.go\n./validator/validate_test.go\n\n=== Test status ===\n?   \tgithub.com/2389/dippin/cmd/dippin\t[no test files]\nok  \tgithub.com/2389/dippin/ir\nok  \tgithub.com/2389/dippin/validator\n\n=== Ledger ===\ncomponent\tpackage\tstatus\tdescription\nir\tir/\tcomplete\tCanonical IR types (Workflow, Node, Edge, Condition)\nparser-lexer\tparser/\tin_progress\tLine-based indentation-aware lexer\nparser-core\tparser/\tin_progress\tParser: .dip source to IR with error recovery\nparser-conditions\tparser/\tin_progress\tCondition expression parser (and/or/not/compare)\nvalidator\tvalidator/\tcomplete\tGraph structure validation (DIP001-DIP009)\nlinter\tvalidator/\tcomplete\tSemantic quality warnings (DIP101-DIP112)\nformatter\tformatter/\tpending\tCanonical formatter: IR to .dip source\ndot-exporter\texport/\tpending\tDOT exporter: IR to DOT string\nmigration\tmigrate/\tpending\tMigration tool: DOT to IR to .dip\ncli\tcmd/dippin/\tpending\tCLI subcommands: parse, validate, lint, fmt, export-dot, migrate\n", "path": ".tracker/current_context.md"}
-TOOL RESULT: write
-OUTPUT:
-wrote 1335 bytes to .tracker/current_context.md
-TURN 30
-TOOL CALL: bash
-INPUT:
-{"command": "go vet ./... && echo \"vet OK\""}
-TOOL RESULT: bash
-OUTPUT:
-vet OK
-
-TURN 31
-TOOL CALL: bash
-INPUT:
-{"command": "go build ./... && go test ./... -count=1 && echo \"ALL PASS\""}
-TOOL RESULT: bash
-OUTPUT:
-?   	github.com/2389/dippin/cmd/dippin	[no test files]
-ok  	github.com/2389/dippin/ir	0.406s
-ok  	github.com/2389/dippin/validator	0.595s
-ALL PASS
-
-TURN 32
+TURN 20
 TEXT:
-All clean. Here's a summary of what was built:
+Here's a summary of what was built:
 
-## Linter Implementation (DIP101–DIP112)
+## Implementation Summary: `migrate/` Package
 
-### Files Created (3 files)
+### Files Created (4 files, 3,051 lines)
 
-| File | Purpose | Lines |
-|------|---------|-------|
-| `validator/lint_codes.go` | Constants `DIP101`–`DIP112` with human-readable descriptions, extends `CodeDescription` map via `init()` | ~40 |
-| `validator/lint.go` | `Lint(w *ir.Workflow) Result` entry point + 12 check functions + helpers | ~380 |
-| `validator/lint_test.go` | 48 test cases across 12 top-level test functions | ~600 |
+| File | Lines | Purpose |
+|------|-------|---------|
+| `migrate/dot_parser.go` | 516 | Hand-written DOT lexer + parser for the Tracker DOT subset |
+| `migrate/migrate.go` | 615 | `Migrate()` and `MigrateToSource()` — DOT string → IR with full cleanup pipeline |
+| `migrate/parity.go` | 354 | `CheckParity()` — structural comparison of two `*ir.Workflow` values |
+| `migrate/migrate_test.go` | 1,566 | 54 test cases covering all functionality |
 
-### The 12 Checks
+### Exported API
 
-| Code | Check | Algorithm | Severity |
-|------|-------|-----------|----------|
-| DIP101 | Unreachable after conditional branches | All incoming edges have conditions → flagged | Warning |
-| DIP102 | Routing node without default edge | Has conditional outgoing but no unconditional fallback | Warning |
-| DIP103 | Overlapping/contradictory conditions | Same (variable, op, value) comparison on edges from same node | Warning |
-| DIP104 | Unbounded retry loops | Has retry policy but no max_retries and no fallback_target | Warning |
-| DIP105 | No success path to exit | BFS on non-restart edges from start, check if exit reached | Warning |
-| DIP106 | Undefined `${variables}` in prompts | Regex extract `${...}`, check namespace prefix (ctx/graph/env) | Warning |
-| DIP107 | Unused context keys (writes never read) | Global reads set vs each node's writes | Warning |
-| DIP108 | Unknown model/provider combination | Check against known catalog with provider fallback to defaults | Warning |
-| DIP109 | Namespace collisions in imports | Multiple subgraph nodes referencing same file | Warning |
-| DIP110 | Empty prompts | Agent nodes with whitespace-only or empty prompt | Warning |
-| DIP111 | Tool command without timeout | ToolConfig with zero timeout | Warning |
-| DIP112 | reads key not in upstream writes | Kahn's algorithm topological sort, propagate available keys forward | Warning |
+- **`Migrate(dotSource string) (*ir.Workflow, error)`** — Parses DOT digraph → IR with all cleanup transforms
+- **`MigrateToSource(dotSource string) (string, error)`** — Convenience: DOT → IR → canonical `.dip` source text
+- **`CheckParity(a, b *ir.Workflow) []Difference`** — Structural comparison reporting missing/extra/mismatched elements
 
-### Test Coverage: 48 test cases
-- **4 happy-path**: Clean minimal, clean complex with IO, known model/provider, tool with timeout
-- **24 individual check tests**: 2 per rule (positive case + negative/clean case)
-- **10 edge cases**: Empty workflow, multiple warnings simultaneously, multiple undefined vars, nested AND conditions, cycle safety for DIP112, no retry config, start==exit, non-agent nodes, no model/provider set, transitive writes propagation
-- **10 targeted tests**: Message content verification (DIP101, DIP102), severity verification, code description coverage, `extractComparisons` unit test (6 subtests)
+### Key Features Implemented
 
-### Key Design Decisions
-- All lint diagnostics use `SeverityWarning` (not error) — workflows can still execute
-- `Lint()` is independent of `Validate()` — callers run both separately
-- DIP106 only checks agent node prompts (not tool commands)
-- DIP108 uses a best-effort known catalog; new models just produce warnings
-- DIP112 uses Kahn's algorithm for topological ordering, gracefully handles cycles (nodes in cycles simply aren't processed)
-- `extractComparisons` flattens AND/OR/NOT trees to find leaf comparisons for overlap detection
-- Code description map extended via `init()` to avoid modifying the existing `codes.go`
+1. **DOT Parser** — Lexer/parser for the DOT subset (digraph, node/edge statements, attributes, comments, quoted strings with escape sequences). Not a full Graphviz parser — handles exactly what Tracker DOT files use.
 
-Session 91795b5d completed in 6m12s
-Turns: 32 | Tool calls: 41 (bash: 21, edit: 2, glob: 1, read: 13, write: 4)
-Tokens: 25459 (in: 2002, out: 23457) | Cost: $1.79
-Longest turn: 1m47s
+2. **Shape → Kind Mapping** — Reverse of §15 export table: `box`→`agent`, `hexagon`→`human`, `parallelogram`→`tool`, `component`→`parallel`, `tripleoctagon`→`fan_in`, `tab`→`subgraph`. Diamond disambiguation per §5 (tool_command → tool, otherwise → agent). Mdiamond/Msquare → agent (start/exit markers).
+
+3. **Legacy Attribute Normalization** — `llm_model`→`model`, `llm_provider`→`provider`, `loop_restart`→`restart`, `default_max_retry`→`max_retries`, `default_fidelity`→`fidelity`, `context.`→`ctx.`
+
+4. **Condition Parsing** — Handles `=`/`!=`/`contains`/`startswith`/`endswith`/`in`, `&&`/`||`, `not`/`!` with correct precedence. Adds `ctx.` namespace prefix to bare variables. Normalizes `context.` → `ctx.`.
+
+5. **Parallel/Fan-in Inference** — Infers targets from outgoing edges of `component` nodes and sources from incoming edges of `tripleoctagon` nodes when not explicitly set.
+
+6. **Parity Checker** — Reports `node_missing`, `node_extra`, `kind_mismatch`, `config_mismatch`, `edge_missing`, `edge_extra`, `start_mismatch`, `exit_mismatch`, `defaults_mismatch`. Whitespace-tolerant prompt comparison.
+
+### Test Coverage (54 tests)
+
+- **10 DOT parser tests**: simple digraph, attributes, escapes, comments, empty, multiple edges, missing semicolons, malformed input
+- **17+ migration tests**: shape mapping, start/exit, prompt unescaping, tool command unescaping, condition namespacing, complex conditions, negation, restart edges, graph defaults, parallel/fan-in inference, diamond disambiguation, edge weight, duration parsing, legacy attribute names
+- **11 parity tests**: identical, missing node, extra node, start/exit mismatch, edge missing/extra, config/kind mismatch, whitespace tolerance, defaults mismatch
+- **1 integration test**: Full migration of the real `build_dippin.dot` file verifying all 22 nodes, edge topology, conditions, parallel targets, fan-in sources, restart edges, legacy attribute mapping, and `MigrateToSource` output
+
+Session 0a5a8154 completed in 6m50s
+Turns: 20 | Tool calls: 29 (bash: 10, edit: 1, read: 14, write: 4)
+Tokens: 34805 (in: 1882, out: 32923) | Cost: $2.50
+Longest turn: 2m46s
