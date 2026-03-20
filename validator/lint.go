@@ -251,14 +251,16 @@ func lintSuccessPath(w *ir.Workflow) []Diagnostic {
 var varRefPattern = regexp.MustCompile(`\$\{([^}]+)\}`)
 
 // knownNamespaces lists the valid namespace prefixes for variable references.
+// Per §8.2 of the Dippin spec: ctx. (runtime context), graph. (workflow-level
+// attributes), params. (module parameters for composition).
 var knownNamespaces = map[string]bool{
-	"ctx":   true,
-	"graph": true,
-	"env":   true,
+	"ctx":    true,
+	"graph":  true,
+	"params": true,
 }
 
 // lintUndefinedVariables checks DIP106: ${variable} references in prompts
-// must use known namespace prefixes (ctx., graph., env.). References without
+// must use known namespace prefixes (ctx., graph., params.). References without
 // a recognized namespace are flagged.
 func lintUndefinedVariables(w *ir.Workflow) []Diagnostic {
 	var diags []Diagnostic
@@ -277,7 +279,7 @@ func lintUndefinedVariables(w *ir.Workflow) []Diagnostic {
 					Severity: SeverityWarning,
 					Message:  fmt.Sprintf("node %q references undefined variable ${%s}", n.ID, varRef),
 					Location: n.Source,
-					Help:     fmt.Sprintf("use a namespaced variable like ${ctx.%s}, ${graph.%s}, or ${env.%s}", varRef, varRef, varRef),
+					Help:     fmt.Sprintf("use a namespaced variable like ${ctx.%s}, ${graph.%s}, or ${params.%s}", varRef, varRef, varRef),
 				})
 			}
 		}

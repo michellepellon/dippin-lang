@@ -356,7 +356,7 @@ func TestLint(t *testing.T) {
 				Exit:  "A",
 				Nodes: []*ir.Node{
 					{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{
-						Prompt: "Process ${ctx.data} and ${graph.goal} and ${env.API_KEY}.",
+						Prompt: "Process ${ctx.data} and ${graph.goal} and ${params.strict}.",
 					}},
 				},
 			},

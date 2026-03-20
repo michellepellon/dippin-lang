@@ -1,0 +1,1015 @@
+package export
+
+import (
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/2389/dippin/ir"
+)
+
+// --- Fixtures ---
+
+func minimalWorkflow() *ir.Workflow {
+	return &ir.Workflow{
+		Name:  "minimal",
+		Start: "Begin",
+		Exit:  "End",
+		Nodes: []*ir.Node{
+			{ID: "Begin", Kind: ir.NodeHuman, Config: ir.HumanConfig{Mode: "freeform"}},
+			{ID: "End", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Done."}},
+		},
+		Edges: []*ir.Edge{
+			{From: "Begin", To: "End"},
+		},
+	}
+}
+
+func askAndExecuteWorkflow() *ir.Workflow {
+	return &ir.Workflow{
+		Name:  "ask_and_execute",
+		Goal:  "Ask user for a task, implement it, review, ship",
+		Start: "AskUser",
+		Exit:  "Done",
+		Defaults: ir.WorkflowDefaults{
+			Model:       "claude-opus-4-6",
+			Provider:    "anthropic",
+			RetryPolicy: "standard",
+			Fidelity:    "summary:high",
+			MaxRestarts: 5,
+		},
+		Nodes: []*ir.Node{
+			{ID: "AskUser", Kind: ir.NodeHuman, Config: ir.HumanConfig{Mode: "freeform"}},
+			{
+				ID: "Interpret", Kind: ir.NodeAgent,
+				IO: ir.NodeIO{Reads: []string{"human_response"}, Writes: []string{"plan"}},
+				Config: ir.AgentConfig{
+					Prompt: "You are a senior software architect.\n\nRead the user's request below and produce a clear,\nactionable implementation plan.\n\n## User Request\n${ctx.human_response}",
+				},
+			},
+			{ID: "ImplementFanOut", Kind: ir.NodeParallel, Config: ir.ParallelConfig{Targets: []string{"ImplementClaude", "ImplementCodex"}}},
+			{
+				ID: "ImplementClaude", Kind: ir.NodeAgent,
+				Config: ir.AgentConfig{Prompt: "Implement the plan.", Model: "gpt-5.4", Provider: "openai"},
+			},
+			{
+				ID: "ImplementCodex", Kind: ir.NodeAgent,
+				Config: ir.AgentConfig{Prompt: "Implement the plan.", Model: "gpt-5.3-codex", Provider: "openai"},
+			},
+			{ID: "ImplementJoin", Kind: ir.NodeFanIn, Config: ir.FanInConfig{Sources: []string{"ImplementClaude", "ImplementCodex"}}},
+			{
+				ID: "Validate", Kind: ir.NodeAgent,
+				Config: ir.AgentConfig{
+					Prompt:     "Review the implementations. Run tests.\nRespond with STATUS: success or STATUS: fail.",
+					AutoStatus: true,
+					GoalGate:   true,
+				},
+				Retry: ir.RetryConfig{MaxRetries: 2},
+			},
+			{ID: "Approve", Kind: ir.NodeHuman, Config: ir.HumanConfig{Mode: "choice", Default: "Yes"}},
+			{ID: "Done", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Ship it."}},
+		},
+		Edges: []*ir.Edge{
+			{From: "AskUser", To: "Interpret"},
+			{From: "Interpret", To: "ImplementFanOut"},
+			{From: "ImplementJoin", To: "Validate"},
+			{From: "Validate", To: "Approve", Condition: &ir.Condition{
+				Raw:    "ctx.outcome = success",
+				Parsed: ir.CondCompare{Variable: "ctx.outcome", Op: "=", Value: "success"},
+			}},
+			{From: "Validate", To: "Interpret", Label: "retry", Restart: true, Condition: &ir.Condition{
+				Raw:    "ctx.outcome = fail",
+				Parsed: ir.CondCompare{Variable: "ctx.outcome", Op: "=", Value: "fail"},
+			}},
+			{From: "Approve", To: "Done"},
+		},
+	}
+}
+
+func toolWorkflow() *ir.Workflow {
+	return &ir.Workflow{
+		Name:  "tool_test",
+		Start: "Check",
+		Exit:  "Report",
+		Nodes: []*ir.Node{
+			{
+				ID: "Check", Kind: ir.NodeTool,
+				IO: ir.NodeIO{Writes: []string{"test_result"}},
+				Config: ir.ToolConfig{
+					Command: "#!/bin/sh\nset -eu\npytest --tb=short",
+					Timeout: 60 * time.Second,
+				},
+			},
+			{ID: "Report", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Report results."}},
+		},
+		Edges: []*ir.Edge{
+			{From: "Check", To: "Report"},
+		},
+	}
+}
+
+func subgraphWorkflow() *ir.Workflow {
+	return &ir.Workflow{
+		Name:  "with_subgraph",
+		Start: "Build",
+		Exit:  "Done",
+		Nodes: []*ir.Node{
+			{ID: "Build", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Build the feature."}},
+			{
+				ID: "Review", Kind: ir.NodeSubgraph,
+				Config: ir.SubgraphConfig{
+					Ref:    "./review.dip",
+					Params: map[string]string{"model": "gpt-5.4"},
+				},
+			},
+			{ID: "Done", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Done."}},
+		},
+		Edges: []*ir.Edge{
+			{From: "Build", To: "Review"},
+			{From: "Review", To: "Done"},
+		},
+	}
+}
+
+// --- Test helpers ---
+
+func assertContains(t *testing.T, output, substr string) {
+	t.Helper()
+	if !strings.Contains(output, substr) {
+		t.Errorf("output does not contain %q\n\ngot:\n%s", substr, output)
+	}
+}
+
+func assertNotContains(t *testing.T, output, substr string) {
+	t.Helper()
+	if strings.Contains(output, substr) {
+		t.Errorf("output unexpectedly contains %q\n\ngot:\n%s", substr, output)
+	}
+}
+
+// --- Tests ---
+
+func TestExportDOTMinimal(t *testing.T) {
+	out := ExportDOT(minimalWorkflow(), ExportOptions{})
+
+	assertContains(t, out, "digraph minimal {")
+	assertContains(t, out, "rankdir=TB;")
+	assertContains(t, out, `Begin [label="Begin", shape="Mdiamond"];`)
+	assertContains(t, out, `End [label="End", shape="Msquare"];`)
+	assertContains(t, out, "Begin -> End;")
+	assertContains(t, out, "}\n")
+}
+
+func TestExportDOTFullWorkflow(t *testing.T) {
+	out := ExportDOT(askAndExecuteWorkflow(), ExportOptions{})
+
+	// Verify digraph structure.
+	assertContains(t, out, "digraph ask_and_execute {")
+
+	// Start node gets Mdiamond shape.
+	assertContains(t, out, `AskUser [label="AskUser", shape="Mdiamond"];`)
+
+	// Exit node gets Msquare shape.
+	assertContains(t, out, `Done [label="Done", shape="Msquare"];`)
+
+	// Regular agent node gets box shape.
+	assertContains(t, out, `Interpret [label="Interpret", shape="box"];`)
+
+	// Human node (non-start) gets hexagon shape.
+	assertContains(t, out, `Approve [label="Approve", shape="hexagon"];`)
+
+	// Parallel node gets component shape.
+	assertContains(t, out, `ImplementFanOut [label="ImplementFanOut", shape="component"];`)
+
+	// Fan-in node gets tripleoctagon shape.
+	assertContains(t, out, `ImplementJoin [label="ImplementJoin", shape="tripleoctagon"];`)
+
+	// Simple edge.
+	assertContains(t, out, "AskUser -> Interpret;")
+
+	// Conditional edge.
+	assertContains(t, out, `Validate -> Approve [condition="ctx.outcome = success", label="ctx.outcome = success"];`)
+
+	// Restart edge with condition and label.
+	assertContains(t, out, `Validate -> Interpret`)
+	assertContains(t, out, `restart="true"`)
+	assertContains(t, out, `style="dashed"`)
+}
+
+func TestExportDOTNodeShapes(t *testing.T) {
+	tests := []struct {
+		name     string
+		kind     ir.NodeKind
+		config   ir.NodeConfig
+		wantAttr string
+	}{
+		{"agent", ir.NodeAgent, ir.AgentConfig{Prompt: "go."}, `shape="box"`},
+		{"human", ir.NodeHuman, ir.HumanConfig{}, `shape="hexagon"`},
+		{"tool", ir.NodeTool, ir.ToolConfig{Command: "echo"}, `shape="parallelogram"`},
+		{"parallel", ir.NodeParallel, ir.ParallelConfig{Targets: []string{"A"}}, `shape="component"`},
+		{"fan_in", ir.NodeFanIn, ir.FanInConfig{Sources: []string{"A"}}, `shape="tripleoctagon"`},
+		{"subgraph", ir.NodeSubgraph, ir.SubgraphConfig{Ref: "x.dip"}, `shape="tab"`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := &ir.Workflow{
+				Name:  "test",
+				Start: "Start",
+				Exit:  "Exit",
+				Nodes: []*ir.Node{
+					{ID: "Start", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go."}},
+					{ID: "N", Kind: tt.kind, Config: tt.config},
+					{ID: "Exit", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done."}},
+				},
+			}
+			out := ExportDOT(w, ExportOptions{})
+			// N should get its kind-based shape (not overridden by start/exit).
+			if !strings.Contains(out, tt.wantAttr) {
+				t.Errorf("node N missing %s in output:\n%s", tt.wantAttr, out)
+			}
+		})
+	}
+}
+
+func TestExportDOTStartExitShapeOverride(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "test",
+		Start: "S",
+		Exit:  "E",
+		Nodes: []*ir.Node{
+			{ID: "S", Kind: ir.NodeHuman, Config: ir.HumanConfig{}},
+			{ID: "E", Kind: ir.NodeTool, Config: ir.ToolConfig{Command: "echo done"}},
+		},
+		Edges: []*ir.Edge{{From: "S", To: "E"}},
+	}
+	out := ExportDOT(w, ExportOptions{})
+
+	// Start node should be Mdiamond regardless of kind.
+	assertContains(t, out, `S [label="S", shape="Mdiamond"];`)
+	// Exit node should be Msquare regardless of kind.
+	assertContains(t, out, `E [label="E", shape="Msquare"];`)
+}
+
+func TestExportDOTNodeLabel(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "test",
+		Start: "A",
+		Exit:  "B",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Label: "My Agent", Config: ir.AgentConfig{Prompt: "go."}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done."}},
+		},
+	}
+	out := ExportDOT(w, ExportOptions{})
+
+	// Node with a label uses the label text.
+	assertContains(t, out, `label="My Agent"`)
+	// Node without a label uses the ID.
+	assertContains(t, out, `B [label="B"`)
+}
+
+func TestExportDOTRankDir(t *testing.T) {
+	tests := []struct {
+		name    string
+		rankDir string
+		want    string
+	}{
+		{"default", "", "rankdir=TB;"},
+		{"LR", "LR", "rankdir=LR;"},
+		{"TB explicit", "TB", "rankdir=TB;"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := minimalWorkflow()
+			out := ExportDOT(w, ExportOptions{RankDir: tt.rankDir})
+			assertContains(t, out, tt.want)
+		})
+	}
+}
+
+func TestExportDOTIncludePrompts(t *testing.T) {
+	t.Run("prompts included", func(t *testing.T) {
+		w := &ir.Workflow{
+			Name:  "test",
+			Start: "A",
+			Exit:  "A",
+			Nodes: []*ir.Node{
+				{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+					Prompt:   "Line one.\nLine two.",
+					Model:    "gpt-5.4",
+					Provider: "openai",
+				}},
+			},
+		}
+		out := ExportDOT(w, ExportOptions{IncludePrompts: true})
+		assertContains(t, out, `model="gpt-5.4"`)
+		assertContains(t, out, `prompt="Line one.`+`\n`+`Line two."`)
+		assertContains(t, out, `provider="openai"`)
+	})
+
+	t.Run("prompts excluded by default", func(t *testing.T) {
+		w := &ir.Workflow{
+			Name:  "test",
+			Start: "A",
+			Exit:  "A",
+			Nodes: []*ir.Node{
+				{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+					Prompt: "secret prompt",
+					Model:  "gpt-5.4",
+				}},
+			},
+		}
+		out := ExportDOT(w, ExportOptions{})
+		assertNotContains(t, out, "prompt=")
+		assertNotContains(t, out, "model=")
+	})
+}
+
+func TestExportDOTToolCommand(t *testing.T) {
+	out := ExportDOT(toolWorkflow(), ExportOptions{IncludePrompts: true})
+	// Multiline command should be escaped.
+	assertContains(t, out, `tool_command="#!/bin/sh\nset -eu\npytest --tb=short"`)
+	assertContains(t, out, `timeout="1m"`)
+}
+
+func TestExportDOTHumanConfig(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "test",
+		Start: "H",
+		Exit:  "H",
+		Nodes: []*ir.Node{
+			{ID: "H", Kind: ir.NodeHuman, Config: ir.HumanConfig{Mode: "choice", Default: "Yes"}},
+		},
+	}
+	out := ExportDOT(w, ExportOptions{IncludePrompts: true})
+	assertContains(t, out, `default="Yes"`)
+	assertContains(t, out, `mode="choice"`)
+}
+
+func TestExportDOTSubgraphConfig(t *testing.T) {
+	out := ExportDOT(subgraphWorkflow(), ExportOptions{IncludePrompts: true})
+	assertContains(t, out, `ref="./review.dip"`)
+	assertContains(t, out, `shape="tab"`)
+}
+
+func TestExportDOTParallelConfig(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "test",
+		Start: "S",
+		Exit:  "J",
+		Nodes: []*ir.Node{
+			{ID: "S", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go."}},
+			{ID: "P", Kind: ir.NodeParallel, Config: ir.ParallelConfig{Targets: []string{"A", "B"}}},
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "a."}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "b."}},
+			{ID: "J", Kind: ir.NodeFanIn, Config: ir.FanInConfig{Sources: []string{"A", "B"}}},
+		},
+	}
+	out := ExportDOT(w, ExportOptions{IncludePrompts: true})
+	assertContains(t, out, `targets="A,B"`)
+	assertContains(t, out, `sources="A,B"`)
+}
+
+func TestExportDOTHighlightGoalGates(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "test",
+		Start: "A",
+		Exit:  "B",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go.", GoalGate: true}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done."}},
+		},
+	}
+
+	t.Run("highlighting enabled", func(t *testing.T) {
+		out := ExportDOT(w, ExportOptions{HighlightGoalGates: true})
+		assertContains(t, out, `fillcolor="#ffcccc"`)
+		assertContains(t, out, `style="filled"`)
+	})
+
+	t.Run("highlighting disabled", func(t *testing.T) {
+		out := ExportDOT(w, ExportOptions{HighlightGoalGates: false})
+		assertNotContains(t, out, "fillcolor")
+		assertNotContains(t, out, `style="filled"`)
+	})
+}
+
+func TestExportDOTEdgeConditions(t *testing.T) {
+	tests := []struct {
+		name      string
+		condition *ir.Condition
+		wantAttr  string
+	}{
+		{
+			name: "simple compare",
+			condition: &ir.Condition{
+				Raw:    "ctx.outcome = success",
+				Parsed: ir.CondCompare{Variable: "ctx.outcome", Op: "=", Value: "success"},
+			},
+			wantAttr: `condition="ctx.outcome = success"`,
+		},
+		{
+			name: "AND condition",
+			condition: &ir.Condition{
+				Raw: "ctx.x = 1 and ctx.y = 2",
+				Parsed: ir.CondAnd{
+					Left:  ir.CondCompare{Variable: "ctx.x", Op: "=", Value: "1"},
+					Right: ir.CondCompare{Variable: "ctx.y", Op: "=", Value: "2"},
+				},
+			},
+			wantAttr: `condition="ctx.x = 1 and ctx.y = 2"`,
+		},
+		{
+			name: "OR condition",
+			condition: &ir.Condition{
+				Raw: "ctx.x = 1 or ctx.x = 2",
+				Parsed: ir.CondOr{
+					Left:  ir.CondCompare{Variable: "ctx.x", Op: "=", Value: "1"},
+					Right: ir.CondCompare{Variable: "ctx.x", Op: "=", Value: "2"},
+				},
+			},
+			wantAttr: `condition="ctx.x = 1 or ctx.x = 2"`,
+		},
+		{
+			name: "NOT condition",
+			condition: &ir.Condition{
+				Raw: "not ctx.done = true",
+				Parsed: ir.CondNot{
+					Inner: ir.CondCompare{Variable: "ctx.done", Op: "=", Value: "true"},
+				},
+			},
+			wantAttr: `condition="not ctx.done = true"`,
+		},
+		{
+			name: "nested AND in OR — parenthesized",
+			condition: &ir.Condition{
+				Raw: "(ctx.x = 1 and ctx.y = 2) or ctx.z = 3",
+				Parsed: ir.CondOr{
+					Left: ir.CondAnd{
+						Left:  ir.CondCompare{Variable: "ctx.x", Op: "=", Value: "1"},
+						Right: ir.CondCompare{Variable: "ctx.y", Op: "=", Value: "2"},
+					},
+					Right: ir.CondCompare{Variable: "ctx.z", Op: "=", Value: "3"},
+				},
+			},
+			wantAttr: `condition="(ctx.x = 1 and ctx.y = 2) or ctx.z = 3"`,
+		},
+		{
+			name: "NOT of compound — parenthesized",
+			condition: &ir.Condition{
+				Raw: "not (ctx.x = 1 and ctx.y = 2)",
+				Parsed: ir.CondNot{
+					Inner: ir.CondAnd{
+						Left:  ir.CondCompare{Variable: "ctx.x", Op: "=", Value: "1"},
+						Right: ir.CondCompare{Variable: "ctx.y", Op: "=", Value: "2"},
+					},
+				},
+			},
+			wantAttr: `condition="not (ctx.x = 1 and ctx.y = 2)"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := &ir.Workflow{
+				Name:  "test",
+				Start: "A",
+				Exit:  "B",
+				Nodes: []*ir.Node{
+					{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go."}},
+					{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done."}},
+				},
+				Edges: []*ir.Edge{
+					{From: "A", To: "B", Condition: tt.condition},
+				},
+			}
+			out := ExportDOT(w, ExportOptions{})
+			assertContains(t, out, tt.wantAttr)
+		})
+	}
+}
+
+func TestExportDOTEdgeRestart(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "test",
+		Start: "A",
+		Exit:  "B",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go."}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done."}},
+		},
+		Edges: []*ir.Edge{
+			{From: "A", To: "B", Restart: true},
+		},
+	}
+	out := ExportDOT(w, ExportOptions{})
+	assertContains(t, out, `restart="true"`)
+	assertContains(t, out, `style="dashed"`)
+}
+
+func TestExportDOTEdgeWeight(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "test",
+		Start: "A",
+		Exit:  "B",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go."}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done."}},
+		},
+		Edges: []*ir.Edge{
+			{From: "A", To: "B", Weight: 10},
+		},
+	}
+	out := ExportDOT(w, ExportOptions{})
+	assertContains(t, out, `weight="10"`)
+}
+
+func TestExportDOTEdgeLabelWithCondition(t *testing.T) {
+	// When an edge has both a label and a condition, the explicit label is used
+	// and the condition is a separate attribute.
+	w := &ir.Workflow{
+		Name:  "test",
+		Start: "A",
+		Exit:  "B",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go."}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done."}},
+		},
+		Edges: []*ir.Edge{
+			{
+				From:  "A",
+				To:    "B",
+				Label: "retry",
+				Condition: &ir.Condition{
+					Raw:    "ctx.outcome = fail",
+					Parsed: ir.CondCompare{Variable: "ctx.outcome", Op: "=", Value: "fail"},
+				},
+			},
+		},
+	}
+	out := ExportDOT(w, ExportOptions{})
+	assertContains(t, out, `label="retry"`)
+	assertContains(t, out, `condition="ctx.outcome = fail"`)
+}
+
+func TestExportDOTEdgeConditionAsLabel(t *testing.T) {
+	// When an edge has a condition but no explicit label, the condition
+	// text is used as the label for visual display.
+	w := &ir.Workflow{
+		Name:  "test",
+		Start: "A",
+		Exit:  "B",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go."}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done."}},
+		},
+		Edges: []*ir.Edge{
+			{
+				From: "A",
+				To:   "B",
+				Condition: &ir.Condition{
+					Raw:    "ctx.outcome = success",
+					Parsed: ir.CondCompare{Variable: "ctx.outcome", Op: "=", Value: "success"},
+				},
+			},
+		},
+	}
+	out := ExportDOT(w, ExportOptions{})
+	assertContains(t, out, `label="ctx.outcome = success"`)
+	assertContains(t, out, `condition="ctx.outcome = success"`)
+}
+
+func TestExportDOTEmptyWorkflow(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "empty",
+		Start: "S",
+		Exit:  "E",
+	}
+	out := ExportDOT(w, ExportOptions{})
+	assertContains(t, out, "digraph empty {")
+	assertContains(t, out, "}\n")
+	// No node or edge lines (just the preamble and closing).
+	assertNotContains(t, out, "->")
+}
+
+func TestExportDOTNoName(t *testing.T) {
+	w := &ir.Workflow{
+		Start: "S",
+		Exit:  "E",
+	}
+	out := ExportDOT(w, ExportOptions{})
+	assertContains(t, out, "digraph workflow {")
+}
+
+func TestExportDOTAllEdgeAttributes(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "test",
+		Start: "A",
+		Exit:  "B",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go."}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done."}},
+		},
+		Edges: []*ir.Edge{
+			{
+				From:    "A",
+				To:      "B",
+				Label:   "retry",
+				Weight:  5,
+				Restart: true,
+				Condition: &ir.Condition{
+					Raw:    "ctx.outcome = fail",
+					Parsed: ir.CondCompare{Variable: "ctx.outcome", Op: "=", Value: "fail"},
+				},
+			},
+		},
+	}
+	out := ExportDOT(w, ExportOptions{})
+	assertContains(t, out, `condition="ctx.outcome = fail"`)
+	assertContains(t, out, `label="retry"`)
+	assertContains(t, out, `restart="true"`)
+	assertContains(t, out, `style="dashed"`)
+	assertContains(t, out, `weight="5"`)
+}
+
+func TestExportDOTIdempotent(t *testing.T) {
+	workflows := []*ir.Workflow{
+		minimalWorkflow(),
+		askAndExecuteWorkflow(),
+		toolWorkflow(),
+		subgraphWorkflow(),
+	}
+	for _, w := range workflows {
+		first := ExportDOT(w, ExportOptions{IncludePrompts: true})
+		second := ExportDOT(w, ExportOptions{IncludePrompts: true})
+		if first != second {
+			t.Errorf("ExportDOT is not idempotent for workflow %q", w.Name)
+		}
+	}
+}
+
+func TestExportDOTDeterministicAttrOrder(t *testing.T) {
+	// Attributes should always appear in sorted order.
+	w := &ir.Workflow{
+		Name:  "test",
+		Start: "A",
+		Exit:  "B",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go."}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done."}},
+		},
+		Edges: []*ir.Edge{
+			{
+				From:    "A",
+				To:      "B",
+				Label:   "go",
+				Weight:  3,
+				Restart: true,
+			},
+		},
+	}
+	out := ExportDOT(w, ExportOptions{})
+
+	// Find the edge line.
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "A -> B") {
+			// Verify attribute order: label, restart, style, weight (alphabetical).
+			labelIdx := strings.Index(line, "label=")
+			restartIdx := strings.Index(line, "restart=")
+			styleIdx := strings.Index(line, "style=")
+			weightIdx := strings.Index(line, "weight=")
+			if labelIdx > restartIdx || restartIdx > styleIdx || styleIdx > weightIdx {
+				t.Errorf("attributes not in sorted order: %s", line)
+			}
+			return
+		}
+	}
+	t.Error("could not find edge line A -> B")
+}
+
+func TestExportDOTSpecialCharactersInLabel(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "test",
+		Start: "A",
+		Exit:  "A",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Label: `Say "hello" & goodbye`, Config: ir.AgentConfig{Prompt: "go."}},
+		},
+	}
+	out := ExportDOT(w, ExportOptions{})
+	// Internal quotes should be escaped.
+	assertContains(t, out, `label="Say \"hello\" & goodbye"`)
+}
+
+func TestExportDOTValidDOTSyntax(t *testing.T) {
+	// Basic structural validation: the output should be parseable as DOT.
+	out := ExportDOT(askAndExecuteWorkflow(), ExportOptions{IncludePrompts: true})
+
+	// Should start with digraph and end with }
+	if !strings.HasPrefix(out, "digraph ") {
+		t.Error("output should start with 'digraph '")
+	}
+	if !strings.HasSuffix(out, "}\n") {
+		t.Error("output should end with '}\\n'")
+	}
+
+	// Count braces — should be balanced.
+	opens := strings.Count(out, "{")
+	closes := strings.Count(out, "}")
+	if opens != closes {
+		t.Errorf("unbalanced braces: %d opens, %d closes", opens, closes)
+	}
+
+	// Every node and edge statement should end with semicolon.
+	for _, line := range strings.Split(out, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || trimmed == "}" || strings.HasPrefix(trimmed, "digraph") {
+			continue
+		}
+		if !strings.HasSuffix(trimmed, ";") {
+			t.Errorf("line does not end with semicolon: %q", trimmed)
+		}
+	}
+}
+
+func TestExportDOTNilConditionParsed(t *testing.T) {
+	// Edge with Condition but nil Parsed should not emit condition attribute.
+	w := &ir.Workflow{
+		Name:  "test",
+		Start: "A",
+		Exit:  "B",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go."}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done."}},
+		},
+		Edges: []*ir.Edge{
+			{From: "A", To: "B", Condition: &ir.Condition{Raw: "ctx.x = 1"}},
+		},
+	}
+	out := ExportDOT(w, ExportOptions{})
+	assertNotContains(t, out, "condition=")
+}
+
+func TestExportDOTNilConfig(t *testing.T) {
+	// A node with nil config should not panic.
+	w := &ir.Workflow{
+		Name:  "test",
+		Start: "A",
+		Exit:  "A",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent},
+		},
+	}
+	out := ExportDOT(w, ExportOptions{IncludePrompts: true})
+	assertContains(t, out, `A [`)
+}
+
+func TestExportDOTGoalGateNonAgent(t *testing.T) {
+	// HighlightGoalGates should only apply to agent nodes with GoalGate: true.
+	w := &ir.Workflow{
+		Name:  "test",
+		Start: "H",
+		Exit:  "H",
+		Nodes: []*ir.Node{
+			{ID: "H", Kind: ir.NodeHuman, Config: ir.HumanConfig{Mode: "freeform"}},
+		},
+	}
+	out := ExportDOT(w, ExportOptions{HighlightGoalGates: true})
+	assertNotContains(t, out, "fillcolor")
+}
+
+// --- Unit tests for internal helpers ---
+
+func TestDotID(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"AskUser", "AskUser"},
+		{"simple_name", "simple_name"},
+		{"has space", `"has space"`},
+		{"123start", `"123start"`},
+		{"", `""`},
+		{"with-dash", `"with-dash"`},
+		{"with.dot", `"with.dot"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := dotID(tt.input)
+			if got != tt.want {
+				t.Errorf("dotID(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDotQuote(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"hello", `"hello"`},
+		{`say "hi"`, `"say \"hi\""`},
+		{`path\to`, `"path\\to"`},
+		{"", `""`},
+		{`line1\nline2`, `"line1\nline2"`},     // DOT escape sequence preserved
+		{`left\lalign`, `"left\lalign"`},        // DOT \l preserved
+		{`real\\backslash`, `"real\\\\backslash"`}, // Actual backslash-backslash escaped
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := dotQuote(tt.input)
+			if got != tt.want {
+				t.Errorf("dotQuote(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestEscapeNewlines(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"no newlines", "no newlines"},
+		{"line1\nline2", `line1\nline2`},
+		{"a\nb\nc", `a\nb\nc`},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := escapeNewlines(tt.input)
+			if got != tt.want {
+				t.Errorf("escapeNewlines(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFormatDuration(t *testing.T) {
+	tests := []struct {
+		input time.Duration
+		want  string
+	}{
+		{30 * time.Second, "30s"},
+		{5 * time.Minute, "5m"},
+		{time.Hour, "1h"},
+		{90 * time.Minute, "1h30m"},
+		{0, "0s"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			got := formatDuration(tt.input)
+			if got != tt.want {
+				t.Errorf("formatDuration(%v) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFormatConditionExport(t *testing.T) {
+	tests := []struct {
+		name string
+		expr ir.ConditionExpr
+		want string
+	}{
+		{
+			name: "simple compare",
+			expr: ir.CondCompare{Variable: "ctx.outcome", Op: "=", Value: "success"},
+			want: "ctx.outcome = success",
+		},
+		{
+			name: "AND",
+			expr: ir.CondAnd{
+				Left:  ir.CondCompare{Variable: "ctx.x", Op: "=", Value: "1"},
+				Right: ir.CondCompare{Variable: "ctx.y", Op: "=", Value: "2"},
+			},
+			want: "ctx.x = 1 and ctx.y = 2",
+		},
+		{
+			name: "OR",
+			expr: ir.CondOr{
+				Left:  ir.CondCompare{Variable: "ctx.x", Op: "=", Value: "1"},
+				Right: ir.CondCompare{Variable: "ctx.x", Op: "=", Value: "2"},
+			},
+			want: "ctx.x = 1 or ctx.x = 2",
+		},
+		{
+			name: "NOT",
+			expr: ir.CondNot{Inner: ir.CondCompare{Variable: "ctx.done", Op: "=", Value: "true"}},
+			want: "not ctx.done = true",
+		},
+		{
+			name: "AND inside OR parenthesized",
+			expr: ir.CondOr{
+				Left: ir.CondAnd{
+					Left:  ir.CondCompare{Variable: "ctx.x", Op: "=", Value: "1"},
+					Right: ir.CondCompare{Variable: "ctx.y", Op: "=", Value: "2"},
+				},
+				Right: ir.CondCompare{Variable: "ctx.z", Op: "=", Value: "3"},
+			},
+			want: "(ctx.x = 1 and ctx.y = 2) or ctx.z = 3",
+		},
+		{
+			name: "NOT of compound parenthesized",
+			expr: ir.CondNot{
+				Inner: ir.CondAnd{
+					Left:  ir.CondCompare{Variable: "ctx.x", Op: "=", Value: "1"},
+					Right: ir.CondCompare{Variable: "ctx.y", Op: "=", Value: "2"},
+				},
+			},
+			want: "not (ctx.x = 1 and ctx.y = 2)",
+		},
+		{
+			name: "nil",
+			expr: nil,
+			want: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := formatCondition(tt.expr)
+			if got != tt.want {
+				t.Errorf("formatCondition() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSortStrings(t *testing.T) {
+	tests := []struct {
+		input []string
+		want  []string
+	}{
+		{[]string{"c", "a", "b"}, []string{"a", "b", "c"}},
+		{[]string{"z"}, []string{"z"}},
+		{nil, nil},
+		{[]string{}, []string{}},
+		{[]string{"a", "a"}, []string{"a", "a"}},
+	}
+	for _, tt := range tests {
+		got := make([]string, len(tt.input))
+		copy(got, tt.input)
+		sortStrings(got)
+		if len(got) != len(tt.want) {
+			t.Errorf("sortStrings(%v) length = %d, want %d", tt.input, len(got), len(tt.want))
+			continue
+		}
+		for i := range got {
+			if got[i] != tt.want[i] {
+				t.Errorf("sortStrings(%v)[%d] = %q, want %q", tt.input, i, got[i], tt.want[i])
+			}
+		}
+	}
+}
+
+func TestIsSimpleDOTID(t *testing.T) {
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		{"AskUser", true},
+		{"node_1", true},
+		{"A", true},
+		{"123", false},
+		{"has space", false},
+		{"has-dash", false},
+		{"has.dot", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := isSimpleDOTID(tt.input)
+			if got != tt.want {
+				t.Errorf("isSimpleDOTID(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFormatDOTAttrs(t *testing.T) {
+	t.Run("empty", func(t *testing.T) {
+		got := formatDOTAttrs(map[string]string{})
+		if got != "" {
+			t.Errorf("formatDOTAttrs({}) = %q, want empty", got)
+		}
+	})
+
+	t.Run("single", func(t *testing.T) {
+		got := formatDOTAttrs(map[string]string{"shape": "box"})
+		if got != `[shape="box"]` {
+			t.Errorf(`formatDOTAttrs = %q, want [shape="box"]`, got)
+		}
+	})
+
+	t.Run("sorted keys", func(t *testing.T) {
+		got := formatDOTAttrs(map[string]string{"z": "1", "a": "2"})
+		// a should come before z.
+		aIdx := strings.Index(got, "a=")
+		zIdx := strings.Index(got, "z=")
+		if aIdx > zIdx {
+			t.Errorf("keys not sorted: %s", got)
+		}
+	})
+}
