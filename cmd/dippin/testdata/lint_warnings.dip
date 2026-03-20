@@ -1,0 +1,19 @@
+workflow Warned
+  goal: "Trigger warnings"
+  start: Ask
+  exit: Done
+
+  agent Ask
+    prompt:
+
+  tool Run
+    command:
+      echo hello
+
+  agent Done
+    prompt:
+      Finish up.
+
+  edges
+    Ask -> Run
+    Run -> Done

@@ -1,0 +1,13 @@
+workflow  Messy
+  exit:    Done
+  start:   Ask
+  goal:  "Test"
+
+  agent  Done
+    prompt:   "Finish."
+
+  human  Ask
+    mode:  freeform
+
+  edges
+    Ask  ->  Done

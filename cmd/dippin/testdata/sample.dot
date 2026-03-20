@@ -1,0 +1,8 @@
+digraph Sample {
+  graph [rankdir=LR];
+  Start [shape=Mdiamond, label="Start"];
+  DoWork [shape=box, label="Do Work", prompt="Work on it."];
+  End [shape=Msquare, label="End"];
+  Start -> DoWork;
+  DoWork -> End;
+}
