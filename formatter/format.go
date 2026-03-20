@@ -290,8 +290,12 @@ func writeEdge(wr *writer, e *ir.Edge) {
 	var parts []string
 	parts = append(parts, fmt.Sprintf("%s -> %s", e.From, e.To))
 
-	if e.Condition != nil && e.Condition.Parsed != nil {
-		parts = append(parts, fmt.Sprintf("when %s", formatCondition(e.Condition.Parsed)))
+	if e.Condition != nil {
+		if e.Condition.Parsed != nil {
+			parts = append(parts, fmt.Sprintf("when %s", formatCondition(e.Condition.Parsed)))
+		} else if e.Condition.Raw != "" {
+			parts = append(parts, fmt.Sprintf("when %s", e.Condition.Raw))
+		}
 	}
 	if e.Label != "" {
 		parts = append(parts, fmt.Sprintf("label: %s", quoteValue(e.Label)))

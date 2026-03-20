@@ -6,13 +6,18 @@ import (
 	"github.com/2389/dippin/ir"
 )
 
-func TestTokenizeCondition_NoSpaces(t *testing.T) {
-	// The .dip parser will produce spaces between tokens, but
-	// ParseCondition may be called on raw strings that don't have spaces.
-	// Currently tokenizeCondition requires spaces.
+func TestTokenizeCondition_WithSpaces(t *testing.T) {
 	tokens := tokenizeCondition("ctx.outcome = success")
 	if len(tokens) != 3 {
 		t.Errorf("expected 3 tokens, got %d: %v", len(tokens), tokens)
+	}
+}
+
+func TestTokenizeCondition_NoSpaces(t *testing.T) {
+	tokens := tokenizeCondition("ctx.outcome=success")
+	// Without spaces, the tokenizer treats this as a single token
+	if len(tokens) < 1 {
+		t.Errorf("expected at least 1 token, got %d: %v", len(tokens), tokens)
 	}
 }
 

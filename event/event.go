@@ -38,10 +38,10 @@ type PipelineStart struct {
 
 func (e PipelineStart) EventType() Type { return TypePipelineStart }
 
-// PipelineEnd is emitted once when the run completes (success or failure).
+// PipelineEnd is emitted once when the run completes.
 type PipelineEnd struct {
 	Event        Type   `json:"event"`
-	Status       string `json:"status"` // "success", "fail"
+	Status       string `json:"status"` // "success", "fail", "dead_end"
 	NodesVisited int    `json:"nodes_visited"`
 	Timestamp    string `json:"timestamp"`
 }

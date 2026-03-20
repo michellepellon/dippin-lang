@@ -360,6 +360,7 @@ func (l *Lexer) lexLine(line string, filename string) {
 
 // RawValueText extracts the raw value text from a line, starting after the colon
 // following the field name. Used for single-line values like "fidelity: summary:medium".
+// Strips inline comments (# preceded by whitespace) from the extracted value.
 func (l *Lexer) RawValueText(lineNum int) string {
 	if lineNum < 1 || lineNum > len(l.lines) {
 		return ""
@@ -371,7 +372,10 @@ func (l *Lexer) RawValueText(lineNum int) string {
 	if colonIdx < 0 {
 		return ""
 	}
-	return strings.TrimSpace(line[colonIdx+1:])
+	val := strings.TrimSpace(line[colonIdx+1:])
+	// Strip inline comments: find # preceded by whitespace, outside quotes
+	val = stripComment(val)
+	return strings.TrimSpace(val)
 }
 
 func isAlphaNum(ch byte) bool {
