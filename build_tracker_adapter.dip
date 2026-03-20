@@ -24,8 +24,7 @@ workflow build_tracker_adapter
     command:
       set -eu
       cd /Users/clint/code/2389/dippin/tracker
-      go mod edit -require github.com/2389-research/dippin-lang@v0.0.0
-      go mod edit -replace github.com/2389-research/dippin-lang=/Users/clint/code/2389/dippin-lang
+      go get github.com/2389-research/dippin-lang@v0.1.0
       go mod tidy
       printf 'dependency-added'
 
