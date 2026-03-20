@@ -1,0 +1,119 @@
+workflow ShellHell
+  goal: "Stress test: shell scripts with every nasty construct"
+  start: Start
+  exit: Done
+
+  agent Start
+    label: Start
+    prompt: "Begin."
+
+  tool HereDoc
+    label: "Here-doc with special chars"
+    command:
+      #!/bin/bash
+      set -euo pipefail
+
+      cat > /tmp/config.yaml <<'HEREDOC'
+      name: "test: value"
+      paths:
+        - /usr/bin
+        - ~/local/bin
+      regex: "^[a-z]+$"
+      prompt: |
+        You are an agent.
+        Do the thing -> and the other thing.
+        Use ${ctx.var} and $HOME.
+      HEREDOC
+
+      # Process the config
+      if [ -f /tmp/config.yaml ]; then
+        count=$(grep -c "^" /tmp/config.yaml)
+        printf 'lines: %d\n' "$count"
+      fi
+
+      # Nested conditionals with varying indentation
+      for f in /tmp/*.yaml; do
+        if [ -f "$f" ]; then
+          case "$(basename "$f")" in
+            config*)
+              echo "found config: $f"
+              ;;
+            *.bak)
+              rm -f "$f"
+              ;;
+            *)
+              echo "unknown: $f" >&2
+              ;;
+          esac
+        fi
+      done
+
+      # Arithmetic and special operators
+      total=$((count + 1))
+      result=$(echo "$total" | awk '{print $1 * 2}')
+      test -z "${result:-}" && result=0
+      [ "$result" -gt 0 ] && printf 'ok:%d' "$result" || printf 'fail'
+
+  tool PipeMadness
+    label: "Pipes, subshells, process substitution"
+    timeout: 60s
+    command:
+      #!/bin/bash
+      set -eu
+
+      # Process substitution and pipes
+      diff <(sort /tmp/a.txt) <(sort /tmp/b.txt) | head -20 || true
+
+      # Subshell with background jobs
+      (
+        curl -s https://api.example.com/data \
+          -H "Authorization: Bearer ${TOKEN}" \
+          -H "Content-Type: application/json" \
+          --data '{"query": "SELECT * FROM t WHERE x != 0 AND y -> z"}' \
+          | jq '.results[] | select(.score > 0.5)' \
+          > /tmp/output.json
+      ) &
+      wait $!
+
+      # Trap and cleanup
+      cleanup() {
+        rm -rf /tmp/workdir_$$
+        echo "cleaned up"
+      }
+      trap cleanup EXIT
+
+      # Array operations (bash-specific)
+      declare -a files=()
+      while IFS= read -r -d '' f; do
+        files+=("$f")
+      done < <(find /tmp -name '*.json' -print0)
+
+      printf 'processed:%d' "${#files[@]}"
+
+  tool RegexAndEscapes
+    label: "Regex patterns and escape sequences"
+    command:
+      #!/bin/sh
+      # Regex with special chars
+      echo "test: value -> result" | grep -E '^[a-z]+:\s.*->\s' || true
+
+      # Backticks (legacy command substitution)
+      version=`cat /etc/os-release 2>/dev/null | grep VERSION_ID | cut -d= -f2 | tr -d '"'`
+
+      # String with embedded newlines and tabs
+      printf 'line1\tfield1\tfield2\nline2\tfield3\tfield4\n'
+
+      # Dollar-sign edge cases
+      echo "PID=$$, last=$!, status=$?"
+      echo 'single quotes: no $expansion here -> <- : # not a comment'
+      echo "double quotes: $HOME and $(whoami) and ${USER:-unknown}"
+
+  agent Done
+    label: Done
+    prompt: "Complete."
+
+  edges
+    Start -> HereDoc
+    HereDoc -> PipeMadness
+    PipeMadness -> RegexAndEscapes
+    RegexAndEscapes -> Done

@@ -1,0 +1,188 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Dippin",
+  "scopeName": "source.dippin",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#workflow" },
+    { "include": "#node-declaration" },
+    { "include": "#section-keyword" },
+    { "include": "#parallel-fanin" },
+    { "include": "#edge" },
+    { "include": "#field" },
+    { "include": "#string" }
+  ],
+  "repository": {
+    "comment": {
+      "match": "#.*$",
+      "name": "comment.line.number-sign.dippin"
+    },
+
+    "workflow": {
+      "match": "^(workflow)\\s+(\\w+)",
+      "captures": {
+        "1": { "name": "keyword.control.workflow.dippin" },
+        "2": { "name": "entity.name.type.workflow.dippin" }
+      }
+    },
+
+    "node-declaration": {
+      "match": "^\\s*(agent|tool|human|subgraph)\\s+(\\w+)",
+      "captures": {
+        "1": { "name": "keyword.control.node.dippin" },
+        "2": { "name": "entity.name.function.node.dippin" }
+      }
+    },
+
+    "section-keyword": {
+      "match": "^\\s*(defaults|edges)\\b",
+      "captures": {
+        "1": { "name": "keyword.control.section.dippin" }
+      }
+    },
+
+    "parallel-fanin": {
+      "patterns": [
+        {
+          "match": "^\\s*(parallel)\\s+(\\w+)\\s*(->)\\s*(.*)",
+          "captures": {
+            "1": { "name": "keyword.control.parallel.dippin" },
+            "2": { "name": "entity.name.function.node.dippin" },
+            "3": { "name": "keyword.operator.arrow.dippin" },
+            "4": {
+              "patterns": [
+                { "include": "#node-ref-list" }
+              ]
+            }
+          }
+        },
+        {
+          "match": "^\\s*(fan_in)\\s+(\\w+)\\s*(<-)\\s*(.*)",
+          "captures": {
+            "1": { "name": "keyword.control.fanin.dippin" },
+            "2": { "name": "entity.name.function.node.dippin" },
+            "3": { "name": "keyword.operator.arrow.dippin" },
+            "4": {
+              "patterns": [
+                { "include": "#node-ref-list" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+
+    "node-ref-list": {
+      "match": "\\b(\\w+)\\b",
+      "name": "variable.other.node-ref.dippin"
+    },
+
+    "edge": {
+      "patterns": [
+        {
+          "match": "(->|<-)",
+          "name": "keyword.operator.arrow.dippin"
+        },
+        {
+          "match": "\\b(when)\\b",
+          "name": "keyword.control.when.dippin"
+        },
+        {
+          "match": "\\b(restart)\\s*:",
+          "captures": {
+            "1": { "name": "keyword.other.edge-attr.dippin" }
+          }
+        },
+        {
+          "match": "\\b(weight)\\s*:",
+          "captures": {
+            "1": { "name": "keyword.other.edge-attr.dippin" }
+          }
+        },
+        { "include": "#condition" }
+      ]
+    },
+
+    "condition": {
+      "patterns": [
+        {
+          "match": "\\b(and|or|not)\\b",
+          "name": "keyword.operator.logical.dippin"
+        },
+        {
+          "match": "\\b(contains|startswith|endswith|in)\\b",
+          "name": "keyword.operator.comparison.dippin"
+        },
+        {
+          "match": "(==|!=|<=|>=|<|>)",
+          "name": "keyword.operator.comparison.dippin"
+        },
+        {
+          "match": "\\b(ctx|graph|params)(\\.)([\\w.-]+)\\b",
+          "captures": {
+            "1": { "name": "variable.language.namespace.dippin" },
+            "2": { "name": "punctuation.accessor.dippin" },
+            "3": { "name": "variable.other.member.dippin" }
+          }
+        }
+      ]
+    },
+
+    "field": {
+      "patterns": [
+        {
+          "match": "^\\s*(goal|start|exit)\\s*(:)",
+          "captures": {
+            "1": { "name": "keyword.other.header-field.dippin" },
+            "2": { "name": "punctuation.separator.key-value.dippin" }
+          }
+        },
+        {
+          "match": "^\\s*(prompt|system_prompt|command)\\s*(:)\\s*$",
+          "captures": {
+            "1": { "name": "entity.name.tag.multiline-field.dippin" },
+            "2": { "name": "punctuation.separator.key-value.dippin" }
+          }
+        },
+        {
+          "match": "^\\s*(label|model|provider|mode|default|ref|timeout|fidelity|reasoning_effort|goal_gate|auto_status|max_turns|max_retries|retry_policy|retry_target|fallback_target|max_restarts|restart_target|cache_tools|compaction|class|reads|writes)\\s*(:)",
+          "captures": {
+            "1": { "name": "entity.name.tag.field.dippin" },
+            "2": { "name": "punctuation.separator.key-value.dippin" }
+          }
+        },
+        {
+          "match": "\\b(true|false)\\b",
+          "name": "constant.language.boolean.dippin"
+        },
+        {
+          "match": "\\b(\\d+)(s|ms|m|h)\\b",
+          "captures": {
+            "1": { "name": "constant.numeric.duration.dippin" },
+            "2": { "name": "keyword.other.unit.dippin" }
+          }
+        },
+        {
+          "match": "\\b\\d+\\b",
+          "name": "constant.numeric.integer.dippin"
+        }
+      ]
+    },
+
+    "string": {
+      "begin": "\"",
+      "end": "\"",
+      "name": "string.quoted.double.dippin",
+      "patterns": [
+        {
+          "match": "\\\\[\"\\\\]",
+          "name": "constant.character.escape.dippin"
+        },
+        {
+          "match": "\\$\\{[^}]+\\}",
+          "name": "variable.other.interpolation.dippin"
+        }
+      ]
+    }
+  }
+}

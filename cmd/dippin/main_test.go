@@ -464,6 +464,9 @@ func TestCmdHelp(t *testing.T) {
 	if !strings.Contains(stdout, "validate-migration") {
 		t.Error("expected 'validate-migration' command in help output")
 	}
+	if !strings.Contains(stdout, "simulate") {
+		t.Error("expected 'simulate' command in help output")
+	}
 }
 
 // --- Global Flag Tests ---
@@ -586,6 +589,21 @@ func TestExitCodes(t *testing.T) {
 			wantCode: ExitError,
 		},
 		{
+			name:     "simulate missing file arg",
+			args:     []string{"simulate"},
+			wantCode: ExitUsageError,
+		},
+		{
+			name:     "simulate valid file",
+			args:     []string{"simulate", testdata("valid_minimal.dip")},
+			wantCode: ExitOK,
+		},
+		{
+			name:     "simulate invalid file",
+			args:     []string{"simulate", testdata("invalid_missing_start.dip")},
+			wantCode: ExitError,
+		},
+		{
 			name:     "help command",
 			args:     []string{"help"},
 			wantCode: ExitOK,
@@ -665,5 +683,208 @@ func TestCmdParse_DOTFile(t *testing.T) {
 	}
 	if parsed["Name"] != "Sample" {
 		t.Errorf("expected Name=Sample, got %v", parsed["Name"])
+	}
+}
+
+// --- Simulate Command ---
+
+func TestCmdSimulate_Basic(t *testing.T) {
+	stdout, stderr, code := runCLI(t, "simulate", testdata("valid_minimal.dip"))
+
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d; stderr: %s", code, stderr)
+	}
+
+	// Output should be valid JSONL.
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	if len(lines) < 3 {
+		t.Fatalf("expected at least 3 JSONL lines, got %d", len(lines))
+	}
+
+	// First line should be pipeline_start.
+	var first map[string]interface{}
+	if err := json.Unmarshal([]byte(lines[0]), &first); err != nil {
+		t.Fatalf("first line not valid JSON: %v\nline: %s", err, lines[0])
+	}
+	if first["event"] != "pipeline_start" {
+		t.Errorf("first event = %q, want pipeline_start", first["event"])
+	}
+	if first["workflow"] != "Minimal" {
+		t.Errorf("workflow = %q, want Minimal", first["workflow"])
+	}
+
+	// Last line should be pipeline_end.
+	var last map[string]interface{}
+	if err := json.Unmarshal([]byte(lines[len(lines)-1]), &last); err != nil {
+		t.Fatalf("last line not valid JSON: %v\nline: %s", err, lines[len(lines)-1])
+	}
+	if last["event"] != "pipeline_end" {
+		t.Errorf("last event = %q, want pipeline_end", last["event"])
+	}
+	if last["status"] != "success" {
+		t.Errorf("status = %q, want success", last["status"])
+	}
+
+	// Stderr should contain summary.
+	if !strings.Contains(stderr, "simulation complete") {
+		t.Errorf("expected 'simulation complete' on stderr, got: %s", stderr)
+	}
+}
+
+func TestCmdSimulate_AllJSONLLinesValid(t *testing.T) {
+	stdout, _, code := runCLI(t, "simulate", testdata("valid_minimal.dip"))
+
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d", code)
+	}
+
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	for i, line := range lines {
+		var m map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &m); err != nil {
+			t.Errorf("line %d not valid JSON: %v\nline: %s", i, err, line)
+		}
+		if _, ok := m["event"]; !ok {
+			t.Errorf("line %d missing 'event' field", i)
+		}
+		if _, ok := m["timestamp"]; !ok {
+			t.Errorf("line %d missing 'timestamp' field", i)
+		}
+	}
+}
+
+func TestCmdSimulate_MissingArg(t *testing.T) {
+	_, stderr, code := runCLI(t, "simulate")
+
+	if code != ExitUsageError {
+		t.Fatalf("expected exit 2, got %d", code)
+	}
+	if !strings.Contains(stderr, "usage:") {
+		t.Errorf("expected usage message, got: %s", stderr)
+	}
+}
+
+func TestCmdSimulate_NonexistentFile(t *testing.T) {
+	_, stderr, code := runCLI(t, "simulate", "testdata/nosuch.dip")
+
+	if code != ExitError {
+		t.Fatalf("expected exit 1, got %d", code)
+	}
+	if stderr == "" {
+		t.Error("expected error on stderr")
+	}
+}
+
+func TestCmdSimulate_InvalidFile(t *testing.T) {
+	_, stderr, code := runCLI(t, "simulate", testdata("invalid_missing_start.dip"))
+
+	// Should fail validation.
+	if code != ExitError {
+		t.Fatalf("expected exit 1, got %d", code)
+	}
+	if !strings.Contains(stderr, "DIP001") {
+		t.Errorf("expected DIP001 diagnostic, got: %s", stderr)
+	}
+}
+
+func TestCmdSimulate_WithScenario(t *testing.T) {
+	// Create a workflow file with conditional edges to test --scenario.
+	tmpDir := t.TempDir()
+	dipFile := filepath.Join(tmpDir, "cond.dip")
+	content := `workflow Cond
+  goal: "Test conditional"
+  start: Check
+  exit: Done
+
+  agent Check
+    auto_status: true
+    prompt:
+      Check.
+
+  agent PathA
+    prompt:
+      A.
+
+  agent PathB
+    prompt:
+      B.
+
+  agent Done
+    prompt:
+      Done.
+
+  edges
+    Check -> PathA  when ctx.outcome = success
+    Check -> PathB  when ctx.outcome = fail
+    PathA -> Done
+    PathB -> Done
+`
+	if err := os.WriteFile(dipFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Test with outcome=fail scenario.
+	stdout, _, code := runCLI(t, "simulate", "--scenario", "outcome=fail", dipFile)
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d", code)
+	}
+
+	// Should traverse to PathB.
+	if !strings.Contains(stdout, "PathB") {
+		t.Errorf("expected PathB in output, got: %s", stdout)
+	}
+}
+
+func TestCmdSimulate_AllPaths(t *testing.T) {
+	// Create a workflow with conditional branching.
+	tmpDir := t.TempDir()
+	dipFile := filepath.Join(tmpDir, "branch.dip")
+	content := `workflow Branch
+  goal: "Test all-paths"
+  start: Start
+  exit: Done
+
+  agent Start
+    prompt:
+      Start.
+
+  agent PathA
+    prompt:
+      A.
+
+  agent PathB
+    prompt:
+      B.
+
+  agent Done
+    prompt:
+      Done.
+
+  edges
+    Start -> PathA  when ctx.x = a
+    Start -> PathB  when ctx.x = b
+    PathA -> Done
+    PathB -> Done
+`
+	if err := os.WriteFile(dipFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout, stderr, code := runCLI(t, "simulate", "--all-paths", dipFile)
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d; stderr: %s", code, stderr)
+	}
+
+	// Should find 2 paths.
+	if !strings.Contains(stderr, "2 path(s) enumerated") {
+		t.Errorf("expected '2 path(s) enumerated' on stderr, got: %s", stderr)
+	}
+
+	// Both paths should appear in output.
+	if !strings.Contains(stdout, "PathA") {
+		t.Error("expected PathA in output")
+	}
+	if !strings.Contains(stdout, "PathB") {
+		t.Error("expected PathB in output")
 	}
 }

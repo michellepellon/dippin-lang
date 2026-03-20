@@ -220,6 +220,16 @@ func lintSuccessPath(w *ir.Workflow) []Diagnostic {
 			adj[e.From] = append(adj[e.From], e.To)
 		}
 	}
+	for _, n := range w.Nodes {
+		switch cfg := n.Config.(type) {
+		case ir.ParallelConfig:
+			adj[n.ID] = append(adj[n.ID], cfg.Targets...)
+		case ir.FanInConfig:
+			for _, src := range cfg.Sources {
+				adj[src] = append(adj[src], n.ID)
+			}
+		}
+	}
 
 	visited := make(map[string]bool)
 	queue := []string{w.Start}
@@ -327,12 +337,12 @@ var knownModelProviders = map[string]map[string]bool{
 		"claude-opus-4-20250116": true,
 	},
 	"openai": {
-		"gpt-5.4":        true,
-		"gpt-5.3-codex":  true,
-		"gpt-4o":         true,
-		"gpt-4o-mini":    true,
-		"o3":             true,
-		"o4-mini":        true,
+		"gpt-5.4":       true,
+		"gpt-5.3-codex": true,
+		"gpt-4o":        true,
+		"gpt-4o-mini":   true,
+		"o3":            true,
+		"o4-mini":       true,
 	},
 }
 
@@ -499,6 +509,16 @@ func lintReadsWithoutUpstreamWrites(w *ir.Workflow) []Diagnostic {
 			adj[e.From] = append(adj[e.From], e.To)
 		}
 	}
+	for _, n := range w.Nodes {
+		switch cfg := n.Config.(type) {
+		case ir.ParallelConfig:
+			adj[n.ID] = append(adj[n.ID], cfg.Targets...)
+		case ir.FanInConfig:
+			for _, src := range cfg.Sources {
+				adj[src] = append(adj[src], n.ID)
+			}
+		}
+	}
 
 	// Topological order via BFS (Kahn's algorithm).
 	inDegree := make(map[string]int)
@@ -508,6 +528,16 @@ func lintReadsWithoutUpstreamWrites(w *ir.Workflow) []Diagnostic {
 	for _, e := range w.Edges {
 		if !e.Restart {
 			inDegree[e.To]++
+		}
+	}
+	for _, n := range w.Nodes {
+		switch cfg := n.Config.(type) {
+		case ir.ParallelConfig:
+			for _, t := range cfg.Targets {
+				inDegree[t]++
+			}
+		case ir.FanInConfig:
+			inDegree[n.ID] += len(cfg.Sources)
 		}
 	}
 

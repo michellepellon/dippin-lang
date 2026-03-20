@@ -1,0 +1,187 @@
+workflow GraphMonster
+  goal: "Stress test: complex graph topology with deep parallel nesting, restart edges, and many conditional branches"
+  start: Entry
+  exit: Exit
+
+  defaults
+    model: claude-sonnet-4-6
+    provider: anthropic
+    max_retries: 5
+    max_restarts: 10
+    fidelity: summary:medium
+
+  agent Entry
+    label: "Entry Point"
+    prompt: "Initialize the pipeline."
+
+  tool Triage
+    label: "Classify Input"
+    command:
+      #!/bin/sh
+      set -eu
+      input=$(cat /tmp/input.txt 2>/dev/null || echo "")
+      if echo "$input" | grep -qi "urgent"; then
+        printf 'urgent'
+      elif echo "$input" | grep -qi "review"; then
+        printf 'review'
+      elif echo "$input" | grep -qi "batch"; then
+        printf 'batch'
+      else
+        printf 'standard'
+      fi
+
+  parallel UrgentFan -> UrgentClaude, UrgentGPT, UrgentGemini
+
+  agent UrgentClaude
+    label: "Urgent: Claude"
+    model: claude-opus-4-6
+    goal_gate: true
+    reasoning_effort: high
+    prompt:
+      URGENT priority task. Apply maximum reasoning effort.
+      This is a goal-gate node — pipeline fails if this fails.
+
+  agent UrgentGPT
+    label: "Urgent: GPT"
+    model: gpt-5.4
+    provider: openai
+    reasoning_effort: high
+    prompt:
+      URGENT priority task. Independent implementation.
+
+  agent UrgentGemini
+    label: "Urgent: Gemini"
+    model: gemini-3-pro
+    provider: gemini
+    reasoning_effort: high
+    prompt:
+      URGENT priority task. Independent implementation.
+
+  fan_in UrgentJoin <- UrgentClaude, UrgentGPT, UrgentGemini
+
+  parallel ReviewFan -> ReviewDesign, ReviewSecurity, ReviewPerf
+
+  agent ReviewDesign
+    label: "Design Review"
+    prompt:
+      Review the design for correctness, completeness, and maintainability.
+      Flag any architectural concerns.
+
+  agent ReviewSecurity
+    label: "Security Review"
+    prompt:
+      Review for security vulnerabilities. Check for:
+      - Injection attacks (SQL, XSS, command)
+      - Authentication/authorization gaps
+      - Data exposure risks
+      - OWASP Top 10 compliance
+
+  agent ReviewPerf
+    label: "Performance Review"
+    prompt:
+      Review for performance issues. Check for:
+      - N+1 queries
+      - Missing indices
+      - Unbounded allocations
+      - Hot path inefficiencies
+
+  fan_in ReviewJoin <- ReviewDesign, ReviewSecurity, ReviewPerf
+
+  parallel BatchFan -> BatchWorker1, BatchWorker2, BatchWorker3, BatchWorker4
+
+  agent BatchWorker1
+    label: "Batch Worker 1"
+    fidelity: summary:low
+    prompt: "Process batch partition 1."
+
+  agent BatchWorker2
+    label: "Batch Worker 2"
+    fidelity: summary:low
+    prompt: "Process batch partition 2."
+
+  agent BatchWorker3
+    label: "Batch Worker 3"
+    fidelity: summary:low
+    prompt: "Process batch partition 3."
+
+  agent BatchWorker4
+    label: "Batch Worker 4"
+    fidelity: summary:low
+    prompt: "Process batch partition 4."
+
+  fan_in BatchJoin <- BatchWorker1, BatchWorker2, BatchWorker3, BatchWorker4
+
+  agent Standard
+    label: "Standard Processing"
+    prompt: "Process with standard priority."
+
+  agent Consensus
+    label: "Build Consensus"
+    model: claude-opus-4-6
+    reasoning_effort: high
+    prompt:
+      Synthesize all parallel results into a unified consensus.
+      Resolve any conflicts between independent implementations.
+      Weight results by confidence and reasoning quality.
+
+  tool Validate
+    label: "Validation Gate"
+    command:
+      #!/bin/sh
+      set -eu
+      if [ -f /tmp/result.json ]; then
+        score=$(jq -r '.confidence // 0' /tmp/result.json)
+        if [ "$score" -ge 80 ]; then
+          printf 'pass'
+        elif [ "$score" -ge 50 ]; then
+          printf 'marginal'
+        else
+          printf 'fail'
+        fi
+      else
+        printf 'no_result'
+      fi
+
+  human HumanReview
+    label: "Human Approval Required"
+    mode: choice
+    default: approve
+
+  agent Retry
+    label: "Retry with Feedback"
+    max_retries: 3
+    retry_policy: patient
+    prompt:
+      The previous attempt was not satisfactory. Review the feedback
+      and try again with adjustments.
+
+  agent Finalize
+    label: "Finalize Output"
+    auto_status: true
+    prompt:
+      Prepare the final output. Clean up, format, and verify.
+
+  agent Exit
+    label: "Exit"
+    prompt: "Done."
+
+  edges
+    Entry -> Triage
+    Triage -> UrgentFan when ctx.outcome == "urgent"
+    Triage -> ReviewFan when ctx.outcome == "review"
+    Triage -> BatchFan when ctx.outcome == "batch"
+    Triage -> Standard when ctx.outcome == "standard"
+    Triage -> Standard
+    UrgentJoin -> Consensus
+    ReviewJoin -> Consensus
+    BatchJoin -> Consensus
+    Standard -> Consensus
+    Consensus -> Validate
+    Validate -> Finalize when ctx.outcome == "pass"
+    Validate -> HumanReview when ctx.outcome == "marginal"
+    Validate -> Retry when ctx.outcome == "fail"
+    Validate -> Retry when ctx.outcome == "no_result"
+    HumanReview -> Finalize when ctx.outcome == "approve"
+    HumanReview -> Retry when ctx.outcome == "reject"
+    Retry -> Consensus restart: true
+    Finalize -> Exit

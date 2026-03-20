@@ -47,7 +47,7 @@ func (CondNot) conditionExpr() {}
 // Variables use namespaced access: "ctx.outcome", "graph.goal", etc.
 type CondCompare struct {
 	Variable string // Namespaced: "ctx.outcome", "graph.goal"
-	Op       string // "=", "!=", "contains", "startswith", "endswith", "in"
+	Op       string // "=", "==", "!=", "contains", "startswith", "endswith", "in"
 	Value    string
 }
 

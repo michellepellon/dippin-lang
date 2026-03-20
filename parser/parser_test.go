@@ -75,7 +75,7 @@ func TestParseComplexWorkflow(t *testing.T) {
 	if len(w.Nodes) != 4 {
 		t.Errorf("nodes = %d, want 4", len(w.Nodes))
 	}
-	
+
 	// Check parallel node
 	var parallelNode *ir.Node
 	for _, n := range w.Nodes {
@@ -105,5 +105,303 @@ func TestParseComplexWorkflow(t *testing.T) {
 	prompt := agentANode.Config.(ir.AgentConfig).Prompt
 	if !strings.Contains(prompt, "Do A.") || !strings.Contains(prompt, "More text.") {
 		t.Errorf("prompt = %q, want it to contain 'Do A.' and 'More text.'", prompt)
+	}
+}
+
+func TestParseShellScriptCommand(t *testing.T) {
+	input := `workflow Build
+  goal: "Build"
+  start: Setup
+  exit: Done
+
+  tool Setup
+    command:
+      #!/bin/sh
+      set -eu
+      if [ -f go.mod ]; then
+        go build ./... 2>&1 || exit 1
+        go test ./... 2>&1
+      fi
+      if [ -f package.json ]; then
+        npm test 2>&1 || { echo "failed"; exit 1; }
+      fi
+      printf 'done'
+
+  agent Done
+    prompt: "Finish."
+
+  edges
+    Setup -> Done
+`
+	p := NewParser(input, "test.dip")
+	w, err := p.Parse()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(w.Nodes) != 2 {
+		t.Fatalf("nodes = %d, want 2", len(w.Nodes))
+	}
+
+	var toolNode *ir.Node
+	for _, n := range w.Nodes {
+		if n.Kind == ir.NodeTool {
+			toolNode = n
+			break
+		}
+	}
+	if toolNode == nil {
+		t.Fatal("tool node not found")
+	}
+
+	cmd := toolNode.Config.(ir.ToolConfig).Command
+	// Must preserve shell syntax verbatim
+	for _, want := range []string{
+		"#!/bin/sh",
+		"set -eu",
+		"if [ -f go.mod ]; then",
+		"  go build ./... 2>&1 || exit 1",
+		"fi",
+		`{ echo "failed"; exit 1; }`,
+		"printf 'done'",
+	} {
+		if !strings.Contains(cmd, want) {
+			t.Errorf("command missing %q\ngot:\n%s", want, cmd)
+		}
+	}
+}
+
+func TestParseColonInValue(t *testing.T) {
+	input := `workflow Test
+  goal: "Test"
+  start: A
+  exit: A
+
+  defaults
+    fidelity: summary:medium
+    max_retries: 3
+
+  agent A
+    fidelity: summary:high
+    prompt: "Do it."
+
+  edges
+    A -> A
+`
+	p := NewParser(input, "test.dip")
+	w, err := p.Parse()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if w.Defaults.Fidelity != "summary:medium" {
+		t.Errorf("defaults fidelity = %q, want %q", w.Defaults.Fidelity, "summary:medium")
+	}
+
+	if len(w.Nodes) != 1 {
+		t.Fatalf("nodes = %d, want 1", len(w.Nodes))
+	}
+	cfg := w.Nodes[0].Config.(ir.AgentConfig)
+	if cfg.Fidelity != "summary:high" {
+		t.Errorf("agent fidelity = %q, want %q", cfg.Fidelity, "summary:high")
+	}
+}
+
+func TestParseInvalidIntegerEmitsDiagnostic(t *testing.T) {
+	input := `workflow Test
+  goal: "Test"
+  start: A
+  exit: A
+
+  defaults
+    max_retries: three
+
+  agent A
+    max_turns: unlimited
+    prompt: "Do it."
+
+  edges
+    A -> A
+`
+	p := NewParser(input, "test.dip")
+	_, err := p.Parse()
+	if err == nil {
+		t.Fatal("expected error for invalid integers, got nil")
+	}
+	errStr := err.Error()
+	if !strings.Contains(errStr, "invalid integer") {
+		t.Errorf("expected 'invalid integer' diagnostic, got: %s", errStr)
+	}
+	if !strings.Contains(errStr, `"three"`) {
+		t.Errorf("expected diagnostic to mention %q, got: %s", "three", errStr)
+	}
+	if !strings.Contains(errStr, `"unlimited"`) {
+		t.Errorf("expected diagnostic to mention %q, got: %s", "unlimited", errStr)
+	}
+}
+
+func TestParseInvalidDurationEmitsDiagnostic(t *testing.T) {
+	input := `workflow Test
+  goal: "Test"
+  start: A
+  exit: A
+
+  tool A
+    timeout: 60
+    command:
+      echo done
+
+  edges
+    A -> A
+`
+	p := NewParser(input, "test.dip")
+	_, err := p.Parse()
+	if err == nil {
+		t.Fatal("expected error for invalid duration, got nil")
+	}
+	errStr := err.Error()
+	if !strings.Contains(errStr, "invalid duration") {
+		t.Errorf("expected 'invalid duration' diagnostic, got: %s", errStr)
+	}
+	if !strings.Contains(errStr, `"60"`) {
+		t.Errorf("expected diagnostic to mention %q, got: %s", "60", errStr)
+	}
+}
+
+func TestParseTabIndentation(t *testing.T) {
+	// Verify that tab-indented files parse without panicking.
+	// Tabs count as 1 byte of indentation (not 8).
+	input := "workflow Test\n\tgoal: \"Test\"\n\tstart: A\n\texit: A\n\n\tagent A\n\t\tprompt: \"Do it.\"\n\n\tedges\n\t\tA -> A\n"
+	p := NewParser(input, "test.dip")
+	w, err := p.Parse()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if w.Name != "Test" {
+		t.Errorf("name = %q, want %q", w.Name, "Test")
+	}
+	if len(w.Nodes) != 1 {
+		t.Errorf("nodes = %d, want 1", len(w.Nodes))
+	}
+}
+
+func TestParseMultilineBlockWithBlankLines(t *testing.T) {
+	input := `workflow Test
+  goal: "Test"
+  start: A
+  exit: A
+
+  agent A
+    prompt:
+      Paragraph one.
+
+      Paragraph two after blank line.
+
+      Paragraph three.
+
+  edges
+    A -> A
+`
+	p := NewParser(input, "test.dip")
+	w, err := p.Parse()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(w.Nodes) != 1 {
+		t.Fatalf("nodes = %d, want 1", len(w.Nodes))
+	}
+	prompt := w.Nodes[0].Config.(ir.AgentConfig).Prompt
+	if !strings.Contains(prompt, "Paragraph one.") {
+		t.Errorf("prompt missing 'Paragraph one.', got: %q", prompt)
+	}
+	if !strings.Contains(prompt, "Paragraph two after blank line.") {
+		t.Errorf("prompt missing 'Paragraph two after blank line.', got: %q", prompt)
+	}
+	if !strings.Contains(prompt, "Paragraph three.") {
+		t.Errorf("prompt missing 'Paragraph three.', got: %q", prompt)
+	}
+	// Verify blank lines are preserved
+	if strings.Count(prompt, "\n\n") < 2 {
+		t.Errorf("expected at least 2 blank lines preserved in prompt, got: %q", prompt)
+	}
+}
+
+func TestParseEdgeWithQuotedConditionValue(t *testing.T) {
+	input := `workflow Test
+  goal: "Test"
+  start: A
+  exit: B
+
+  agent A
+    prompt: "Do it."
+
+  agent B
+    prompt: "Done."
+
+  edges
+    A -> B when ctx.outcome == "success"
+`
+	p := NewParser(input, "test.dip")
+	w, err := p.Parse()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(w.Edges) != 1 {
+		t.Fatalf("edges = %d, want 1", len(w.Edges))
+	}
+	cond := w.Edges[0].Condition
+	if cond == nil {
+		t.Fatal("expected condition, got nil")
+	}
+	raw := cond.Raw
+	if !strings.Contains(raw, "ctx.outcome") {
+		t.Errorf("condition raw missing 'ctx.outcome', got: %q", raw)
+	}
+	if !strings.Contains(raw, `"success"`) {
+		t.Errorf("condition raw missing quoted value, got: %q", raw)
+	}
+}
+
+func TestParseComparisonOperators(t *testing.T) {
+	input := `workflow Test
+  goal: "Test"
+  start: A
+  exit: D
+
+  agent A
+    prompt: "A"
+  agent B
+    prompt: "B"
+  agent C
+    prompt: "C"
+  agent D
+    prompt: "D"
+
+  edges
+    A -> B when ctx.retries <= 3
+    A -> C when ctx.score >= 80
+    A -> D when ctx.count < 10
+`
+	p := NewParser(input, "test.dip")
+	w, err := p.Parse()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(w.Edges) != 3 {
+		t.Fatalf("edges = %d, want 3", len(w.Edges))
+	}
+	tests := []struct {
+		idx  int
+		want string
+	}{
+		{0, "<="},
+		{1, ">="},
+		{2, "<"},
+	}
+	for _, tt := range tests {
+		raw := w.Edges[tt.idx].Condition.Raw
+		if !strings.Contains(raw, tt.want) {
+			t.Errorf("edge %d condition missing %q, got: %q", tt.idx, tt.want, raw)
+		}
 	}
 }

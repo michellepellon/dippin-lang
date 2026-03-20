@@ -1,0 +1,134 @@
+workflow PromptChaos
+  goal: "Stress test: prompts with markdown, code blocks, special chars, and Dippin-like syntax"
+  start: Start
+  exit: Done
+
+  defaults
+    model: claude-opus-4-6
+    provider: anthropic
+    fidelity: summary:high
+    max_retries: 3
+    max_restarts: 7
+
+  agent Start
+    label: Start
+    prompt:
+      # System Instructions
+
+      You are an AI assistant. Follow these rules:
+
+      ## Rule 1: Code Review
+
+      When reviewing code, look for patterns like:
+
+      ```go
+      func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
+          ctx := r.Context()
+          if err := s.validate(ctx, r); err != nil {
+              http.Error(w, err.Error(), http.StatusBadRequest)
+              return
+          }
+          // Process the request -> send response
+          result, err := s.process(ctx, r.Body)
+          if err != nil {
+              log.Printf("error: %v", err)
+              http.Error(w, "internal error", 500)
+              return
+          }
+          json.NewEncoder(w).Encode(result)
+      }
+      ```
+
+      ## Rule 2: Dippin-Like Syntax in Prompts
+
+      The following is example Dippin syntax (NOT to be parsed):
+
+      ```
+      workflow Example
+        start: Begin
+        exit: End
+
+        agent Begin
+          prompt:
+            Do something.
+
+        edges
+          Begin -> End
+      ```
+
+      ## Rule 3: Special Characters
+
+      Handle these edge cases:
+      - Arrows: -> and <- and => and <=
+      - Colons: key: value, url: https://example.com:8080/path
+      - Hashes: C# programming, SHA-256: abc123#def
+      - Quotes: "double" and 'single' and `backtick`
+      - Math: 2 + 2 = 4, x != y, a >= b, c <= d
+      - JSON: {"key": "value", "nested": {"a": [1, 2, 3]}}
+      - Regex: /^[a-z]+@[a-z]+\.[a-z]{2,}$/
+      - Shell: $HOME, ${PATH}, $(command), `legacy`
+      - Pipes: cat file | grep pattern | sort -u > output
+      - Parens: f(x) = (a + b) * (c - d)
+      - Braces: if (x) { return y; } else { throw Error("fail"); }
+
+      Be precise and thorough.
+
+  agent Analyzer
+    label: "Deep Analysis"
+    model: claude-opus-4-6
+    reasoning_effort: high
+    auto_status: true
+    goal_gate: true
+    fidelity: full:high
+    prompt:
+      Analyze the input thoroughly. Your response MUST end with a STATUS line.
+
+      STATUS: success — if analysis is complete and correct
+      STATUS: fail — if analysis cannot be completed
+
+      Output format:
+      ```json
+      {
+        "findings": [
+          {"severity": "high", "code": "DIP001", "message": "Start node missing"},
+          {"severity": "low", "code": "DIP101", "message": "Empty prompt"}
+        ],
+        "summary": "2 issues found: 1 error, 1 warning"
+      }
+      ```
+
+      Note: The DIP codes above are examples, not real diagnostics about this workflow.
+
+  agent Synthesizer
+    label: "Synthesize Results"
+    model: gpt-5.2
+    provider: openai
+    system_prompt:
+      You are a synthesis engine. Combine multiple analysis results into
+      a single coherent report. Use markdown formatting.
+
+      Important constraints:
+      - Never exceed 2000 tokens
+      - Always include a "Confidence: X%" line
+      - Use tables for structured data:
+
+      | Category | Count | Severity |
+      |----------|-------|----------|
+      | Errors   | 3     | high     |
+      | Warnings | 7     | medium   |
+    prompt:
+      Synthesize all prior analysis results. Reference specific findings
+      by their codes (e.g., DIP001, DIP101). Produce a final report with
+      actionable recommendations.
+
+      If no prior results exist, report: "No upstream data available."
+
+  agent Done
+    label: Done
+    prompt: "Finalize."
+
+  edges
+    Start -> Analyzer
+    Analyzer -> Synthesizer when ctx.outcome == "success"
+    Analyzer -> Done when ctx.outcome == "fail"
+    Synthesizer -> Done

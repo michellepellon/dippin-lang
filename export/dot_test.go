@@ -813,8 +813,8 @@ func TestDotQuote(t *testing.T) {
 		{`say "hi"`, `"say \"hi\""`},
 		{`path\to`, `"path\\to"`},
 		{"", `""`},
-		{`line1\nline2`, `"line1\nline2"`},     // DOT escape sequence preserved
-		{`left\lalign`, `"left\lalign"`},        // DOT \l preserved
+		{`line1\nline2`, `"line1\nline2"`},         // DOT escape sequence preserved
+		{`left\lalign`, `"left\lalign"`},           // DOT \l preserved
 		{`real\\backslash`, `"real\\\\backslash"`}, // Actual backslash-backslash escaped
 	}
 	for _, tt := range tests {

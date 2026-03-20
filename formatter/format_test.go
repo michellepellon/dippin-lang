@@ -117,7 +117,7 @@ func TestFormatHappyPath(t *testing.T) {
 	tests := []struct {
 		name     string
 		workflow *ir.Workflow
-		checks  []string // substrings that must appear
+		checks   []string // substrings that must appear
 	}{
 		{
 			name:     "minimal workflow",

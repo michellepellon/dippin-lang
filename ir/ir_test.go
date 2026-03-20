@@ -251,15 +251,15 @@ func TestNodeKinds(t *testing.T) {
 	w := askAndExecuteWorkflow()
 
 	expected := map[string]ir.NodeKind{
-		"AskUser":          ir.NodeHuman,
-		"Interpret":        ir.NodeAgent,
-		"ImplementFanOut":  ir.NodeParallel,
-		"ImplementClaude":  ir.NodeAgent,
-		"ImplementCodex":   ir.NodeAgent,
-		"ImplementJoin":    ir.NodeFanIn,
-		"Validate":         ir.NodeAgent,
-		"Approve":          ir.NodeHuman,
-		"Done":             ir.NodeAgent,
+		"AskUser":         ir.NodeHuman,
+		"Interpret":       ir.NodeAgent,
+		"ImplementFanOut": ir.NodeParallel,
+		"ImplementClaude": ir.NodeAgent,
+		"ImplementCodex":  ir.NodeAgent,
+		"ImplementJoin":   ir.NodeFanIn,
+		"Validate":        ir.NodeAgent,
+		"Approve":         ir.NodeHuman,
+		"Done":            ir.NodeAgent,
 	}
 
 	for id, wantKind := range expected {

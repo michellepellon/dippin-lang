@@ -26,6 +26,7 @@ const (
 	TokenBackArrow
 	TokenLParen
 	TokenRParen
+	TokenRawBlock // Raw text block (multiline prompt/command content)
 )
 
 type Token struct {
@@ -40,6 +41,7 @@ func (t Token) String() string {
 
 type Lexer struct {
 	input       string
+	lines       []string // original lines for raw extraction
 	pos         int
 	line        int
 	col         int
@@ -51,6 +53,7 @@ type Lexer struct {
 func NewLexer(input string, filename string) *Lexer {
 	l := &Lexer{
 		input:       input,
+		lines:       strings.Split(input, "\n"),
 		line:        1,
 		col:         1,
 		indentStack: []int{0},
@@ -75,34 +78,76 @@ func (l *Lexer) PeekToken() Token {
 	return l.tokens[l.tokenIdx]
 }
 
+// lineIndent returns the number of leading whitespace bytes in a line.
+// Tabs and spaces each count as one byte. This is used for indentation
+// tracking where the returned value is also used as a byte offset
+// into the string (e.g., line[lineIndent(line):] to get content).
+func lineIndent(line string) int {
+	i := 0
+	for i < len(line) && (line[i] == ' ' || line[i] == '\t') {
+		i++
+	}
+	return i
+}
+
+// isBlankOrComment returns true if a line is empty, whitespace-only, or a comment-only line.
+// A comment-only line has only optional whitespace followed by #.
+func isBlankOrComment(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	return len(trimmed) == 0 || trimmed[0] == '#'
+}
+
+// stripComment removes a trailing comment from a line, but only if # is preceded by
+// whitespace (not inside a value). Does NOT strip # that starts the line content.
+func stripComment(line string) string {
+	trimmed := strings.TrimRight(line, " \t\r")
+	// Find # that's preceded by whitespace and not inside quotes
+	inQuote := false
+	for i := 0; i < len(trimmed); i++ {
+		if trimmed[i] == '"' {
+			inQuote = !inQuote
+		}
+		if !inQuote && trimmed[i] == '#' {
+			// Only strip if preceded by whitespace or at start of content
+			indent := lineIndent(trimmed)
+			if i == indent {
+				// # is the first non-space char — this is a comment-only line
+				return trimmed[:i]
+			}
+			if i > 0 && (trimmed[i-1] == ' ' || trimmed[i-1] == '\t') {
+				return trimmed[:i]
+			}
+		}
+	}
+	return trimmed
+}
+
 func (l *Lexer) lex(filename string) {
-	lines := strings.Split(l.input, "\n")
-	for i, line := range lines {
+	i := 0
+	for i < len(l.lines) {
+		line := l.lines[i]
 		l.line = i + 1
 		l.col = 1
 		trimmed := strings.TrimRight(line, " \t\r")
 
-		// Handle comments
-		if idx := strings.Index(trimmed, "#"); idx != -1 {
-			trimmed = trimmed[:idx]
+		// Skip blank lines entirely
+		if isBlankOrComment(trimmed) {
+			i++
+			continue
 		}
 
+		// Strip inline comments (but not # inside content)
+		trimmed = stripComment(trimmed)
 		if len(strings.TrimSpace(trimmed)) == 0 {
-			// Skip empty lines, but we might need to preserve newlines if we want to distinguish blocks?
-			// Actually, Dippin is block-structured by indentation.
+			i++
 			continue
 		}
 
 		// Calculate indentation
-		indent := 0
-		for indent < len(trimmed) && (trimmed[indent] == ' ' || trimmed[indent] == '\t') {
-			if trimmed[indent] == '\t' {
-				indent += 8 // Arbitrary, but should be consistent
-			} else {
-				indent++
-			}
-		}
+		indent := lineIndent(trimmed)
+		content := trimmed[indent:]
 
+		// Emit indent/outdent tokens
 		currIndent := l.indentStack[len(l.indentStack)-1]
 		if indent > currIndent {
 			l.indentStack = append(l.indentStack, indent)
@@ -114,8 +159,69 @@ func (l *Lexer) lex(filename string) {
 			}
 		}
 
-		l.lexLine(trimmed[indent:], filename)
+		// Check if this line is a "key:" pattern that starts a multiline block.
+		// Pattern: identifier followed by colon, nothing else on the line.
+		// If the next non-blank line is indented deeper, emit a raw block token.
+		if isKeyColonLine(content) {
+			keyEnd := strings.Index(content, ":")
+			key := content[:keyEnd]
+			loc := ir.SourceLocation{File: filename, Line: l.line, Column: indent + 1}
+			l.tokens = append(l.tokens, Token{Type: TokenIdentifier, Value: key, Location: loc})
+			l.tokens = append(l.tokens, Token{Type: TokenColon, Value: ":", Location: ir.SourceLocation{File: filename, Line: l.line, Column: indent + keyEnd + 1}})
+
+			// Look ahead for indented block
+			blockStart := i + 1
+			nextContentLine := blockStart
+			for nextContentLine < len(l.lines) {
+				nl := strings.TrimRight(l.lines[nextContentLine], " \t\r")
+				if len(strings.TrimSpace(nl)) == 0 {
+					nextContentLine++
+					continue
+				}
+				break
+			}
+
+			if nextContentLine < len(l.lines) {
+				nextIndent := lineIndent(l.lines[nextContentLine])
+				if nextIndent > indent {
+					// This is a multiline block. Collect all lines until
+					// indentation drops to <= the key's indentation level.
+					blockEnd := nextContentLine
+					for blockEnd < len(l.lines) {
+						bl := l.lines[blockEnd]
+						blTrimmed := strings.TrimRight(bl, " \t\r")
+						// Include blank lines within the block
+						if len(strings.TrimSpace(blTrimmed)) == 0 {
+							blockEnd++
+							continue
+						}
+						blIndent := lineIndent(blTrimmed)
+						if blIndent <= indent {
+							break
+						}
+						blockEnd++
+					}
+
+					// Extract raw text, stripping the block's indentation prefix
+					rawText := l.extractRawBlock(nextContentLine, blockEnd, nextIndent)
+					l.tokens = append(l.tokens, Token{Type: TokenNewline, Location: ir.SourceLocation{File: filename, Line: l.line, Column: len(line) + 1}})
+					l.tokens = append(l.tokens, Token{Type: TokenRawBlock, Value: rawText, Location: ir.SourceLocation{File: filename, Line: nextContentLine + 1, Column: nextIndent + 1}})
+					l.tokens = append(l.tokens, Token{Type: TokenNewline, Location: ir.SourceLocation{File: filename, Line: blockEnd + 1, Column: 1}})
+
+					i = blockEnd
+					continue
+				}
+			}
+
+			// No multiline block follows — just a key: with empty value
+			l.tokens = append(l.tokens, Token{Type: TokenNewline, Location: ir.SourceLocation{File: filename, Line: l.line, Column: len(line) + 1}})
+			i++
+			continue
+		}
+
+		l.lexLine(content, filename)
 		l.tokens = append(l.tokens, Token{Type: TokenNewline, Location: ir.SourceLocation{File: filename, Line: l.line, Column: len(line) + 1}})
+		i++
 	}
 
 	// Outdent remaining
@@ -124,6 +230,46 @@ func (l *Lexer) lex(filename string) {
 		l.tokens = append(l.tokens, Token{Type: TokenOutdent, Location: ir.SourceLocation{File: filename, Line: l.line, Column: 1}})
 	}
 	l.tokens = append(l.tokens, Token{Type: TokenEOF, Location: ir.SourceLocation{File: filename, Line: l.line, Column: 1}})
+}
+
+// isKeyColonLine checks if the line content (after indent) is just "identifier:"
+// with nothing after the colon (or only whitespace).
+func isKeyColonLine(content string) bool {
+	colonIdx := strings.Index(content, ":")
+	if colonIdx <= 0 {
+		return false
+	}
+	// Everything before colon must be an identifier
+	key := content[:colonIdx]
+	for _, ch := range key {
+		if !isAlphaNumRune(ch) && ch != '_' {
+			return false
+		}
+	}
+	// Everything after colon must be whitespace
+	after := strings.TrimSpace(content[colonIdx+1:])
+	return len(after) == 0
+}
+
+// extractRawBlock extracts raw text from original lines, stripping indent prefix.
+// startIdx and endIdx are 0-based line indices.
+func (l *Lexer) extractRawBlock(startIdx, endIdx, indent int) string {
+	var result []string
+	for i := startIdx; i < endIdx && i < len(l.lines); i++ {
+		line := l.lines[i]
+		line = strings.TrimRight(line, "\r")
+		// Strip the indent prefix (byte count)
+		j := 0
+		for j < len(line) && j < indent && (line[j] == ' ' || line[j] == '\t') {
+			j++
+		}
+		result = append(result, line[j:])
+	}
+	// Trim trailing empty lines
+	for len(result) > 0 && strings.TrimSpace(result[len(result)-1]) == "" {
+		result = result[:len(result)-1]
+	}
+	return strings.Join(result, "\n")
 }
 
 func (l *Lexer) lexLine(line string, filename string) {
@@ -189,11 +335,19 @@ func (l *Lexer) lexLine(line string, filename string) {
 			if strings.HasPrefix(line[i:], "!=") {
 				l.tokens = append(l.tokens, Token{Type: TokenOperator, Value: "!=", Location: loc})
 				i += 2
+			} else if strings.HasPrefix(line[i:], "==") {
+				l.tokens = append(l.tokens, Token{Type: TokenOperator, Value: "==", Location: loc})
+				i += 2
+			} else if strings.HasPrefix(line[i:], "<=") {
+				l.tokens = append(l.tokens, Token{Type: TokenOperator, Value: "<=", Location: loc})
+				i += 2
+			} else if strings.HasPrefix(line[i:], ">=") {
+				l.tokens = append(l.tokens, Token{Type: TokenOperator, Value: ">=", Location: loc})
+				i += 2
 			} else if ch == '=' {
 				l.tokens = append(l.tokens, Token{Type: TokenOperator, Value: "=", Location: loc})
 				i++
 			} else {
-				// Other operators could be added here
 				l.tokens = append(l.tokens, Token{Type: TokenOperator, Value: string(ch), Location: loc})
 				i++
 			}
@@ -204,6 +358,34 @@ func (l *Lexer) lexLine(line string, filename string) {
 	}
 }
 
+// RawValueText extracts the raw value text from a line, starting after the colon
+// following the field name. Used for single-line values like "fidelity: summary:medium".
+// Strips inline comments (# preceded by whitespace) from the extracted value.
+func (l *Lexer) RawValueText(lineNum int) string {
+	if lineNum < 1 || lineNum > len(l.lines) {
+		return ""
+	}
+	line := l.lines[lineNum-1]
+	line = strings.TrimRight(line, " \t\r")
+	// Find the first colon after the field name
+	colonIdx := strings.Index(line, ":")
+	if colonIdx < 0 {
+		return ""
+	}
+	val := strings.TrimSpace(line[colonIdx+1:])
+	// Strip inline comments, but only if the value doesn't start with #
+	// (e.g., a quoted value like `"#ff0000"` should not be stripped).
+	if len(val) > 0 && val[0] != '#' && val[0] != '"' {
+		val = stripComment(val)
+		val = strings.TrimSpace(val)
+	}
+	return val
+}
+
 func isAlphaNum(ch byte) bool {
+	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9')
+}
+
+func isAlphaNumRune(ch rune) bool {
 	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9')
 }

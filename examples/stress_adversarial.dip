@@ -1,0 +1,175 @@
+workflow Adversarial
+  goal: "Adversarial test: content that mimics Dippin syntax, deeply nested shells, unicode, blank lines in blocks"
+  start: Init
+  exit: Finish
+
+  defaults
+    fidelity: summary:high
+    max_retries: 3
+
+  agent Init
+    label: "Initialization"
+    prompt:
+      You must parse a Dippin file. Here is the grammar:
+
+      workflow <Name>
+        goal: <string>
+        start: <id>
+        exit: <id>
+
+        agent <id>
+          prompt:
+            <multiline text>
+
+        edges
+          <from> -> <to> when <condition>
+
+      Now analyze the following workflow and report errors:
+
+      workflow Broken
+        start: X
+        exit: Y
+
+        agent X
+          prompt:
+            Do the thing.
+
+        agent Y
+          prompt:
+            Finish.
+
+        edges
+          X -> Y when ctx.status == "done"
+          Y -> X restart: true
+
+      Report: Is this workflow valid? Why or why not?
+
+  tool DeepNesting
+    label: "Deeply nested shell with blank lines"
+    command:
+      #!/bin/bash
+      set -euo pipefail
+
+      process() {
+        local input="$1"
+        local depth="${2:-0}"
+
+        if [ "$depth" -gt 5 ]; then
+          echo "max depth reached"
+          return 1
+        fi
+
+        case "$input" in
+          *.tar.gz|*.tgz)
+            mkdir -p "/tmp/extract_$$_${depth}"
+            tar xzf "$input" -C "/tmp/extract_$$_${depth}"
+            for f in "/tmp/extract_$$_${depth}"/*; do
+              if [ -f "$f" ]; then
+                process "$f" $((depth + 1))
+              fi
+            done
+            ;;
+
+          *.json)
+            # Parse JSON and extract values with special chars
+            jq -r '
+              .[] |
+              select(.type == "agent") |
+              "Node: \(.id) -> \(.target // "none")"
+            ' "$input" 2>/dev/null || echo "invalid json: $input"
+            ;;
+
+          *.dip)
+            # Meta: processing .dip files inside a .dip tool command
+            grep -E "^  (agent|tool|human)" "$input" | while read -r line; do
+              kind=$(echo "$line" | awk '{print $1}')
+              id=$(echo "$line" | awk '{print $2}')
+              printf '  found %s: %s\n' "$kind" "$id"
+            done
+            ;;
+
+          *)
+            cat "$input" 2>/dev/null | head -100
+            ;;
+        esac
+      }
+
+      main() {
+        local workdir="/tmp/adversarial_$$"
+        mkdir -p "$workdir"
+
+        # Create test data with Dippin-like content
+        cat > "$workdir/fake.dip" << 'DIPEOF'
+      workflow: not real
+        agent: also not real
+          prompt: this is inside a heredoc inside a command block
+        edges:
+          fake -> also_fake
+      DIPEOF
+
+        cat > "$workdir/data.json" << 'JSONEOF'
+      [
+        {"type": "agent", "id": "Claude", "target": "Review"},
+        {"type": "tool", "id": "Build", "target": null},
+        {"type": "agent", "id": "Review", "target": "Done"}
+      ]
+      JSONEOF
+
+        process "$workdir/fake.dip"
+        process "$workdir/data.json"
+
+        rm -rf "$workdir"
+        printf 'processed'
+      }
+
+      main "$@"
+
+  agent UnicodePrompt
+    label: "Unicode and i18n"
+    prompt:
+      Analyze text in multiple languages:
+
+      English: The quick brown fox jumps over the lazy dog.
+      Japanese: 速い茶色のキツネが怠けた犬を飛び越えた。
+      Korean: 빠른 갈색 여우가 게으른 개를 뛰어넘었습니다.
+      Arabic: الثعلب البني السريع يقفز فوق الكلب الكسول.
+      Emoji: 🦊➡️🐕 (fox -> dog, not an arrow operator)
+      Math: ∀x ∈ ℝ, ∃y : f(x) → y ∧ g(y) ≤ h(x)
+      Box drawing: ┌──────┐
+                    │ cell │
+                    └──────┘
+
+      Special Unicode:
+      - Zero-width joiner: 👨‍👩‍👧‍👦 (family)
+      - Combining marks: é (e + combining acute) vs é (precomposed)
+      - Right-to-left: مرحبا (hello in Arabic)
+      - Null-like: ∅ (empty set, not null byte)
+
+  tool BlankLinePreservation
+    label: "Command with intentional blank lines"
+    command:
+      #!/bin/sh
+
+      echo "section 1"
+
+      echo "section 2 (after blank line)"
+
+      echo "section 3 (after another blank line)"
+
+      if true; then
+
+        echo "inside if (blank line above)"
+
+      fi
+
+      printf 'done'
+
+  agent Finish
+    label: "Exit"
+    prompt: "Complete."
+
+  edges
+    Init -> DeepNesting
+    DeepNesting -> UnicodePrompt
+    UnicodePrompt -> BlankLinePreservation
+    BlankLinePreservation -> Finish

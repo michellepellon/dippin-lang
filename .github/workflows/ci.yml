@@ -1,0 +1,152 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: ['1.25']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./... -count=1 -race -coverprofile=coverage.out
+
+      - name: Coverage check
+        run: |
+          total=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | tr -d '%')
+          echo "Total coverage: ${total}%"
+          threshold=80
+          if [ "$(echo "$total < $threshold" | bc -l)" -eq 1 ]; then
+            echo "::error::Coverage ${total}% is below threshold ${threshold}%"
+            exit 1
+          fi
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::Files not gofmt'd:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+  validate-examples:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Build dippin
+        run: go build -o dippin ./cmd/dippin/
+
+      - name: Parse all .dip examples
+        run: |
+          failed=0
+          for f in examples/*.dip; do
+            if ! ./dippin parse "$f" > /dev/null 2>&1; then
+              echo "::error::Failed to parse $f"
+              ./dippin parse "$f" 2>&1 || true
+              failed=1
+            fi
+          done
+          exit $failed
+
+      - name: Validate all .dip examples
+        run: |
+          failed=0
+          for f in examples/*.dip; do
+            if ! ./dippin validate "$f" 2>&1; then
+              failed=1
+            fi
+          done
+          exit $failed
+
+      - name: Lint all .dip examples
+        run: |
+          for f in examples/*.dip; do
+            ./dippin lint "$f" 2>&1
+          done
+
+      - name: Format check all .dip examples (idempotency)
+        run: |
+          failed=0
+          for f in examples/*.dip; do
+            formatted=$(./dippin fmt "$f" 2>/dev/null)
+            reformatted=$(echo "$formatted" | ./dippin fmt /dev/stdin 2>/dev/null)
+            if [ "$formatted" != "$reformatted" ]; then
+              echo "::error::$f is not format-idempotent"
+              failed=1
+            fi
+          done
+          exit $failed
+
+      - name: Full round-trip (parse → format → re-parse → validate)
+        run: |
+          failed=0
+          for f in examples/*.dip; do
+            # Format the file
+            formatted=$(./dippin fmt "$f" 2>/dev/null)
+            # Write to temp file and re-parse
+            tmp=$(mktemp /tmp/roundtrip-XXXXXX.dip)
+            echo "$formatted" > "$tmp"
+            if ! ./dippin validate "$tmp" > /dev/null 2>&1; then
+              echo "::error::$f fails round-trip: formatted output doesn't validate"
+              ./dippin validate "$tmp" 2>&1 || true
+              failed=1
+            fi
+            rm -f "$tmp"
+          done
+          exit $failed
+
+      - name: Validate migration parity
+        run: |
+          failed=0
+          for f in examples/*.dot; do
+            base=$(basename "$f" .dot)
+            dip="examples/${base}.dip"
+            if [ -f "$dip" ]; then
+              if ! ./dippin validate-migration "$f" "$dip" 2>&1; then
+                failed=1
+              fi
+            fi
+          done
+          exit $failed
+
+      - name: Simulate all examples (dry-run)
+        run: |
+          failed=0
+          for f in examples/*.dip; do
+            if ! ./dippin simulate "$f" > /dev/null 2>&1; then
+              echo "::warning::$f simulation had issues"
+              ./dippin simulate "$f" 2>&1 | tail -5 || true
+            fi
+          done

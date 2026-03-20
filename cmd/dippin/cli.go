@@ -13,6 +13,7 @@ import (
 	"github.com/2389/dippin/ir"
 	"github.com/2389/dippin/migrate"
 	"github.com/2389/dippin/parser"
+	"github.com/2389/dippin/simulate"
 	"github.com/2389/dippin/validator"
 )
 
@@ -23,6 +24,7 @@ type OutputFormat int
 const (
 	FormatText OutputFormat = iota
 	FormatJSON
+	FormatDOT
 )
 
 // ExitCode encodes the result of a CLI invocation.
@@ -73,6 +75,8 @@ func Run(args []string, stdout, stderr io.Writer) ExitCode {
 		c.Format = FormatText
 	case "json":
 		c.Format = FormatJSON
+	case "dot":
+		c.Format = FormatDOT
 	default:
 		fmt.Fprintf(stderr, "unknown format: %s\n", *formatStr)
 		return ExitUsageError
@@ -102,6 +106,8 @@ func Run(args []string, stdout, stderr io.Writer) ExitCode {
 		return c.CmdMigrate(cmdArgs)
 	case "validate-migration":
 		return c.CmdValidateMigration(cmdArgs)
+	case "simulate":
+		return c.CmdSimulate(cmdArgs)
 	case "help":
 		printGlobalUsage(stdout)
 		return ExitOK
@@ -125,6 +131,10 @@ func printGlobalUsage(w io.Writer) {
 	fmt.Fprintln(w, "                                    Convert DOT to .dip")
 	fmt.Fprintln(w, "  validate-migration <old.dot> <new.dip>")
 	fmt.Fprintln(w, "                                    Check parity between DOT and .dip")
+	fmt.Fprintln(w, "  simulate [flags] <file>           Simulate workflow execution (JSONL events)")
+	fmt.Fprintln(w, "                                    --scenario key=val  Inject context values")
+	fmt.Fprintln(w, "                                    --interactive       Prompt at human nodes")
+	fmt.Fprintln(w, "                                    --all-paths         Enumerate all paths")
 	fmt.Fprintln(w, "  help                              Show this help")
 }
 
@@ -407,6 +417,179 @@ func (c *CLI) CmdValidateMigration(args []string) ExitCode {
 		fmt.Fprintln(c.Stdout, "migration parity check passed")
 	}
 	return ExitOK
+}
+
+// CmdSimulate runs a dry-run simulation of a workflow, emitting JSONL events.
+//
+//   - Default: happy path (all success), output JSONL to stdout
+//   - --scenario key=val: inject context values to explore different paths
+//   - --interactive: prompt at human nodes via stdin
+//   - --all-paths: enumerate all possible execution paths
+func (c *CLI) CmdSimulate(args []string) ExitCode {
+	fs := flag.NewFlagSet("simulate", flag.ContinueOnError)
+	fs.SetOutput(c.Stderr)
+
+	var scenarios scenarioFlags
+	fs.Var(&scenarios, "scenario", "inject context value (key=val), repeatable")
+	interactive := fs.Bool("interactive", false, "prompt at human nodes")
+	allPaths := fs.Bool("all-paths", false, "enumerate all possible execution paths")
+
+	// Reorder args so flags can appear before or after the filename.
+	// This supports both:
+	//   dippin simulate file.dip --scenario key=val
+	//   dippin simulate --scenario key=val file.dip
+	args = reorderSimulateArgs(args)
+
+	if err := fs.Parse(args); err != nil {
+		return ExitUsageError
+	}
+	if fs.NArg() < 1 {
+		fmt.Fprintln(c.Stderr, "usage: dippin simulate [--scenario key=val] [--interactive] [--all-paths] <file>")
+		return ExitUsageError
+	}
+
+	path := fs.Arg(0)
+	w, err := loadWorkflow(path)
+	if err != nil {
+		c.renderError(err, path)
+		return ExitError
+	}
+
+	// Validate workflow before simulating.
+	valRes := validator.Validate(w)
+	if valRes.HasErrors() {
+		c.renderDiagnostics(valRes.Diagnostics)
+		return ExitError
+	}
+
+	opts := simulate.Options{
+		Scenario:    scenarios.values,
+		Interactive: *interactive,
+		AllPaths:    *allPaths,
+	}
+
+	if *interactive {
+		opts.Stdin = os.Stdin
+		opts.Stderr = c.Stderr
+	}
+
+	if *allPaths {
+		results, err := simulate.RunAllPaths(w, opts)
+		if err != nil {
+			fmt.Fprintf(c.Stderr, "simulation error: %v\n", err)
+			return ExitError
+		}
+
+		for i, res := range results {
+			if i > 0 {
+				// Separator between paths.
+				fmt.Fprintln(c.Stdout)
+			}
+			if c.Format == FormatText {
+				fmt.Fprintf(c.Stderr, "--- path %d: %s (%d nodes: %s) ---\n",
+					i+1, res.Status, res.NodesVisited, strings.Join(res.Path, " → "))
+			}
+			if err := simulate.EmitJSONL(c.Stdout, res.Events); err != nil {
+				fmt.Fprintf(c.Stderr, "output error: %v\n", err)
+				return ExitError
+			}
+		}
+
+		if c.Format == FormatText {
+			fmt.Fprintf(c.Stderr, "\n%d path(s) enumerated\n", len(results))
+		}
+		return ExitOK
+	}
+
+	res, err := simulate.Run(w, opts)
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "simulation error: %v\n", err)
+		return ExitError
+	}
+
+	if c.Format == FormatDOT {
+		dotOpts := export.ExportOptions{
+			ExecutionPath: res.Path,
+		}
+		dot := export.ExportDOT(w, dotOpts)
+		fmt.Fprint(c.Stdout, dot)
+		return ExitOK
+	}
+
+	if err := simulate.EmitJSONL(c.Stdout, res.Events); err != nil {
+		fmt.Fprintf(c.Stderr, "output error: %v\n", err)
+		return ExitError
+	}
+
+	if c.Format == FormatText {
+		fmt.Fprintf(c.Stderr, "simulation complete: %s (%d nodes visited)\n", res.Status, res.NodesVisited)
+		fmt.Fprintf(c.Stderr, "path: %s\n", strings.Join(res.Path, " → "))
+	}
+
+	return ExitOK
+}
+
+// scenarioFlags implements flag.Value for repeatable --scenario key=val flags.
+type scenarioFlags struct {
+	values map[string]string
+}
+
+func (s *scenarioFlags) String() string {
+	if s.values == nil {
+		return ""
+	}
+	parts := make([]string, 0, len(s.values))
+	for k, v := range s.values {
+		parts = append(parts, k+"="+v)
+	}
+	return strings.Join(parts, ",")
+}
+
+func (s *scenarioFlags) Set(val string) error {
+	if s.values == nil {
+		s.values = make(map[string]string)
+	}
+	parts := strings.SplitN(val, "=", 2)
+	if len(parts) != 2 {
+		return fmt.Errorf("scenario must be key=value, got %q", val)
+	}
+	s.values[parts[0]] = parts[1]
+	return nil
+}
+
+// reorderSimulateArgs moves any flag arguments that appear after a positional
+// argument (the .dip file path) to before it. This allows natural CLI syntax:
+//
+//	dippin simulate file.dip --scenario key=val --all-paths
+//
+// Standard flag.FlagSet stops parsing at the first non-flag argument, so we
+// partition args into flags and non-flags, then recombine as [flags... files...].
+func reorderSimulateArgs(args []string) []string {
+	var flags []string
+	var positional []string
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if strings.HasPrefix(arg, "-") {
+			// It's a flag. Check if it takes a value (--flag value or --flag=value).
+			if strings.Contains(arg, "=") {
+				// --flag=value form
+				flags = append(flags, arg)
+			} else {
+				// Could be --flag value or a boolean flag.
+				// Known value-taking flags for simulate: --scenario
+				flagName := strings.TrimLeft(arg, "-")
+				if flagName == "scenario" && i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+					flags = append(flags, arg, args[i+1])
+					i++
+				} else {
+					flags = append(flags, arg)
+				}
+			}
+		} else {
+			positional = append(positional, arg)
+		}
+	}
+	return append(flags, positional...)
 }
 
 // loadWorkflow reads a file and parses it to IR. It auto-detects .dot vs .dip
