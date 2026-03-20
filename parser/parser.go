@@ -119,13 +119,11 @@ func (p *Parser) parseDefaults() {
 			case "retry_policy":
 				p.workflow.Defaults.RetryPolicy = val
 			case "max_retries":
-				v, _ := strconv.Atoi(val)
-				p.workflow.Defaults.MaxRetries = v
+				p.workflow.Defaults.MaxRetries = p.parseInt(val, key, t.Location)
 			case "fidelity":
 				p.workflow.Defaults.Fidelity = val
 			case "max_restarts":
-				v, _ := strconv.Atoi(val)
-				p.workflow.Defaults.MaxRestarts = v
+				p.workflow.Defaults.MaxRestarts = p.parseInt(val, key, t.Location)
 			case "restart_target":
 				p.workflow.Defaults.RestartTarget = val
 			case "cache_tools":
@@ -174,7 +172,7 @@ func (p *Parser) parseNode(kind ir.NodeKind) {
 			p.lexer.NextToken()
 			p.expect(TokenColon)
 			val := p.readFieldValue(t.Location.Line)
-			p.applyNodeField(node, key, val)
+			p.applyNodeField(node, key, val, t.Location)
 		} else {
 			p.lexer.NextToken()
 		}
@@ -225,7 +223,7 @@ func (p *Parser) readFieldValue(lineNum int) string {
 	return raw
 }
 
-func (p *Parser) applyNodeField(n *ir.Node, key, val string) {
+func (p *Parser) applyNodeField(n *ir.Node, key, val string, loc ir.SourceLocation) {
 	switch key {
 	case "label":
 		n.Label = val
@@ -238,8 +236,7 @@ func (p *Parser) applyNodeField(n *ir.Node, key, val string) {
 	case "retry_policy":
 		n.Retry.Policy = val
 	case "max_retries":
-		v, _ := strconv.Atoi(val)
-		n.Retry.MaxRetries = v
+		n.Retry.MaxRetries = p.parseInt(val, key, loc)
 	case "retry_target":
 		n.Retry.RetryTarget = val
 	case "fallback_target":
@@ -258,8 +255,7 @@ func (p *Parser) applyNodeField(n *ir.Node, key, val string) {
 		case "provider":
 			cfg.Provider = val
 		case "max_turns":
-			v, _ := strconv.Atoi(val)
-			cfg.MaxTurns = v
+			cfg.MaxTurns = p.parseInt(val, key, loc)
 		case "goal_gate":
 			cfg.GoalGate = (val == "true")
 		case "auto_status":
@@ -283,8 +279,7 @@ func (p *Parser) applyNodeField(n *ir.Node, key, val string) {
 		case "command":
 			cfg.Command = val
 		case "timeout":
-			d, _ := time.ParseDuration(val)
-			cfg.Timeout = d
+			cfg.Timeout = p.parseDuration(val, key, loc)
 		}
 		n.Config = cfg
 	case ir.SubgraphConfig:
@@ -366,8 +361,8 @@ func (p *Parser) parseEdges() {
 				edge.Label = p.lexer.NextToken().Value
 			case "weight":
 				p.expect(TokenColon)
-				v, _ := strconv.Atoi(p.lexer.NextToken().Value)
-				edge.Weight = v
+				wt := p.lexer.NextToken()
+				edge.Weight = p.parseInt(wt.Value, "weight", wt.Location)
 			case "restart":
 				p.expect(TokenColon)
 				edge.Restart = (p.lexer.NextToken().Value == "true")
@@ -396,6 +391,22 @@ func (p *Parser) parseCommaList() []string {
 		p.lexer.NextToken() // comma
 	}
 	return list
+}
+
+func (p *Parser) parseInt(val string, key string, loc ir.SourceLocation) int {
+	v, err := strconv.Atoi(val)
+	if err != nil {
+		p.diagnostics = append(p.diagnostics, fmt.Sprintf("invalid integer %q for %s at %d:%d", val, key, loc.Line, loc.Column))
+	}
+	return v
+}
+
+func (p *Parser) parseDuration(val string, key string, loc ir.SourceLocation) time.Duration {
+	d, err := time.ParseDuration(val)
+	if err != nil {
+		p.diagnostics = append(p.diagnostics, fmt.Sprintf("invalid duration %q for %s at %d:%d (use e.g. 30s, 5m, 1h)", val, key, loc.Line, loc.Column))
+	}
+	return d
 }
 
 func splitComma(s string) []string {
