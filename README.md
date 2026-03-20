@@ -45,7 +45,7 @@ graph LR
 ### Install
 
 ```sh
-go install github.com/2389/dippin/cmd/dippin@latest
+go install github.com/2389-research/dippin-lang/cmd/dippin@latest
 ```
 
 Or build from source:

@@ -11,7 +11,7 @@ Dippin provides two integration paths:
 ```mermaid
 graph LR
     subgraph "Go Consumers (e.g., Tracker)"
-        LIB["Import as Go library<br/><code>github.com/2389/dippin</code>"]
+        LIB["Import as Go library<br/><code>github.com/2389-research/dippin-lang</code>"]
         LIB --> PARSE["parser.NewParser().Parse()"]
         PARSE --> IR["*ir.Workflow"]
         IR --> ADAPT["Your adapter<br/>ir.Workflow → your types"]
@@ -38,26 +38,26 @@ For Go projects like Tracker, **use both**: the library for production integrati
 ### Installation
 
 ```bash
-go get github.com/2389/dippin
+go get github.com/2389-research/dippin-lang
 ```
 
 ### Package Overview
 
 | Package | Import | Purpose |
 |---------|--------|---------|
-| `ir` | `github.com/2389/dippin/ir` | All IR types (Workflow, Node, Edge, conditions, configs) |
-| `parser` | `github.com/2389/dippin/parser` | Parse `.dip` source → `*ir.Workflow` |
-| `validator` | `github.com/2389/dippin/validator` | Structural validation + semantic linting |
-| `formatter` | `github.com/2389/dippin/formatter` | IR → canonical `.dip` source text |
-| `export` | `github.com/2389/dippin/export` | IR → Graphviz DOT format |
-| `migrate` | `github.com/2389/dippin/migrate` | DOT → IR conversion (for migration) |
+| `ir` | `github.com/2389-research/dippin-lang/ir` | All IR types (Workflow, Node, Edge, conditions, configs) |
+| `parser` | `github.com/2389-research/dippin-lang/parser` | Parse `.dip` source → `*ir.Workflow` |
+| `validator` | `github.com/2389-research/dippin-lang/validator` | Structural validation + semantic linting |
+| `formatter` | `github.com/2389-research/dippin-lang/formatter` | IR → canonical `.dip` source text |
+| `export` | `github.com/2389-research/dippin-lang/export` | IR → Graphviz DOT format |
+| `migrate` | `github.com/2389-research/dippin-lang/migrate` | DOT → IR conversion (for migration) |
 
 ### Parsing a .dip File
 
 ```go
 import (
     "os"
-    "github.com/2389/dippin/parser"
+    "github.com/2389-research/dippin-lang/parser"
 )
 
 data, err := os.ReadFile("pipeline.dip")
@@ -80,7 +80,7 @@ fmt.Println(workflow.Exit)   // "Done"
 ### Validating a Workflow
 
 ```go
-import "github.com/2389/dippin/validator"
+import "github.com/2389-research/dippin-lang/validator"
 
 // Structural checks (DIP001–DIP009) — must pass
 result := validator.Validate(workflow)
@@ -104,8 +104,8 @@ for _, d := range lintResult.Diagnostics {
 
 ```go
 import (
-    "github.com/2389/dippin/formatter"
-    "github.com/2389/dippin/export"
+    "github.com/2389-research/dippin-lang/formatter"
+    "github.com/2389-research/dippin-lang/export"
 )
 
 // Round-trip: IR → canonical .dip source
@@ -222,7 +222,7 @@ package pipeline
 
 import (
     "fmt"
-    "github.com/2389/dippin/ir"
+    "github.com/2389-research/dippin-lang/ir"
 )
 
 // kindToShape maps Dippin node kinds back to DOT shapes
@@ -380,8 +380,8 @@ import (
     "path/filepath"
     "strings"
 
-    "github.com/2389/dippin/parser"
-    "github.com/2389/dippin/validator"
+    "github.com/2389-research/dippin-lang/parser"
+    "github.com/2389-research/dippin-lang/validator"
 )
 
 func LoadPipeline(path string) (*Graph, error) {
@@ -533,7 +533,7 @@ graph TD
 ### Step 1: Install the CLI
 
 ```bash
-go install github.com/2389/dippin/cmd/dippin@latest
+go install github.com/2389-research/dippin-lang/cmd/dippin@latest
 ```
 
 ### Step 2: Migrate existing DOT files

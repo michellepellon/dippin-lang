@@ -19,8 +19,8 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/2389/dippin/event"
-	"github.com/2389/dippin/ir"
+	"github.com/2389-research/dippin-lang/event"
+	"github.com/2389-research/dippin-lang/ir"
 )
 
 // Options controls the simulator's behavior.

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/2389/dippin/ir"
+	"github.com/2389-research/dippin-lang/ir"
 )
 
 // Format renders a workflow to canonical Dippin source text.

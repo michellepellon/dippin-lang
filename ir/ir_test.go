@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/2389/dippin/ir"
+	"github.com/2389-research/dippin-lang/ir"
 )
 
 // Fixture: minimal valid workflow (two nodes, one edge).

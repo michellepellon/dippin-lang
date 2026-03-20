@@ -8,13 +8,13 @@ import (
 	"os"
 	"strings"
 
-	"github.com/2389/dippin/export"
-	"github.com/2389/dippin/formatter"
-	"github.com/2389/dippin/ir"
-	"github.com/2389/dippin/migrate"
-	"github.com/2389/dippin/parser"
-	"github.com/2389/dippin/simulate"
-	"github.com/2389/dippin/validator"
+	"github.com/2389-research/dippin-lang/export"
+	"github.com/2389-research/dippin-lang/formatter"
+	"github.com/2389-research/dippin-lang/ir"
+	"github.com/2389-research/dippin-lang/migrate"
+	"github.com/2389-research/dippin-lang/parser"
+	"github.com/2389-research/dippin-lang/simulate"
+	"github.com/2389-research/dippin-lang/validator"
 )
 
 // OutputFormat controls whether diagnostics are rendered as human-readable text

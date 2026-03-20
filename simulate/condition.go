@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/2389/dippin/ir"
+	"github.com/2389-research/dippin-lang/ir"
 )
 
 // ParseCondition parses a raw condition string into a ConditionExpr AST.

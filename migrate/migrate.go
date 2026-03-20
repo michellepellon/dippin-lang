@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/2389/dippin/formatter"
-	"github.com/2389/dippin/ir"
+	"github.com/2389-research/dippin-lang/formatter"
+	"github.com/2389-research/dippin-lang/ir"
 )
 
 // Migrate parses a DOT digraph string and produces a Dippin IR workflow.

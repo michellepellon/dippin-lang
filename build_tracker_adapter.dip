@@ -1,5 +1,5 @@
 workflow build_tracker_adapter
-  goal: "Add Dippin IR support to Tracker: import github.com/2389/dippin, write FromDippinIR adapter in pipeline/, update LoadPipeline to auto-detect .dip files, add tests, validate with existing pipelines."
+  goal: "Add Dippin IR support to Tracker: import github.com/2389-research/dippin-lang, write FromDippinIR adapter in pipeline/, update LoadPipeline to auto-detect .dip files, add tests, validate with existing pipelines."
   start: Start
   exit: Exit
 
@@ -24,7 +24,8 @@ workflow build_tracker_adapter
     command:
       set -eu
       cd /Users/clint/code/2389/dippin/tracker
-      go get github.com/2389/dippin@latest
+      go mod edit -require github.com/2389-research/dippin-lang@v0.0.0
+      go mod edit -replace github.com/2389-research/dippin-lang=/Users/clint/code/2389/dippin-lang
       go mod tidy
       printf 'dependency-added'
 
@@ -41,7 +42,7 @@ workflow build_tracker_adapter
 
       ## Context
       Tracker's pipeline package is at /Users/clint/code/2389/dippin/tracker/pipeline/
-      Dippin IR types are at github.com/2389/dippin/ir
+      Dippin IR types are at github.com/2389-research/dippin-lang/ir
 
       ## Tracker's current types (pipeline/graph.go)
       - Graph: Name, Nodes map[string]*Node, Edges []*Edge, Attrs map[string]string, StartNode, ExitNode

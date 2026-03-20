@@ -3,7 +3,7 @@ package simulate
 import (
 	"testing"
 
-	"github.com/2389/dippin/ir"
+	"github.com/2389-research/dippin-lang/ir"
 )
 
 func TestTokenizeCondition_WithSpaces(t *testing.T) {

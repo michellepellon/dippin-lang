@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/2389/dippin/ir"
+	"github.com/2389-research/dippin-lang/ir"
 )
 
 type Parser struct {

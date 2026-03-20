@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/2389/dippin/ir"
+	"github.com/2389-research/dippin-lang/ir"
 )
 
 // Validate runs all graph-structure checks (DIP001–DIP009) on the workflow

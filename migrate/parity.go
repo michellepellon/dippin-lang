@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/2389/dippin/ir"
+	"github.com/2389-research/dippin-lang/ir"
 )
 
 // Difference describes a structural difference between two workflows.

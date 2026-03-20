@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/2389/dippin/ir"
+	"github.com/2389-research/dippin-lang/ir"
 )
 
 // Lint runs all semantic quality checks (DIP101–DIP112) on the workflow
