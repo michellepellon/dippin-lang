@@ -8,6 +8,22 @@ Nodes are the building blocks of a Dippin workflow. Each node represents a singl
 
 There are 6 node kinds, each with its own syntax and configuration:
 
+```mermaid
+graph TB
+    subgraph Execution Nodes
+        agent["agent<br/>LLM interaction"]
+        human["human<br/>Decision gate"]
+        tool["tool<br/>Shell command"]
+    end
+    subgraph Control Flow Nodes
+        parallel["parallel<br/>Fan-out"]
+        fan_in["fan_in<br/>Join"]
+    end
+    subgraph Composition Nodes
+        subgraph_node["subgraph<br/>Sub-pipeline"]
+    end
+```
+
 | Kind | Purpose | Syntax |
 |------|---------|--------|
 | `agent` | LLM interaction | Block with prompt |
@@ -268,6 +284,16 @@ fan_in <ID> <- <source1>, <source2>[, <source3>, ...]
 ### Parallel/Fan-In Pairing
 
 Every parallel must have a matching fan-in. The target sets must be identical (order doesn't matter):
+
+```mermaid
+graph LR
+    P["parallel P"] --> A
+    P --> B
+    P --> C
+    A --> J["fan_in J"]
+    B --> J
+    C --> J
+```
 
 ```dippin
   parallel P -> A, B, C

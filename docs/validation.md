@@ -7,6 +7,16 @@ Dippin provides 21 diagnostic checks split into two categories:
 
 Run `dippin validate <file>` for structural checks only, or `dippin lint <file>` for both.
 
+```mermaid
+graph LR
+    SRC[".dip file"] --> PARSE["Parser"]
+    PARSE --> IR["IR"]
+    IR --> VAL["Structural Validation<br/>DIP001–DIP009<br/>(errors)"]
+    IR --> LINT["Semantic Linting<br/>DIP101–DIP112<br/>(warnings)"]
+    VAL --> DIAG["Diagnostics"]
+    LINT --> DIAG
+```
+
 ---
 
 ## Diagnostic Format

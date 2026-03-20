@@ -8,28 +8,17 @@ This document describes how the Dippin toolchain is organized internally — the
 
 Dippin is a multi-stage compiler pipeline:
 
-```
-Source File (.dip or .dot)
-        │
-        ▼
-┌───────────────┐     ┌───────────────┐
-│  Dippin Parser│     │  DOT Parser   │
-│  (parser pkg) │     │  (migrate pkg)│
-└───────┬───────┘     └───────┬───────┘
-        │                     │
-        └──────────┬──────────┘
-                   ▼
-         ┌─────────────────┐
-         │  Canonical IR   │
-         │   (ir pkg)      │
-         └────────┬────────┘
-                  │
-     ┌────────────┼────────────┬──────────────┐
-     ▼            ▼            ▼              ▼
-┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐
-│Validator │ │Formatter │ │DOT Export│ │  Engine  │
-│  Linter  │ │          │ │          │ │(external)│
-└──────────┘ └──────────┘ └──────────┘ └──────────┘
+```mermaid
+graph TD
+    SRC["Source File (.dip or .dot)"]
+    SRC --> DIP_PARSER["Dippin Parser<br/><code>parser</code> pkg"]
+    SRC --> DOT_PARSER["DOT Parser<br/><code>migrate</code> pkg"]
+    DIP_PARSER --> IR["Canonical IR<br/><code>ir</code> pkg"]
+    DOT_PARSER --> IR
+    IR --> VAL["Validator / Linter<br/><code>validator</code> pkg"]
+    IR --> FMT["Formatter<br/><code>formatter</code> pkg"]
+    IR --> EXP["DOT Exporter<br/><code>export</code> pkg"]
+    IR --> ENG["Engine<br/>(external)"]
 ```
 
 All downstream consumers program against the **canonical IR** — a set of Go structs defined in the `ir` package. This decouples parsing from everything else.
@@ -75,15 +64,19 @@ dippin-lang/
 
 ### Dependency Graph
 
-```
-cmd/dippin
-    ├── parser
-    ├── formatter
-    ├── validator
-    ├── export
-    └── migrate
-
-All packages depend on: ir
+```mermaid
+graph BT
+    ir["ir"]
+    parser["parser"] --> ir
+    formatter["formatter"] --> ir
+    validator["validator"] --> ir
+    export["export"] --> ir
+    migrate["migrate"] --> ir
+    cmd["cmd/dippin"] --> parser
+    cmd --> formatter
+    cmd --> validator
+    cmd --> export
+    cmd --> migrate
 ```
 
 The `ir` package is a leaf dependency — it imports only `time` from the standard library. Every other package imports `ir` but not each other (with the exception of `cmd/dippin` which imports all).

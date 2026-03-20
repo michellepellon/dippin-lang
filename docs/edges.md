@@ -187,6 +187,12 @@ Common variables used in conditions:
 
 ### Binary branch
 
+```mermaid
+graph LR
+    Check --> |"ctx.outcome = success"| Pass
+    Check --> |"ctx.outcome = fail"| Fail
+```
+
 ```dippin
   edges
     Check -> Pass when ctx.outcome = success
@@ -197,6 +203,13 @@ Common variables used in conditions:
 
 Always include an unconditional edge as a fallback (avoids DIP102 warning):
 
+```mermaid
+graph LR
+    Check --> |"ctx.outcome = success"| Pass
+    Check --> |"ctx.outcome = retry"| Retry
+    Check --> |"(default)"| Fail
+```
+
 ```dippin
   edges
     Check -> Pass    when ctx.outcome = success
@@ -206,6 +219,13 @@ Always include an unconditional edge as a fallback (avoids DIP102 warning):
 
 ### Retry loop
 
+```mermaid
+graph LR
+    Implement --> Review
+    Review --> |"ctx.outcome = success"| Ship
+    Review -.-> |"ctx.outcome = fail (restart)"| Implement
+```
+
 ```dippin
   edges
     Implement -> Review
@@ -214,6 +234,13 @@ Always include an unconditional edge as a fallback (avoids DIP102 warning):
 ```
 
 ### Human choice gate
+
+```mermaid
+graph LR
+    Decide --> |"approve"| Approved
+    Decide --> |"reject"| Rejected
+    Decide --> |"defer"| Deferred
+```
 
 ```dippin
   human Decide
@@ -227,6 +254,13 @@ Always include an unconditional edge as a fallback (avoids DIP102 warning):
 ```
 
 ### Weighted fallback
+
+```mermaid
+graph LR
+    Router --> |"weight: 10"| PreferredPath
+    Router --> |"weight: 5"| AlternatePath
+    Router --> |"weight: 1"| LastResort
+```
 
 ```dippin
   edges

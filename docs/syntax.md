@@ -8,6 +8,16 @@ This document describes the complete syntax of the `.dip` file format — the hu
 
 Every `.dip` file contains exactly one workflow. The top-level structure is:
 
+```mermaid
+graph TD
+    WF["workflow &lt;name&gt;"]
+    WF --> H["Header<br/>goal, start, exit"]
+    WF --> D["Defaults (optional)<br/>model, provider, retry_policy, ..."]
+    WF --> N["Node Definitions<br/>agent, human, tool, parallel, fan_in, subgraph"]
+    WF --> E["Edges Section (optional)<br/>A -> B when condition"]
+    H ~~~ D ~~~ N ~~~ E
+```
+
 ```dippin
 workflow <name>
   <header fields>

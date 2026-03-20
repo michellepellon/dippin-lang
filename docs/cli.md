@@ -16,6 +16,19 @@ go build -o dippin ./cmd/dippin
 
 ## Global Usage
 
+```mermaid
+graph LR
+    CLI["dippin"] --> |"--format text\|json"| CMD{Command}
+    CMD --> parse
+    CMD --> validate
+    CMD --> lint
+    CMD --> fmt
+    CMD --> export-dot
+    CMD --> migrate
+    CMD --> validate-migration
+    CMD --> help
+```
+
 ```
 dippin [--format text|json] <command> [args]
 ```

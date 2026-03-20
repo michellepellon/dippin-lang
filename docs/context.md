@@ -14,6 +14,17 @@ At runtime, context is a `map[string]string` — a flat key-value store threaded
 
 The next node in the pipeline sees the updated context.
 
+```mermaid
+graph LR
+    subgraph Context
+        KV["map[string]string"]
+    end
+    A["Node A"] -- "writes: outcome, response" --> KV
+    KV -- "reads: outcome, response" --> B["Node B"]
+    B -- "writes: analysis" --> KV
+    KV -- "reads: analysis" --> C["Node C"]
+```
+
 ---
 
 ## Variable Namespaces
@@ -143,6 +154,17 @@ This is transparent to workflow authors — you always use namespaced syntax in 
 ---
 
 ## Context Preservation Across Restarts
+
+```mermaid
+graph TD
+    subgraph "Restart Cycle"
+        Implement --> Review
+        Review -- "ctx.outcome = fail (restart)" --> Implement
+        Review -- "ctx.outcome = success" --> Ship
+    end
+    Context["Context (preserved across restarts)"] -.-> Implement
+    Context -.-> Review
+```
 
 When a restart edge is followed, context is **fully preserved**. All key-values survive across restarts. This is intentional — it enables iterative refinement patterns:
 
