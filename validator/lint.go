@@ -350,12 +350,14 @@ var knownModelProviders = map[string]map[string]bool{
 	"anthropic": {
 		"claude-opus-4-6":        true,
 		"claude-sonnet-4-6":      true,
+		"claude-haiku-4-5":       true,
 		"claude-haiku-3-5":       true,
 		"claude-opus-4-20250116": true,
 	},
 	"openai": {
 		"gpt-5.4":       true,
 		"gpt-5.3-codex": true,
+		"gpt-5.2":       true,
 		"gpt-4o":        true,
 		"gpt-4o-mini":   true,
 		"o3":            true,
