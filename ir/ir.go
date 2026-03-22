@@ -9,15 +9,28 @@ import "time"
 
 // Workflow is the top-level IR structure representing a complete pipeline.
 type Workflow struct {
-	Name      string
-	Version   string           // Dippin format version
-	Goal      string           // Human-readable objective
-	Start     string           // Explicit entry node ID (required)
-	Exit      string           // Explicit exit node ID (required)
-	Defaults  WorkflowDefaults // Graph-level config
-	Nodes     []*Node          // Ordered for deterministic processing
-	Edges     []*Edge
-	SourceMap *SourceMap // File/line mapping for diagnostics
+	Name       string
+	Version    string           // Dippin format version
+	Goal       string           // Human-readable objective
+	Start      string           // Explicit entry node ID (required)
+	Exit       string           // Explicit exit node ID (required)
+	Defaults   WorkflowDefaults // Graph-level config
+	Nodes      []*Node          // Ordered for deterministic processing
+	Edges      []*Edge
+	Stylesheet []StylesheetRule // Theme/styling rules
+	SourceMap  *SourceMap       // File/line mapping for diagnostics
+}
+
+// StylesheetRule pairs a selector with a set of properties.
+type StylesheetRule struct {
+	Selector   StyleSelector
+	Properties map[string]string
+}
+
+// StyleSelector identifies what a stylesheet rule targets.
+type StyleSelector struct {
+	Kind  string // "universal", "kind", "class", "id"
+	Value string // "*", "agent", "coder", "critical_gate"
 }
 
 // WorkflowDefaults holds graph-level configuration that applies to all nodes
@@ -32,6 +45,7 @@ type WorkflowDefaults struct {
 	RestartTarget string // Where to restart on loop
 	CacheTools    bool   // Cache tool results
 	Compaction    string // Context compaction mode
+	OnResume      string // Fidelity behavior on resume: "preserve" or "degrade"
 }
 
 // Node represents a single step in the workflow.
@@ -101,10 +115,19 @@ func (ToolConfig) nodeConfig() {}
 
 // ParallelConfig holds configuration for fan-out nodes.
 type ParallelConfig struct {
-	Targets []string // Fan-out target node IDs
+	Targets  []string       // Fan-out target node IDs (inline form)
+	Branches []BranchConfig // Per-branch config (block form)
 }
 
 func (ParallelConfig) nodeConfig() {}
+
+// BranchConfig holds per-branch configuration for block-form parallel nodes.
+type BranchConfig struct {
+	Target   string
+	Model    string
+	Provider string
+	Fidelity string
+}
 
 // FanInConfig holds configuration for join nodes.
 type FanInConfig struct {

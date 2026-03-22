@@ -405,3 +405,275 @@ func TestParseComparisonOperators(t *testing.T) {
 		}
 	}
 }
+
+func TestParseStylesheet(t *testing.T) {
+	input := `workflow Test
+  start: A
+  exit: A
+
+  agent A
+    class: coder
+    prompt: "Do it."
+
+  stylesheet:
+    *
+      temperature: 0.7
+    agent
+      fidelity: full
+    .coder
+      model: o1
+      reasoning_effort: medium
+    #A
+      max_retries: 5
+
+  edges
+    A -> A
+`
+	p := NewParser(input, "test.dip")
+	w, err := p.Parse()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(w.Stylesheet) != 4 {
+		t.Fatalf("stylesheet rules = %d, want 4", len(w.Stylesheet))
+	}
+
+	// Check universal selector
+	found := false
+	for _, r := range w.Stylesheet {
+		if r.Selector.Kind == "universal" {
+			found = true
+			if r.Properties["temperature"] != "0.7" {
+				t.Errorf("universal temperature = %q, want 0.7", r.Properties["temperature"])
+			}
+		}
+	}
+	if !found {
+		t.Error("universal selector not found")
+	}
+
+	// Check class selector
+	for _, r := range w.Stylesheet {
+		if r.Selector.Kind == "class" && r.Selector.Value == "coder" {
+			if r.Properties["model"] != "o1" {
+				t.Errorf(".coder model = %q, want o1", r.Properties["model"])
+			}
+		}
+	}
+
+	// Check ID selector
+	for _, r := range w.Stylesheet {
+		if r.Selector.Kind == "id" && r.Selector.Value == "A" {
+			if r.Properties["max_retries"] != "5" {
+				t.Errorf("#A max_retries = %q, want 5", r.Properties["max_retries"])
+			}
+		}
+	}
+}
+
+func TestParseParallelBlockForm(t *testing.T) {
+	input := `workflow Test
+  start: split
+  exit: join
+
+  agent worker_a
+    prompt: "A"
+
+  agent worker_b
+    prompt: "B"
+
+  parallel split
+    branch: worker_a
+      model: o1
+    branch: worker_b
+      model: claude-3
+
+  fan_in join <- worker_a, worker_b
+
+  edges
+    join -> join
+`
+	p := NewParser(input, "test.dip")
+	w, err := p.Parse()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var pNode *ir.Node
+	for _, n := range w.Nodes {
+		if n.Kind == ir.NodeParallel {
+			pNode = n
+			break
+		}
+	}
+	if pNode == nil {
+		t.Fatal("parallel node not found")
+	}
+
+	cfg := pNode.Config.(ir.ParallelConfig)
+	if len(cfg.Targets) != 2 {
+		t.Fatalf("targets = %d, want 2", len(cfg.Targets))
+	}
+	if len(cfg.Branches) != 2 {
+		t.Fatalf("branches = %d, want 2", len(cfg.Branches))
+	}
+	if cfg.Branches[0].Model != "o1" {
+		t.Errorf("branch[0].model = %q, want o1", cfg.Branches[0].Model)
+	}
+	if cfg.Branches[1].Model != "claude-3" {
+		t.Errorf("branch[1].model = %q, want claude-3", cfg.Branches[1].Model)
+	}
+}
+
+func TestParseParallelInlineStillWorks(t *testing.T) {
+	input := `workflow Test
+  start: P
+  exit: J
+
+  agent A
+    prompt: "A"
+  agent B
+    prompt: "B"
+
+  parallel P -> A, B
+  fan_in J <- A, B
+
+  edges
+    J -> J
+`
+	p := NewParser(input, "test.dip")
+	w, err := p.Parse()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var pNode *ir.Node
+	for _, n := range w.Nodes {
+		if n.Kind == ir.NodeParallel {
+			pNode = n
+			break
+		}
+	}
+	if pNode == nil {
+		t.Fatal("parallel node not found")
+	}
+	cfg := pNode.Config.(ir.ParallelConfig)
+	if len(cfg.Targets) != 2 {
+		t.Errorf("targets = %d, want 2", len(cfg.Targets))
+	}
+	if len(cfg.Branches) != 0 {
+		t.Errorf("branches = %d, want 0 (inline form)", len(cfg.Branches))
+	}
+}
+
+func TestParseOnResume(t *testing.T) {
+	input := `workflow Test
+  start: A
+  exit: A
+
+  defaults
+    fidelity: full
+    on_resume: degrade
+
+  agent A
+    prompt: "Do it."
+
+  edges
+    A -> A
+`
+	p := NewParser(input, "test.dip")
+	w, err := p.Parse()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if w.Defaults.Fidelity != "full" {
+		t.Errorf("fidelity = %q, want full", w.Defaults.Fidelity)
+	}
+	if w.Defaults.OnResume != "degrade" {
+		t.Errorf("on_resume = %q, want degrade", w.Defaults.OnResume)
+	}
+}
+
+func TestParseCompactionFields(t *testing.T) {
+	input := `workflow Test
+  start: A
+  exit: A
+
+  agent A
+    compaction: sliding_window
+    compaction_threshold: 0.8
+    cache_tools: true
+    prompt: "Do it."
+
+  edges
+    A -> A
+`
+	p := NewParser(input, "test.dip")
+	w, err := p.Parse()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	cfg := w.Nodes[0].Config.(ir.AgentConfig)
+	if cfg.Compaction != "sliding_window" {
+		t.Errorf("compaction = %q, want sliding_window", cfg.Compaction)
+	}
+	if cfg.CompactionThreshold != 0.8 {
+		t.Errorf("compaction_threshold = %f, want 0.8", cfg.CompactionThreshold)
+	}
+	if !cfg.CacheTools {
+		t.Error("cache_tools = false, want true")
+	}
+}
+
+func TestParseSubgraphParams(t *testing.T) {
+	input := `workflow Test
+  start: Build
+  exit: Done
+
+  agent Build
+    prompt: "Build."
+
+  subgraph Review
+    ref: ./review.dip
+    params:
+      language: python
+      strict: true
+
+  agent Done
+    prompt: "Done."
+
+  edges
+    Build -> Review
+    Review -> Done
+`
+	p := NewParser(input, "test.dip")
+	w, err := p.Parse()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var sg *ir.Node
+	for _, n := range w.Nodes {
+		if n.Kind == ir.NodeSubgraph {
+			sg = n
+			break
+		}
+	}
+	if sg == nil {
+		t.Fatal("subgraph node not found")
+	}
+
+	cfg := sg.Config.(ir.SubgraphConfig)
+	if cfg.Ref != "./review.dip" {
+		t.Errorf("ref = %q, want ./review.dip", cfg.Ref)
+	}
+	if cfg.Params["language"] != "python" {
+		t.Errorf("params[language] = %q, want python", cfg.Params["language"])
+	}
+	if cfg.Params["strict"] != "true" {
+		t.Errorf("params[strict] = %q, want true", cfg.Params["strict"])
+	}
+}

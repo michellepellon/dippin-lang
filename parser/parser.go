@@ -94,6 +94,8 @@ func (p *Parser) dispatchWorkflowField(t Token) {
 		p.parseDefaults()
 	case "edges":
 		p.parseEdges()
+	case "stylesheet":
+		p.parseStylesheet()
 	default:
 		p.dispatchWorkflowBlock(t)
 	}
@@ -200,7 +202,7 @@ func applyDefaultCoreField(d *ir.WorkflowDefaults, key, val string) bool {
 	return true
 }
 
-// applyDefaultExtraField handles fidelity, restart_target, compaction defaults.
+// applyDefaultExtraField handles fidelity, restart_target, compaction, on_resume defaults.
 func applyDefaultExtraField(d *ir.WorkflowDefaults, key, val string) bool {
 	switch key {
 	case "fidelity":
@@ -209,6 +211,8 @@ func applyDefaultExtraField(d *ir.WorkflowDefaults, key, val string) bool {
 		d.RestartTarget = val
 	case "compaction":
 		d.Compaction = val
+	case "on_resume":
+		d.OnResume = val
 	default:
 		return false
 	}
@@ -463,13 +467,36 @@ func applyAgentModelField(cfg *ir.AgentConfig, key, val string) bool {
 
 // applyAgentComplexField handles fields needing parsing for agent config.
 func (p *Parser) applyAgentComplexField(cfg *ir.AgentConfig, key, val string, loc ir.SourceLocation) {
+	if applyAgentBoolField(cfg, key, val) {
+		return
+	}
+	p.applyAgentParsedField(cfg, key, val, loc)
+}
+
+// applyAgentBoolField handles boolean and string agent fields.
+func applyAgentBoolField(cfg *ir.AgentConfig, key, val string) bool {
 	switch key {
-	case "max_turns":
-		cfg.MaxTurns = p.parseInt(val, key, loc)
 	case "goal_gate":
 		cfg.GoalGate = (val == "true")
 	case "auto_status":
 		cfg.AutoStatus = (val == "true")
+	case "cache_tools":
+		cfg.CacheTools = (val == "true")
+	case "compaction":
+		cfg.Compaction = val
+	default:
+		return false
+	}
+	return true
+}
+
+// applyAgentParsedField handles agent fields that require parsing.
+func (p *Parser) applyAgentParsedField(cfg *ir.AgentConfig, key, val string, loc ir.SourceLocation) {
+	switch key {
+	case "max_turns":
+		cfg.MaxTurns = p.parseInt(val, key, loc)
+	case "compaction_threshold":
+		cfg.CompactionThreshold = p.parseFloat(val, key, loc)
 	}
 }
 
@@ -499,14 +526,48 @@ func (p *Parser) applySubgraphField(cfg *ir.SubgraphConfig, key, val string, loc
 	case "ref":
 		cfg.Ref = val
 	case "params":
-		// Params is a block, but my parser is simple.
-		// Let's assume params are handled elsewhere or I'll fix this later.
+		cfg.Params = parseParamsBlock(val)
 	}
+}
+
+// parseParamsBlock parses a raw block of key: value lines into a map.
+func parseParamsBlock(raw string) map[string]string {
+	params := make(map[string]string)
+	for _, line := range strings.Split(raw, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		k, v := splitKeyValue(line)
+		if k != "" {
+			params[k] = v
+		}
+	}
+	return params
+}
+
+// splitKeyValue splits "key: value" into (key, value).
+func splitKeyValue(line string) (string, string) {
+	idx := strings.Index(line, ":")
+	if idx < 0 {
+		return "", ""
+	}
+	return strings.TrimSpace(line[:idx]), strings.TrimSpace(line[idx+1:])
 }
 
 func (p *Parser) parseParallel() {
 	p.lexer.NextToken() // parallel
 	id := p.lexer.NextToken().Value
+
+	if p.lexer.PeekToken().Type == TokenArrow {
+		p.parseParallelInline(id)
+		return
+	}
+	p.parseParallelBlock(id)
+}
+
+// parseParallelInline handles: parallel ID -> target, target
+func (p *Parser) parseParallelInline(id string) {
 	p.expect(TokenArrow)
 	targets := p.parseCommaList()
 	p.workflow.Nodes = append(p.workflow.Nodes, &ir.Node{
@@ -515,6 +576,110 @@ func (p *Parser) parseParallel() {
 		Config: ir.ParallelConfig{Targets: targets},
 	})
 	p.expect(TokenNewline)
+}
+
+// parseParallelBlock handles block form with per-branch config.
+func (p *Parser) parseParallelBlock(id string) {
+	p.expect(TokenNewline)
+	p.expect(TokenIndent)
+	branches := p.parseParallelBranches()
+	p.expect(TokenOutdent)
+
+	targets := branchTargets(branches)
+	p.workflow.Nodes = append(p.workflow.Nodes, &ir.Node{
+		ID:   id,
+		Kind: ir.NodeParallel,
+		Config: ir.ParallelConfig{
+			Targets:  targets,
+			Branches: branches,
+		},
+	})
+}
+
+// parseParallelBranches parses branch declarations inside a parallel block.
+func (p *Parser) parseParallelBranches() []ir.BranchConfig {
+	var branches []ir.BranchConfig
+	for p.lexer.PeekToken().Type != TokenOutdent && p.lexer.PeekToken().Type != TokenEOF {
+		t := p.lexer.PeekToken()
+		if b, ok := p.tryParseBranch(t); ok {
+			branches = append(branches, b)
+		}
+	}
+	return branches
+}
+
+// tryParseBranch tries to parse a branch or skip a non-branch token.
+func (p *Parser) tryParseBranch(t Token) (ir.BranchConfig, bool) {
+	if t.Type == TokenNewline {
+		p.lexer.NextToken()
+		return ir.BranchConfig{}, false
+	}
+	if t.Type == TokenIdentifier && t.Value == "branch" {
+		return p.parseOneBranch(), true
+	}
+	p.lexer.NextToken()
+	return ir.BranchConfig{}, false
+}
+
+// parseOneBranch parses: branch: target\n  model: ...\n  provider: ...
+func (p *Parser) parseOneBranch() ir.BranchConfig {
+	p.lexer.NextToken() // "branch"
+	p.expect(TokenColon)
+	target := p.lexer.NextToken().Value
+	bc := ir.BranchConfig{Target: target}
+	p.consumeUntilNewline()
+
+	if p.lexer.PeekToken().Type == TokenNewline {
+		p.lexer.NextToken()
+	}
+	if p.lexer.PeekToken().Type != TokenIndent {
+		return bc
+	}
+	p.expect(TokenIndent)
+	p.parseBranchFields(&bc)
+	p.expect(TokenOutdent)
+	return bc
+}
+
+// parseBranchFields parses fields within a branch block.
+func (p *Parser) parseBranchFields(bc *ir.BranchConfig) {
+	for p.lexer.PeekToken().Type != TokenOutdent && p.lexer.PeekToken().Type != TokenEOF {
+		t := p.lexer.PeekToken()
+		if t.Type == TokenNewline {
+			p.lexer.NextToken()
+			continue
+		}
+		if t.Type == TokenIdentifier {
+			key := t.Value
+			p.lexer.NextToken()
+			p.expect(TokenColon)
+			val := p.readFieldValue(t.Location.Line)
+			applyBranchField(bc, key, val)
+		} else {
+			p.lexer.NextToken()
+		}
+	}
+}
+
+// applyBranchField sets a field on a BranchConfig.
+func applyBranchField(bc *ir.BranchConfig, key, val string) {
+	switch key {
+	case "model":
+		bc.Model = val
+	case "provider":
+		bc.Provider = val
+	case "fidelity":
+		bc.Fidelity = val
+	}
+}
+
+// branchTargets extracts target IDs from branch configs.
+func branchTargets(branches []ir.BranchConfig) []string {
+	targets := make([]string, len(branches))
+	for i, b := range branches {
+		targets[i] = b.Target
+	}
+	return targets
 }
 
 func (p *Parser) parseFanIn() {
@@ -647,6 +812,91 @@ func (p *Parser) parseDuration(val string, key string, loc ir.SourceLocation) ti
 		p.diagnostics = append(p.diagnostics, fmt.Sprintf("invalid duration %q for %s at %d:%d (use e.g. 30s, 5m, 1h)", val, key, loc.Line, loc.Column))
 	}
 	return d
+}
+
+// parseStylesheet parses the stylesheet: raw block and converts it to rules.
+func (p *Parser) parseStylesheet() {
+	p.lexer.NextToken() // "stylesheet"
+	p.expect(TokenColon)
+	val := p.readFieldValue(p.lexer.PeekToken().Location.Line)
+	p.workflow.Stylesheet = parseStylesheetRaw(val)
+}
+
+// parseStylesheetRaw parses a raw block of stylesheet rules.
+func parseStylesheetRaw(raw string) []ir.StylesheetRule {
+	lines := strings.Split(raw, "\n")
+	return collectRules(lines)
+}
+
+// collectRules iterates over lines to build stylesheet rules.
+func collectRules(lines []string) []ir.StylesheetRule {
+	var rules []ir.StylesheetRule
+	i := 0
+	for i < len(lines) {
+		line := lines[i]
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			i++
+			continue
+		}
+		indent := lineIndent(line)
+		if indent == 0 {
+			rule, newI := collectOneRule(trimmed, lines, i+1)
+			rules = append(rules, rule)
+			i = newI
+		} else {
+			i++
+		}
+	}
+	return rules
+}
+
+// collectOneRule collects a selector and its indented properties.
+func collectOneRule(selector string, lines []string, start int) (ir.StylesheetRule, int) {
+	rule := ir.StylesheetRule{
+		Selector:   parseSelector(selector),
+		Properties: make(map[string]string),
+	}
+	i := start
+	for i < len(lines) {
+		line := lines[i]
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			i++
+			continue
+		}
+		if lineIndent(line) == 0 {
+			break
+		}
+		k, v := splitKeyValue(trimmed)
+		if k != "" {
+			rule.Properties[k] = v
+		}
+		i++
+	}
+	return rule, i
+}
+
+// parseSelector converts a selector string to a StyleSelector.
+func parseSelector(s string) ir.StyleSelector {
+	if s == "*" {
+		return ir.StyleSelector{Kind: "universal", Value: "*"}
+	}
+	if strings.HasPrefix(s, ".") {
+		return ir.StyleSelector{Kind: "class", Value: s[1:]}
+	}
+	if strings.HasPrefix(s, "#") {
+		return ir.StyleSelector{Kind: "id", Value: s[1:]}
+	}
+	return ir.StyleSelector{Kind: "kind", Value: s}
+}
+
+func (p *Parser) parseFloat(val string, key string, loc ir.SourceLocation) float64 {
+	v, err := strconv.ParseFloat(val, 64)
+	if err != nil {
+		p.diagnostics = append(p.diagnostics, fmt.Sprintf("invalid float %q for %s at %d:%d", val, key, loc.Line, loc.Column))
+	}
+	return v
 }
 
 func splitComma(s string) []string {

@@ -25,7 +25,8 @@ workflow_decl   = "workflow" IDENTIFIER NEWLINE
                   INDENT workflow_body OUTDENT ;
 
 workflow_body   = { workflow_field | defaults_section
-                  | node_decl | edges_section | NEWLINE } ;
+                  | node_decl | edges_section
+                  | stylesheet_section | NEWLINE } ;
 
 workflow_field  = "goal"  ":" field_value
                 | "start" ":" IDENTIFIER
@@ -45,7 +46,8 @@ defaults_field   = "model"          ":" field_value
                  | "max_restarts"   ":" INTEGER
                  | "restart_target" ":" IDENTIFIER
                  | "cache_tools"    ":" BOOLEAN
-                 | "compaction"     ":" field_value ;
+                 | "compaction"     ":" field_value
+                 | "on_resume"      ":" field_value ;
 
 (* ═══════════════════════════════════════════════════════════ *)
 (* Node Declarations                                          *)
@@ -69,7 +71,8 @@ agent_field     = "prompt"            ":" field_value
                 | "reasoning_effort"  ":" field_value
                 | "fidelity"          ":" field_value
                 | "cache_tools"       ":" BOOLEAN
-                | "compaction"        ":" field_value ;
+                | "compaction"        ":" field_value
+                | "compaction_threshold" ":" FLOAT ;
 
 (* --- Human Node ------------------------------------------- *)
 
@@ -92,12 +95,26 @@ tool_field      = "command" ":" field_value
 subgraph_node   = "subgraph" IDENTIFIER NEWLINE
                   INDENT { subgraph_field | common_field } OUTDENT ;
 
-subgraph_field  = "ref"    ":" field_value ;
-                (* "params" block parsing is not yet implemented *)
+subgraph_field  = "ref"    ":" field_value
+                | "params" ":" params_block ;
+
+params_block    = NEWLINE INDENT { IDENTIFIER ":" field_value } OUTDENT ;
 
 (* --- Parallel / Fan-In (inline syntax) -------------------- *)
 
-parallel_node   = "parallel" IDENTIFIER "->" identifier_list NEWLINE ;
+parallel_node   = parallel_inline | parallel_block ;
+
+parallel_inline = "parallel" IDENTIFIER "->" identifier_list NEWLINE ;
+
+parallel_block  = "parallel" IDENTIFIER NEWLINE
+                  INDENT { branch_decl } OUTDENT ;
+
+branch_decl     = "branch" ":" IDENTIFIER NEWLINE
+                  [ INDENT { branch_field } OUTDENT ] ;
+
+branch_field    = "model"    ":" field_value
+                | "provider" ":" field_value
+                | "fidelity" ":" field_value ;
 
 fan_in_node     = "fan_in" IDENTIFIER "<-" identifier_list NEWLINE ;
 
@@ -127,6 +144,28 @@ edge_attr       = "when" condition
                 | "label"   ":" field_value
                 | "weight"  ":" INTEGER
                 | "restart" ":" BOOLEAN ;
+
+(* ═══════════════════════════════════════════════════════════ *)
+(* Stylesheet Section                                         *)
+(* ═══════════════════════════════════════════════════════════ *)
+
+(* The stylesheet uses "stylesheet:" syntax (with colon) so   *)
+(* the lexer captures the entire body as a raw block. This    *)
+(* avoids conflict between # comments and #id selectors.      *)
+
+stylesheet_section = "stylesheet" ":" NEWLINE INDENT raw_stylesheet OUTDENT ;
+
+raw_stylesheet  = { stylesheet_rule } ;
+
+stylesheet_rule = selector NEWLINE
+                  INDENT { IDENTIFIER ":" field_value } OUTDENT ;
+
+selector        = "*"                              (* universal *)
+                | IDENTIFIER                       (* kind: agent, tool, etc *)
+                | "." IDENTIFIER                   (* class *)
+                | "#" IDENTIFIER ;                 (* node ID *)
+
+(* Specificity order: * (0) < kind (1) < .class (2) < #id (3) *)
 
 (* ═══════════════════════════════════════════════════════════ *)
 (* Condition Expressions                                      *)

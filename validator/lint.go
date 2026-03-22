@@ -36,6 +36,9 @@ func Lint(w *ir.Workflow) Result {
 	diags = append(diags, lintRetryPolicy(w)...)
 	diags = append(diags, lintFidelity(w)...)
 	diags = append(diags, lintGoalGateFallback(w)...)
+	diags = append(diags, lintCompactionThreshold(w)...)
+	diags = append(diags, lintOnResume(w)...)
+	diags = append(diags, lintStylesheetRefs(w)...)
 
 	return Result{Diagnostics: diags}
 }
@@ -790,6 +793,114 @@ func needsGoalGateFallback(n *ir.Node) bool {
 		return false
 	}
 	return n.Retry.RetryTarget == "" && n.Retry.FallbackTarget == ""
+}
+
+// lintCompactionThreshold checks DIP116: compaction_threshold must be in [0.0, 1.0].
+func lintCompactionThreshold(w *ir.Workflow) []Diagnostic {
+	var diags []Diagnostic
+	for _, n := range w.Nodes {
+		cfg, ok := n.Config.(ir.AgentConfig)
+		if !ok {
+			continue
+		}
+		if isInvalidThreshold(cfg.CompactionThreshold) {
+			diags = append(diags, Diagnostic{
+				Code:     DIP116,
+				Severity: SeverityWarning,
+				Message:  fmt.Sprintf("node %q has compaction_threshold %.2f outside valid range [0.0, 1.0]", n.ID, cfg.CompactionThreshold),
+				Location: n.Source,
+				Help:     "compaction_threshold should be between 0.0 and 1.0",
+			})
+		}
+	}
+	return diags
+}
+
+// isInvalidThreshold returns true if threshold is set and outside [0, 1].
+func isInvalidThreshold(t float64) bool {
+	return t != 0 && (t < 0 || t > 1)
+}
+
+// validOnResumeValues is the set of valid on_resume values.
+var validOnResumeValues = map[string]bool{
+	"preserve": true,
+	"degrade":  true,
+}
+
+// lintOnResume checks DIP116: on_resume must be "preserve" or "degrade",
+// and should not be set without fidelity.
+func lintOnResume(w *ir.Workflow) []Diagnostic {
+	var diags []Diagnostic
+	or := w.Defaults.OnResume
+	if or == "" {
+		return nil
+	}
+	if !validOnResumeValues[or] {
+		diags = append(diags, Diagnostic{
+			Code:     DIP116,
+			Severity: SeverityWarning,
+			Message:  fmt.Sprintf("workflow default on_resume %q is not a recognized value", or),
+			Help:     "valid values: preserve, degrade",
+		})
+	}
+	if w.Defaults.Fidelity == "" {
+		diags = append(diags, Diagnostic{
+			Code:     DIP116,
+			Severity: SeverityWarning,
+			Message:  "on_resume is set but fidelity is not configured",
+			Help:     "set fidelity before configuring on_resume behavior",
+		})
+	}
+	return diags
+}
+
+// lintStylesheetRefs checks DIP117/DIP118: stylesheet selectors must reference
+// existing classes and node IDs.
+func lintStylesheetRefs(w *ir.Workflow) []Diagnostic {
+	var diags []Diagnostic
+	classes, nodeIDs := collectClassesAndIDs(w)
+	for _, rule := range w.Stylesheet {
+		diags = append(diags, checkSelectorRef(rule, classes, nodeIDs)...)
+	}
+	return diags
+}
+
+// checkSelectorRef validates a single stylesheet rule's selector.
+func checkSelectorRef(rule ir.StylesheetRule, classes, nodeIDs map[string]bool) []Diagnostic {
+	switch rule.Selector.Kind {
+	case "class":
+		if !classes[rule.Selector.Value] {
+			return []Diagnostic{{
+				Code:     DIP117,
+				Severity: SeverityWarning,
+				Message:  fmt.Sprintf("stylesheet references class %q which is not declared on any node", rule.Selector.Value),
+				Help:     "add class: " + rule.Selector.Value + " to a node declaration",
+			}}
+		}
+	case "id":
+		if !nodeIDs[rule.Selector.Value] {
+			return []Diagnostic{{
+				Code:     DIP118,
+				Severity: SeverityWarning,
+				Message:  fmt.Sprintf("stylesheet references node ID %q which does not exist", rule.Selector.Value),
+				Help:     "check the node ID spelling or add the node",
+			}}
+		}
+	}
+	return nil
+}
+
+// collectClassesAndIDs builds sets of all declared classes and node IDs.
+func collectClassesAndIDs(w *ir.Workflow) (map[string]bool, map[string]bool) {
+	classes := make(map[string]bool)
+	nodeIDs := make(map[string]bool)
+	for _, n := range w.Nodes {
+		nodeIDs[n.ID] = true
+		for _, c := range n.Classes {
+			classes[c] = true
+		}
+	}
+	return classes, nodeIDs
 }
 
 // nodePrompt extracts the prompt text from a node if it has one.

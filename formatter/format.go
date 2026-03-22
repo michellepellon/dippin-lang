@@ -7,6 +7,7 @@ package formatter
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,6 +29,11 @@ func Format(w *ir.Workflow) string {
 	for _, n := range w.Nodes {
 		wr.blank()
 		writeNode(wr, n)
+	}
+
+	if len(w.Stylesheet) > 0 {
+		wr.blank()
+		writeStylesheet(wr, w.Stylesheet)
 	}
 
 	if len(w.Edges) > 0 {
@@ -152,11 +158,19 @@ func writeDefaultsRestartFields(wr *writer, d ir.WorkflowDefaults) {
 	if d.RestartTarget != "" {
 		wr.line("restart_target: %s", d.RestartTarget)
 	}
+	writeDefaultsCompactionFields(wr, d)
+}
+
+// writeDefaultsCompactionFields writes cache_tools, compaction, and on_resume.
+func writeDefaultsCompactionFields(wr *writer, d ir.WorkflowDefaults) {
 	if d.CacheTools {
 		wr.line("cache_tools: true")
 	}
 	if d.Compaction != "" {
 		wr.line("compaction: %s", quoteValue(d.Compaction))
+	}
+	if d.OnResume != "" {
+		wr.line("on_resume: %s", quoteValue(d.OnResume))
 	}
 }
 
@@ -174,13 +188,51 @@ func writeNode(wr *writer, n *ir.Node) {
 func writeStructuralNode(wr *writer, n *ir.Node) bool {
 	switch cfg := n.Config.(type) {
 	case ir.ParallelConfig:
-		wr.line("parallel %s -> %s", n.ID, strings.Join(cfg.Targets, ", "))
+		if len(cfg.Branches) > 0 {
+			writeParallelBlock(wr, n.ID, cfg)
+		} else {
+			wr.line("parallel %s -> %s", n.ID, strings.Join(cfg.Targets, ", "))
+		}
 		return true
 	case ir.FanInConfig:
 		wr.line("fan_in %s <- %s", n.ID, strings.Join(cfg.Sources, ", "))
 		return true
 	}
 	return false
+}
+
+// writeParallelBlock writes a parallel node in block form with per-branch config.
+func writeParallelBlock(wr *writer, id string, cfg ir.ParallelConfig) {
+	wr.line("parallel %s", id)
+	wr.push()
+	for _, b := range cfg.Branches {
+		writeBranch(wr, b)
+	}
+	wr.pop()
+}
+
+// writeBranch writes a single branch entry in block-form parallel.
+func writeBranch(wr *writer, b ir.BranchConfig) {
+	wr.line("branch: %s", b.Target)
+	if b.Model == "" && b.Provider == "" && b.Fidelity == "" {
+		return
+	}
+	wr.push()
+	writeBranchFields(wr, b)
+	wr.pop()
+}
+
+// writeBranchFields writes the optional fields within a branch.
+func writeBranchFields(wr *writer, b ir.BranchConfig) {
+	if b.Model != "" {
+		wr.line("model: %s", quoteValue(b.Model))
+	}
+	if b.Provider != "" {
+		wr.line("provider: %s", quoteValue(b.Provider))
+	}
+	if b.Fidelity != "" {
+		wr.line("fidelity: %s", quoteValue(b.Fidelity))
+	}
 }
 
 // writeNodeConfigFields dispatches to the appropriate field writer based on config type.
@@ -201,6 +253,7 @@ func writeAgentFields(wr *writer, n *ir.Node, cfg ir.AgentConfig) {
 	writeCommonNodeFields(wr, n)
 	writeAgentModelFields(wr, cfg)
 	writeAgentBehaviorFields(wr, cfg)
+	writeAgentCompactionFields(wr, cfg)
 	writeRetryFields(wr, n)
 	writeIOFields(wr, n)
 
@@ -245,6 +298,19 @@ func writeAgentBehaviorFields(wr *writer, cfg ir.AgentConfig) {
 	}
 	if cfg.MaxTurns != 0 {
 		wr.line("max_turns: %d", cfg.MaxTurns)
+	}
+}
+
+// writeAgentCompactionFields writes compaction-related fields for agent nodes.
+func writeAgentCompactionFields(wr *writer, cfg ir.AgentConfig) {
+	if cfg.CacheTools {
+		wr.line("cache_tools: true")
+	}
+	if cfg.Compaction != "" {
+		wr.line("compaction: %s", quoteValue(cfg.Compaction))
+	}
+	if cfg.CompactionThreshold != 0 {
+		wr.line("compaction_threshold: %s", formatFloat(cfg.CompactionThreshold))
 	}
 }
 
@@ -333,6 +399,73 @@ func writeSubgraphParams(wr *writer, params map[string]string) {
 		wr.line("%s: %s", k, quoteValue(params[k]))
 	}
 	wr.pop()
+}
+
+// selectorSpecificity returns a numeric specificity for sorting.
+func selectorSpecificity(sel ir.StyleSelector) int {
+	switch sel.Kind {
+	case "universal":
+		return 0
+	case "kind":
+		return 1
+	case "class":
+		return 2
+	case "id":
+		return 3
+	default:
+		return 0
+	}
+}
+
+// writeStylesheet emits stylesheet rules sorted by specificity.
+func writeStylesheet(wr *writer, rules []ir.StylesheetRule) {
+	sorted := make([]ir.StylesheetRule, len(rules))
+	copy(sorted, rules)
+	sort.Slice(sorted, func(i, j int) bool {
+		si := selectorSpecificity(sorted[i].Selector)
+		sj := selectorSpecificity(sorted[j].Selector)
+		if si != sj {
+			return si < sj
+		}
+		return sorted[i].Selector.Value < sorted[j].Selector.Value
+	})
+
+	var raw strings.Builder
+	for i, rule := range sorted {
+		if i > 0 {
+			raw.WriteByte('\n')
+		}
+		raw.WriteString(formatSelectorStr(rule.Selector))
+		raw.WriteByte('\n')
+		writeRuleProperties(&raw, rule.Properties)
+	}
+	wr.multilineBlock("stylesheet", raw.String())
+}
+
+// formatSelectorStr converts a selector to its string representation.
+func formatSelectorStr(sel ir.StyleSelector) string {
+	switch sel.Kind {
+	case "universal":
+		return "*"
+	case "class":
+		return "." + sel.Value
+	case "id":
+		return "#" + sel.Value
+	default:
+		return sel.Value
+	}
+}
+
+// writeRuleProperties writes sorted key:value pairs for a rule.
+func writeRuleProperties(b *strings.Builder, props map[string]string) {
+	keys := make([]string, 0, len(props))
+	for k := range props {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		b.WriteString("  " + k + ": " + props[k] + "\n")
+	}
 }
 
 func writeEdges(wr *writer, edges []*ir.Edge) {
@@ -486,6 +619,15 @@ func fmtDurationParts(parts []string, d time.Duration) ([]string, time.Duration)
 		parts = append(parts, fmt.Sprintf("%ds", s))
 	}
 	return parts, d
+}
+
+// formatFloat renders a float64 without unnecessary trailing zeros.
+func formatFloat(f float64) string {
+	s := strconv.FormatFloat(f, 'f', -1, 64)
+	if !strings.Contains(s, ".") {
+		s += ".0"
+	}
+	return s
 }
 
 func isDefaultsZero(d ir.WorkflowDefaults) bool {

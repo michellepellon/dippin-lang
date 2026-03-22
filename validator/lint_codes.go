@@ -17,6 +17,9 @@ const (
 	DIP113 = "DIP113" // invalid retry policy name
 	DIP114 = "DIP114" // invalid fidelity level
 	DIP115 = "DIP115" // goal_gate without retry/fallback target
+	DIP116 = "DIP116" // invalid compaction threshold or on_resume value
+	DIP117 = "DIP117" // stylesheet .class references undefined class
+	DIP118 = "DIP118" // stylesheet #id references unknown node
 )
 
 func init() {
@@ -36,4 +39,7 @@ func init() {
 	CodeDescription[DIP113] = "invalid retry policy name"
 	CodeDescription[DIP114] = "invalid fidelity level"
 	CodeDescription[DIP115] = "goal_gate node without retry or fallback target"
+	CodeDescription[DIP116] = "invalid compaction threshold or on_resume value"
+	CodeDescription[DIP117] = "stylesheet class references undefined class"
+	CodeDescription[DIP118] = "stylesheet ID references unknown node"
 }
