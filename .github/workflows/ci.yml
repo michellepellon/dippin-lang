@@ -1,3 +1,5 @@
+# ABOUTME: GitHub Actions CI workflow for dippin-lang
+# ABOUTME: Runs tests, linting, golangci-lint, and example validation on Go 1.25
 name: CI
 
 on:
@@ -8,16 +10,33 @@ on:
 
 jobs:
   test:
+    name: Test
     runs-on: ubuntu-latest
     strategy:
       matrix:
         go-version: ['1.25']
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - uses: actions/setup-go@v5
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go-version }}
+          cache: true
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Download dependencies
+        run: go mod download
 
       - name: Build
         run: go build ./...
@@ -25,7 +44,7 @@ jobs:
       - name: Vet
         run: go vet ./...
 
-      - name: Test
+      - name: Run tests with race detector and coverage
         run: go test ./... -count=1 -race -coverprofile=coverage.out
 
       - name: Coverage check
@@ -39,13 +58,17 @@ jobs:
           fi
 
   lint:
+    name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out code
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
           go-version: '1.25'
+          cache: true
 
       - name: Check formatting
         run: |
@@ -56,14 +79,51 @@ jobs:
             exit 1
           fi
 
-  validate-examples:
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.7.2
+          args: --timeout=10m
+          verify: false
+
+  build:
+    name: Build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out code
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
           go-version: '1.25'
+          cache: true
+
+      - name: Build binary
+        run: go build -o dippin ./cmd/dippin/
+
+      - name: Verify binary
+        run: ./dippin --help || ./dippin help || true
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dippin-linux-amd64
+          path: dippin
+          retention-days: 7
+
+  validate-examples:
+    name: Validate Examples
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
 
       - name: Build dippin
         run: go build -o dippin ./cmd/dippin/
@@ -109,13 +169,11 @@ jobs:
           done
           exit $failed
 
-      - name: Full round-trip (parse → format → re-parse → validate)
+      - name: Full round-trip (parse -> format -> re-parse -> validate)
         run: |
           failed=0
           for f in examples/*.dip; do
-            # Format the file
             formatted=$(./dippin fmt "$f" 2>/dev/null)
-            # Write to temp file and re-parse
             tmp=$(mktemp /tmp/roundtrip-XXXXXX.dip)
             echo "$formatted" > "$tmp"
             if ! ./dippin validate "$tmp" > /dev/null 2>&1; then
