@@ -795,6 +795,139 @@ func TestContextUpdateEmitted(t *testing.T) {
 	}
 }
 
+// --- Multi-gate workflow for scenario stickiness tests ---
+
+// multiGateWorkflow creates a workflow with two sequential phases, each
+// followed by a conditional gate. This tests that scenario values remain
+// effective across multiple gates, not just the first one.
+//
+//	Start → Phase1(tool) → Gate1 ─[outcome=success]→ Phase2(agent,auto_status)
+//	                             └─[outcome=fail]──→ Fail1 → Done
+//	Phase2 → Gate2 ─[outcome=success]→ Success → Done
+//	               └─[outcome=fail]──→ Fail2 → Done
+func multiGateWorkflow() *ir.Workflow {
+	return &ir.Workflow{
+		Name:    "MultiGate",
+		Version: "1",
+		Start:   "Start",
+		Exit:    "Done",
+		Nodes: []*ir.Node{
+			{ID: "Start", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Begin."}},
+			{ID: "Phase1", Kind: ir.NodeTool, Config: ir.ToolConfig{Command: "build"}},
+			{ID: "Gate1", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+				Prompt: "Gate 1.", AutoStatus: true,
+			}},
+			{ID: "Phase2", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+				Prompt: "Phase 2.", AutoStatus: true,
+			}},
+			{ID: "Gate2", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+				Prompt: "Gate 2.", AutoStatus: true,
+			}},
+			{ID: "Fail1", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Fail at phase 1."}},
+			{ID: "Fail2", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Fail at phase 2."}},
+			{ID: "Success", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "All passed."}},
+			{ID: "Done", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Done."}},
+		},
+		Edges: []*ir.Edge{
+			{From: "Start", To: "Phase1"},
+			{From: "Phase1", To: "Gate1"},
+			{From: "Gate1", To: "Phase2", Condition: &ir.Condition{
+				Raw:    "ctx.outcome = success",
+				Parsed: ir.CondCompare{Variable: "ctx.outcome", Op: "=", Value: "success"},
+			}},
+			{From: "Gate1", To: "Fail1", Condition: &ir.Condition{
+				Raw:    "ctx.outcome = fail",
+				Parsed: ir.CondCompare{Variable: "ctx.outcome", Op: "=", Value: "fail"},
+			}},
+			{From: "Phase2", To: "Gate2"},
+			{From: "Gate2", To: "Success", Condition: &ir.Condition{
+				Raw:    "ctx.outcome = success",
+				Parsed: ir.CondCompare{Variable: "ctx.outcome", Op: "=", Value: "success"},
+			}},
+			{From: "Gate2", To: "Fail2", Condition: &ir.Condition{
+				Raw:    "ctx.outcome = fail",
+				Parsed: ir.CondCompare{Variable: "ctx.outcome", Op: "=", Value: "fail"},
+			}},
+			{From: "Fail1", To: "Done"},
+			{From: "Fail2", To: "Done"},
+			{From: "Success", To: "Done"},
+		},
+	}
+}
+
+func TestRunScenario_StickyAcrossMultipleGates(t *testing.T) {
+	ResetRunCounter()
+	w := multiGateWorkflow()
+
+	// With outcome=fail, Gate1 should take the fail branch immediately.
+	res, err := Run(w, Options{
+		Scenario: map[string]string{"outcome": "fail"},
+	})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if res.Status != "success" {
+		t.Errorf("Status = %q, want success", res.Status)
+	}
+	assertPathContains(t, res.Path, "Fail1")
+	assertPathNotContains(t, res.Path, "Phase2")
+	assertPathNotContains(t, res.Path, "Success")
+}
+
+func TestRunScenario_NoScenarioDefaultsToSuccess(t *testing.T) {
+	ResetRunCounter()
+	w := multiGateWorkflow()
+
+	// Without scenario, tool/auto_status defaults seed outcome=success.
+	res, err := Run(w, Options{})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	assertPathContains(t, res.Path, "Phase2")
+	assertPathContains(t, res.Path, "Success")
+	assertPathNotContains(t, res.Path, "Fail1")
+	assertPathNotContains(t, res.Path, "Fail2")
+}
+
+func TestRunScenario_ToolStdoutOverride(t *testing.T) {
+	ResetRunCounter()
+
+	// Workflow with a tool node whose gate checks tool_stdout.
+	w := &ir.Workflow{
+		Name:    "ToolStdout",
+		Version: "1",
+		Start:   "Run",
+		Exit:    "Done",
+		Nodes: []*ir.Node{
+			{ID: "Run", Kind: ir.NodeTool, Config: ir.ToolConfig{Command: "test"}},
+			{ID: "OK", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "OK."}},
+			{ID: "Bad", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Bad."}},
+			{ID: "Done", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Done."}},
+		},
+		Edges: []*ir.Edge{
+			{From: "Run", To: "OK", Condition: &ir.Condition{
+				Raw:    "ctx.tool_stdout = success",
+				Parsed: ir.CondCompare{Variable: "ctx.tool_stdout", Op: "=", Value: "success"},
+			}},
+			{From: "Run", To: "Bad", Condition: &ir.Condition{
+				Raw:    "ctx.tool_stdout = fail",
+				Parsed: ir.CondCompare{Variable: "ctx.tool_stdout", Op: "=", Value: "fail"},
+			}},
+			{From: "OK", To: "Done"},
+			{From: "Bad", To: "Done"},
+		},
+	}
+
+	res, err := Run(w, Options{
+		Scenario: map[string]string{"tool_stdout": "fail"},
+	})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	assertPathContains(t, res.Path, "Bad")
+	assertPathNotContains(t, res.Path, "OK")
+}
+
 // --- Helpers ---
 
 func assertEventSequence(t *testing.T, events []event.Event, expected []event.Type) {

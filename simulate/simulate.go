@@ -340,8 +340,13 @@ func (s *simulator) applyNodeDefaults(node *ir.Node) {
 	}
 }
 
-// setContextDefault sets a context key only if it doesn't already exist.
+// setContextDefault sets a context key only if it doesn't already exist
+// and wasn't injected via the --scenario flag. Scenario values always
+// take precedence over node defaults.
 func (s *simulator) setContextDefault(key, value string) {
+	if _, isScenario := s.opts.Scenario[key]; isScenario {
+		return
+	}
 	if _, exists := s.ctx[key]; !exists {
 		s.updateContext(key, value)
 	}
