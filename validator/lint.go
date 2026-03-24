@@ -455,11 +455,6 @@ func knownModelList(provider string) string {
 func lintNamespaceCollisions(w *ir.Workflow) []Diagnostic {
 	var diags []Diagnostic
 
-	type subgraphRef struct {
-		node *ir.Node
-		ref  string
-	}
-
 	seen := make(map[string]*ir.Node)
 	for _, n := range w.Nodes {
 		cfg, ok := n.Config.(ir.SubgraphConfig)

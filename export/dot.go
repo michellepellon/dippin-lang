@@ -65,8 +65,8 @@ func writeDOTHeader(b *strings.Builder, w *ir.Workflow, opts ExportOptions) {
 	if graphName == "" {
 		graphName = "workflow"
 	}
-	b.WriteString(fmt.Sprintf("digraph %s {\n", dotID(graphName)))
-	b.WriteString(fmt.Sprintf("  rankdir=%s;\n", rankDir))
+	fmt.Fprintf(b, "digraph %s {\n", dotID(graphName))
+	fmt.Fprintf(b, "  rankdir=%s;\n", rankDir)
 	b.WriteString("  node [fontname=\"Helvetica\"];\n")
 	b.WriteString("  edge [fontname=\"Helvetica\"];\n")
 }
@@ -113,7 +113,7 @@ func writeNodeDOT(b *strings.Builder, n *ir.Node, w *ir.Workflow, opts ExportOpt
 		applyConfigAttrs(attrs, n.Config)
 	}
 
-	b.WriteString(fmt.Sprintf("  %s %s;\n", dotID(n.ID), formatDOTAttrs(attrs)))
+	fmt.Fprintf(b, "  %s %s;\n", dotID(n.ID), formatDOTAttrs(attrs))
 }
 
 // buildBaseNodeAttrs creates the base attributes for a node (shape, label, execution order).
@@ -260,7 +260,7 @@ func writeEdgeDOT(b *strings.Builder, e *ir.Edge) {
 	addEdgeConditionAttrs(attrs, e)
 	addEdgeWeightAndRestart(attrs, e)
 
-	b.WriteString(fmt.Sprintf("  %s -> %s", dotID(e.From), dotID(e.To)))
+	fmt.Fprintf(b, "  %s -> %s", dotID(e.From), dotID(e.To))
 	if len(attrs) > 0 {
 		b.WriteString(" ")
 		b.WriteString(formatDOTAttrs(attrs))

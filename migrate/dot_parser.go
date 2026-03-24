@@ -572,16 +572,6 @@ func (p *parser) addOrUpdateNode(id string, attrs map[string]string) {
 	p.graph.Nodes = append(p.graph.Nodes, dotNode{ID: id, Attrs: attrs})
 }
 
-// unescapeDOT transforms DOT escape sequences in a raw string value.
-// The lexer handles this for quoted strings; this is for post-processing
-// values that were read as unquoted identifiers or for additional cleanup.
-func unescapeDOT(s string) string {
-	// The lexer already handles escape sequences inside quoted strings.
-	// This function handles any remaining \n sequences that might appear
-	// in attribute values from unquoted or partially-processed sources.
-	return s
-}
-
 // normalizeWhitespace collapses runs of whitespace into single spaces
 // and trims leading/trailing whitespace. Used for condition comparison.
 func normalizeWhitespace(s string) string {

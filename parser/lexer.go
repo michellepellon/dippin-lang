@@ -40,9 +40,9 @@ func (t Token) String() string {
 }
 
 type Lexer struct {
-	input       string
-	lines       []string // original lines for raw extraction
-	pos         int
+	input string
+	lines []string // original lines for raw extraction
+
 	line        int
 	col         int
 	indentStack []int
@@ -505,8 +505,4 @@ func isLetter(ch byte) bool {
 
 func isDigit(ch byte) bool {
 	return ch >= '0' && ch <= '9'
-}
-
-func isAlphaNumRune(ch rune) bool {
-	return unicode.IsLetter(ch) || unicode.IsDigit(ch)
 }

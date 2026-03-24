@@ -130,6 +130,11 @@ func Run(args []string, stdout, stderr io.Writer) ExitCode {
 		return ExitOK
 	}
 
+	if cmd == "version" {
+		fmt.Fprintf(stdout, "dippin %s (commit: %s, built: %s)\n", version, commit, date)
+		return ExitOK
+	}
+
 	handler, ok := c.commandDispatch()[cmd]
 	if !ok {
 		fmt.Fprintf(stderr, "unknown command: %s\n", cmd)
@@ -161,6 +166,7 @@ func printGlobalUsage(w io.Writer) {
 	fmt.Fprintln(w, "                                    --scenario key=val  Inject context values")
 	fmt.Fprintln(w, "                                    --interactive       Prompt at human nodes")
 	fmt.Fprintln(w, "                                    --all-paths         Enumerate all paths")
+	fmt.Fprintln(w, "  version                           Show version info")
 	fmt.Fprintln(w, "  help                              Show this help")
 }
 
@@ -337,9 +343,10 @@ func toCheckDiag(d validator.Diagnostic) checkDiag {
 func countSeverities(diags []validator.Diagnostic) (int, int) {
 	var errors, warnings int
 	for _, d := range diags {
-		if d.Severity == validator.SeverityError {
+		switch d.Severity {
+		case validator.SeverityError:
 			errors++
-		} else if d.Severity == validator.SeverityWarning {
+		case validator.SeverityWarning:
 			warnings++
 		}
 	}
@@ -570,12 +577,12 @@ func (c *CLI) CmdMigrate(args []string) ExitCode {
 func migrateFile(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return "", fmt.Errorf("error: %v", err)
+		return "", fmt.Errorf("error: %w", err)
 	}
 
 	source, err := migrate.MigrateToSource(string(data))
 	if err != nil {
-		return "", fmt.Errorf("migration failed: %v", err)
+		return "", fmt.Errorf("migration failed: %w", err)
 	}
 	return source, nil
 }
