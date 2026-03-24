@@ -20,6 +20,7 @@ const (
 	DIP116 = "DIP116" // invalid compaction threshold or on_resume value
 	DIP117 = "DIP117" // stylesheet .class references undefined class
 	DIP118 = "DIP118" // stylesheet #id references unknown node
+	DIP119 = "DIP119" // invalid reasoning_effort value
 )
 
 func init() {
@@ -42,4 +43,5 @@ func init() {
 	CodeDescription[DIP116] = "invalid compaction threshold or on_resume value"
 	CodeDescription[DIP117] = "stylesheet class references undefined class"
 	CodeDescription[DIP118] = "stylesheet ID references unknown node"
+	CodeDescription[DIP119] = "invalid reasoning_effort value"
 }

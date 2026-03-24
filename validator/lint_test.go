@@ -1107,6 +1107,58 @@ func TestLint_DIP115_NoGoalGate_NoDiag(t *testing.T) {
 	assertNoCode(t, res, DIP115)
 }
 
+// --- DIP114: BranchConfig fidelity ---
+
+func TestLint_DIP114_InvalidBranchFidelity(t *testing.T) {
+	w := cleanMinimalWorkflow()
+	w.Nodes = append(w.Nodes, &ir.Node{
+		ID: "Fan", Kind: ir.NodeParallel, Config: ir.ParallelConfig{
+			Branches: []ir.BranchConfig{
+				{Target: "Begin", Fidelity: "bogus"},
+			},
+		},
+	})
+	res := Lint(w)
+	assertHasCode(t, res, DIP114)
+}
+
+func TestLint_DIP114_ValidBranchFidelity(t *testing.T) {
+	w := cleanMinimalWorkflow()
+	w.Nodes = append(w.Nodes, &ir.Node{
+		ID: "Fan", Kind: ir.NodeParallel, Config: ir.ParallelConfig{
+			Branches: []ir.BranchConfig{
+				{Target: "Begin", Fidelity: "compact"},
+			},
+		},
+	})
+	res := Lint(w)
+	assertNoCode(t, res, DIP114)
+}
+
+// --- DIP119: reasoning_effort ---
+
+func TestLint_DIP119_InvalidReasoningEffort(t *testing.T) {
+	w := cleanMinimalWorkflow()
+	w.Nodes[0].Config = ir.AgentConfig{Prompt: "Go.", ReasoningEffort: "hihg"}
+	res := Lint(w)
+	assertHasCode(t, res, DIP119)
+}
+
+func TestLint_DIP119_ValidReasoningEffort(t *testing.T) {
+	for _, level := range []string{"low", "medium", "high"} {
+		w := cleanMinimalWorkflow()
+		w.Nodes[0].Config = ir.AgentConfig{Prompt: "Go.", ReasoningEffort: level}
+		res := Lint(w)
+		assertNoCode(t, res, DIP119)
+	}
+}
+
+func TestLint_DIP119_EmptyReasoningEffort_NoDiag(t *testing.T) {
+	w := cleanMinimalWorkflow()
+	res := Lint(w)
+	assertNoCode(t, res, DIP119)
+}
+
 // assertHasCode checks that a result contains at least one diagnostic with the given code.
 func assertHasCode(t *testing.T, res Result, code string) {
 	t.Helper()

@@ -38,6 +38,7 @@ func Lint(w *ir.Workflow) Result {
 	diags = append(diags, lintGoalGateFallback(w)...)
 	diags = append(diags, lintCompactionThreshold(w)...)
 	diags = append(diags, lintOnResume(w)...)
+	diags = append(diags, lintReasoningEffort(w)...)
 	diags = append(diags, lintStylesheetRefs(w)...)
 
 	return Result{Diagnostics: diags}
@@ -741,25 +742,52 @@ func checkDefaultFidelity(w *ir.Workflow) []Diagnostic {
 	return nil
 }
 
-// checkNodeFidelity checks per-node fidelity levels.
+// checkNodeFidelity checks per-node fidelity levels on agent and parallel branch configs.
 func checkNodeFidelity(w *ir.Workflow) []Diagnostic {
 	var diags []Diagnostic
 	for _, n := range w.Nodes {
-		cfg, ok := n.Config.(ir.AgentConfig)
-		if !ok {
-			continue
-		}
-		if f := cfg.Fidelity; f != "" && !validFidelityLevels[f] {
-			diags = append(diags, Diagnostic{
-				Code:     DIP114,
-				Severity: SeverityWarning,
-				Message:  fmt.Sprintf("node %q has fidelity %q which is not a recognized level", n.ID, f),
-				Location: n.Source,
-				Help:     "valid levels: full, summary:high, summary:medium, summary:low, compact, truncate",
-			})
-		}
+		diags = append(diags, checkNodeFidelityByKind(n)...)
 	}
 	return diags
+}
+
+// checkNodeFidelityByKind checks fidelity for a single node based on its config type.
+func checkNodeFidelityByKind(n *ir.Node) []Diagnostic {
+	switch cfg := n.Config.(type) {
+	case ir.AgentConfig:
+		return checkFidelityValue(n, cfg.Fidelity, "")
+	case ir.ParallelConfig:
+		return checkBranchFidelities(n, cfg.Branches)
+	default:
+		return nil
+	}
+}
+
+// checkBranchFidelities checks fidelity on each branch of a parallel node.
+func checkBranchFidelities(n *ir.Node, branches []ir.BranchConfig) []Diagnostic {
+	var diags []Diagnostic
+	for _, b := range branches {
+		diags = append(diags, checkFidelityValue(n, b.Fidelity, b.Target)...)
+	}
+	return diags
+}
+
+// checkFidelityValue validates a single fidelity string, returning a diagnostic if invalid.
+func checkFidelityValue(n *ir.Node, fidelity, branch string) []Diagnostic {
+	if fidelity == "" || validFidelityLevels[fidelity] {
+		return nil
+	}
+	msg := fmt.Sprintf("node %q has fidelity %q which is not a recognized level", n.ID, fidelity)
+	if branch != "" {
+		msg = fmt.Sprintf("node %q branch %q has fidelity %q which is not a recognized level", n.ID, branch, fidelity)
+	}
+	return []Diagnostic{{
+		Code:     DIP114,
+		Severity: SeverityWarning,
+		Message:  msg,
+		Location: n.Source,
+		Help:     "valid levels: full, summary:high, summary:medium, summary:low, compact, truncate",
+	}}
 }
 
 // lintGoalGateFallback checks DIP115: nodes with goal_gate: true should have
@@ -845,6 +873,34 @@ func lintOnResume(w *ir.Workflow) []Diagnostic {
 			Message:  "on_resume is set but fidelity is not configured",
 			Help:     "set fidelity before configuring on_resume behavior",
 		})
+	}
+	return diags
+}
+
+// validReasoningEfforts is the set of reasoning effort levels recognized by LLM providers.
+var validReasoningEfforts = map[string]bool{
+	"low":    true,
+	"medium": true,
+	"high":   true,
+}
+
+// lintReasoningEffort checks DIP119: reasoning_effort must be a recognized level.
+func lintReasoningEffort(w *ir.Workflow) []Diagnostic {
+	var diags []Diagnostic
+	for _, n := range w.Nodes {
+		cfg, ok := n.Config.(ir.AgentConfig)
+		if !ok {
+			continue
+		}
+		if r := cfg.ReasoningEffort; r != "" && !validReasoningEfforts[r] {
+			diags = append(diags, Diagnostic{
+				Code:     DIP119,
+				Severity: SeverityWarning,
+				Message:  fmt.Sprintf("node %q has reasoning_effort %q which is not a recognized level", n.ID, r),
+				Location: n.Source,
+				Help:     "valid levels: low, medium, high",
+			})
+		}
 	}
 	return diags
 }
