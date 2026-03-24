@@ -628,6 +628,64 @@ func TestParseCompactionFields(t *testing.T) {
 	}
 }
 
+func TestParseToolOutputs(t *testing.T) {
+	input := `workflow Test
+  start: T
+  exit: T
+
+  tool T
+    outputs: complete, continue, error
+    timeout: 30s
+    command:
+      echo done
+
+  edges
+    T -> T
+`
+	p := NewParser(input, "test.dip")
+	w, err := p.Parse()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(w.Nodes) != 1 {
+		t.Fatalf("nodes = %d, want 1", len(w.Nodes))
+	}
+	cfg := w.Nodes[0].Config.(ir.ToolConfig)
+	if len(cfg.Outputs) != 3 {
+		t.Fatalf("outputs = %d, want 3", len(cfg.Outputs))
+	}
+	want := []string{"complete", "continue", "error"}
+	for i, v := range want {
+		if cfg.Outputs[i] != v {
+			t.Errorf("outputs[%d] = %q, want %q", i, cfg.Outputs[i], v)
+		}
+	}
+}
+
+func TestParseToolWithoutOutputs(t *testing.T) {
+	input := `workflow Test
+  start: T
+  exit: T
+
+  tool T
+    timeout: 30s
+    command:
+      echo done
+
+  edges
+    T -> T
+`
+	p := NewParser(input, "test.dip")
+	w, err := p.Parse()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	cfg := w.Nodes[0].Config.(ir.ToolConfig)
+	if len(cfg.Outputs) != 0 {
+		t.Errorf("outputs = %d, want 0", len(cfg.Outputs))
+	}
+}
+
 func TestParseSubgraphParams(t *testing.T) {
 	input := `workflow Test
   start: Build

@@ -1045,6 +1045,57 @@ func TestFormatBaseDelay(t *testing.T) {
 	assertContains(t, output, "base_delay: 500ms")
 }
 
+func TestFormatToolOutputs(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "tool_outputs",
+		Start: "T",
+		Exit:  "T",
+		Nodes: []*ir.Node{
+			{
+				ID:   "T",
+				Kind: ir.NodeTool,
+				Config: ir.ToolConfig{
+					Outputs: []string{"complete", "continue", "error"},
+					Command: "echo done",
+					Timeout: 30 * time.Second,
+				},
+			},
+		},
+	}
+	output := Format(w)
+	assertContains(t, output, "outputs: complete, continue, error")
+	// outputs should appear before timeout and command
+	outputsIdx := strings.Index(output, "outputs:")
+	timeoutIdx := strings.Index(output, "timeout:")
+	commandIdx := strings.Index(output, "command:")
+	if outputsIdx > timeoutIdx {
+		t.Error("outputs should appear before timeout")
+	}
+	if outputsIdx > commandIdx {
+		t.Error("outputs should appear before command")
+	}
+	assertIdempotent(t, w)
+}
+
+func TestFormatToolWithoutOutputs(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "tool_no_outputs",
+		Start: "T",
+		Exit:  "T",
+		Nodes: []*ir.Node{
+			{
+				ID:   "T",
+				Kind: ir.NodeTool,
+				Config: ir.ToolConfig{
+					Command: "echo done",
+				},
+			},
+		},
+	}
+	output := Format(w)
+	assertNotContains(t, output, "outputs:")
+}
+
 func TestFormatBaseDelay_Zero_Omitted(t *testing.T) {
 	w := &ir.Workflow{
 		Name:  "test",

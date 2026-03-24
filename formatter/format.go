@@ -366,6 +366,9 @@ func writeHumanFields(wr *writer, n *ir.Node, cfg ir.HumanConfig) {
 
 func writeToolFields(wr *writer, n *ir.Node, cfg ir.ToolConfig) {
 	writeCommonNodeFields(wr, n)
+	if len(cfg.Outputs) > 0 {
+		wr.line("outputs: %s", strings.Join(cfg.Outputs, ", "))
+	}
 	if cfg.Timeout != 0 {
 		wr.line("timeout: %s", formatDuration(cfg.Timeout))
 	}

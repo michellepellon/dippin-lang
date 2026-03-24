@@ -517,6 +517,8 @@ func (p *Parser) applyToolField(cfg *ir.ToolConfig, key, val string, loc ir.Sour
 		cfg.Command = val
 	case "timeout":
 		cfg.Timeout = p.parseDuration(val, key, loc)
+	case "outputs":
+		cfg.Outputs = splitComma(val)
 	}
 }
 

@@ -8,6 +8,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/2389-research/dippin-lang/cost"
+	"github.com/2389-research/dippin-lang/coverage"
 	"github.com/2389-research/dippin-lang/export"
 	"github.com/2389-research/dippin-lang/formatter"
 	"github.com/2389-research/dippin-lang/ir"
@@ -60,6 +62,8 @@ func (c *CLI) commandDispatch() map[string]func([]string) ExitCode {
 		"migrate":            c.CmdMigrate,
 		"validate-migration": c.CmdValidateMigration,
 		"simulate":           c.CmdSimulate,
+		"cost":               c.CmdCost,
+		"coverage":           c.CmdCoverage,
 	}
 }
 
@@ -170,6 +174,8 @@ func printGlobalUsage(w io.Writer) {
 	fmt.Fprintln(w, "                                    --scenario key=val  Inject context values")
 	fmt.Fprintln(w, "                                    --interactive       Prompt at human nodes")
 	fmt.Fprintln(w, "                                    --all-paths         Enumerate all paths")
+	fmt.Fprintln(w, "  cost <file>                       Estimate workflow execution cost")
+	fmt.Fprintln(w, "  coverage <file>                   Analyze edge coverage and reachability")
 	fmt.Fprintln(w, "  version                           Show version info")
 	fmt.Fprintln(w, "  help                              Show this help")
 }
@@ -883,6 +889,188 @@ func reorderSimulateArgs(args []string) []string {
 		i += classifyArg(args, i, &flags, &positional)
 	}
 	return append(flags, positional...)
+}
+
+// CmdCost estimates the execution cost of a workflow.
+func (c *CLI) CmdCost(args []string) ExitCode {
+	path, code := parseSingleFileArg("cost", "usage: dippin cost <file>", args, c.Stderr)
+	if code != ExitCode(-1) {
+		return code
+	}
+
+	w, err := loadWorkflow(path)
+	if err != nil {
+		c.renderError(err, path)
+		return ExitError
+	}
+
+	report := cost.Analyze(w, cost.DefaultPricing())
+	return c.renderCostReport(report)
+}
+
+// renderCostReport outputs the cost report in the selected format.
+func (c *CLI) renderCostReport(r *cost.Report) ExitCode {
+	if c.Format == FormatJSON {
+		return c.renderJSON(r)
+	}
+	renderCostText(c.Stdout, r)
+	return ExitOK
+}
+
+// renderCostText writes a human-readable cost report.
+func renderCostText(w io.Writer, r *cost.Report) {
+	fmt.Fprintln(w, "═══ Cost Estimate ═════════════════════════════════════════")
+	fmt.Fprintf(w, "  %-24s %8s %8s %8s\n", "", "Min", "Expected", "Max")
+	fmt.Fprintf(w, "  %-24s %8s %8s %8s\n", "────────────────────────", "────────", "────────", "────────")
+	fmt.Fprintf(w, "  %-24s %8s %8s %8s\n", "TOTAL",
+		formatUSD(r.Total.Min), formatUSD(r.Total.Expected), formatUSD(r.Total.Max))
+	fmt.Fprintln(w)
+	renderCostByProvider(w, r)
+	renderTopCosts(w, r)
+	renderAssumptions(w, r)
+}
+
+func renderCostByProvider(w io.Writer, r *cost.Report) {
+	if len(r.ByProvider) == 0 {
+		return
+	}
+	fmt.Fprintln(w, "─── By Provider ───────────────────────────────────────────")
+	for provider, cr := range r.ByProvider {
+		fmt.Fprintf(w, "  %-24s %8s %8s %8s\n", provider,
+			formatUSD(cr.Min), formatUSD(cr.Expected), formatUSD(cr.Max))
+	}
+	fmt.Fprintln(w)
+}
+
+func renderTopCosts(w io.Writer, r *cost.Report) {
+	if len(r.TopCosts) == 0 {
+		return
+	}
+	fmt.Fprintln(w, "─── Top Cost Drivers ──────────────────────────────────────")
+	for _, nc := range r.TopCosts {
+		fmt.Fprintf(w, "  %-24s %8s (max)  %s/%s\n", nc.NodeID,
+			formatUSD(nc.Cost.Max), nc.Provider, nc.Model)
+	}
+	fmt.Fprintln(w)
+}
+
+func renderAssumptions(w io.Writer, r *cost.Report) {
+	if len(r.Assumptions) == 0 {
+		return
+	}
+	fmt.Fprintln(w, "─── Assumptions ───────────────────────────────────────────")
+	for _, a := range r.Assumptions {
+		fmt.Fprintf(w, "  • %s\n", a)
+	}
+	fmt.Fprintln(w)
+}
+
+func formatUSD(v float64) string {
+	return fmt.Sprintf("$%.2f", v)
+}
+
+// CmdCoverage analyzes edge coverage and reachability.
+func (c *CLI) CmdCoverage(args []string) ExitCode {
+	path, code := parseSingleFileArg("coverage", "usage: dippin coverage <file>", args, c.Stderr)
+	if code != ExitCode(-1) {
+		return code
+	}
+
+	w, err := loadWorkflow(path)
+	if err != nil {
+		c.renderError(err, path)
+		return ExitError
+	}
+
+	report := coverage.Analyze(w)
+	return c.renderCoverageReport(report)
+}
+
+// renderCoverageReport outputs the coverage report in the selected format.
+func (c *CLI) renderCoverageReport(r *coverage.Report) ExitCode {
+	if c.Format == FormatJSON {
+		return c.renderJSON(r)
+	}
+	renderCoverageText(c.Stdout, r)
+	return ExitOK
+}
+
+// renderCoverageText writes a human-readable coverage report.
+func renderCoverageText(w io.Writer, r *coverage.Report) {
+	fmt.Fprintln(w, "═══ Coverage Analysis ═════════════════════════════════════")
+	renderNodeCoverage(w, r)
+	renderReachability(w, r)
+	renderTermination(w, r)
+}
+
+func renderNodeCoverage(w io.Writer, r *coverage.Report) {
+	if len(r.Nodes) == 0 {
+		return
+	}
+	fmt.Fprintln(w, "─── Edge Coverage ─────────────────────────────────────────")
+	for _, nc := range r.Nodes {
+		icon := statusIcon(nc.Status)
+		fmt.Fprintf(w, "  %s %-28s %s\n", icon, nc.NodeID, nc.Status)
+		renderMissingEdges(w, nc)
+	}
+	fmt.Fprintln(w)
+}
+
+func renderMissingEdges(w io.Writer, nc coverage.NodeCoverage) {
+	if nc.Status != "partial" {
+		return
+	}
+	for _, m := range nc.MissingEdges {
+		fmt.Fprintf(w, "      missing: %s\n", m)
+	}
+}
+
+func renderReachability(w io.Writer, r *coverage.Report) {
+	icon := "✓"
+	if len(r.Reachability.UnreachableNodes) > 0 {
+		icon = "✗"
+	}
+	fmt.Fprintf(w, "─── Reachability ──────────────────────────────────────────\n")
+	fmt.Fprintf(w, "  %s %d/%d nodes reachable\n", icon,
+		r.Reachability.ReachableNodes, r.Reachability.TotalNodes)
+	for _, n := range r.Reachability.UnreachableNodes {
+		fmt.Fprintf(w, "      unreachable: %s\n", n)
+	}
+	fmt.Fprintln(w)
+}
+
+func renderTermination(w io.Writer, r *coverage.Report) {
+	icon := "✓"
+	if !r.Termination.AllPathsTerminate {
+		icon = "✗"
+	}
+	fmt.Fprintf(w, "─── Termination ───────────────────────────────────────────\n")
+	fmt.Fprintf(w, "  %s all paths reach exit: %v\n", icon, r.Termination.AllPathsTerminate)
+	for _, n := range r.Termination.SinkNodes {
+		fmt.Fprintf(w, "      sink node: %s\n", n)
+	}
+}
+
+func statusIcon(status string) string {
+	switch status {
+	case "covered", "no_conditions":
+		return "✓"
+	case "partial":
+		return "✗"
+	default:
+		return "?"
+	}
+}
+
+// renderJSON marshals any value to JSON and writes it to stdout.
+func (c *CLI) renderJSON(v interface{}) ExitCode {
+	enc := json.NewEncoder(c.Stdout)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(v); err != nil {
+		fmt.Fprintf(c.Stderr, "error: %v\n", err)
+		return ExitError
+	}
+	return ExitOK
 }
 
 // parseSingleFileArg is a helper for commands that take a single file argument

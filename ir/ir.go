@@ -109,6 +109,7 @@ func (HumanConfig) nodeConfig() {}
 type ToolConfig struct {
 	Command string // Shell command (multiline OK)
 	Timeout time.Duration
+	Outputs []string // Declared possible stdout values for coverage analysis
 }
 
 func (ToolConfig) nodeConfig() {}
