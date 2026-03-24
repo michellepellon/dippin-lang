@@ -1,0 +1,110 @@
+package simulate
+
+import (
+	"strings"
+
+	"github.com/2389-research/dippin-lang/ir"
+)
+
+// applyNodeDefaults seeds default context values for agent and tool nodes.
+func (s *simulator) applyNodeDefaults(node *ir.Node) {
+	if ac, ok := node.Config.(ir.AgentConfig); ok && ac.AutoStatus {
+		s.setContextDefault("outcome", "success")
+	}
+	if _, ok := node.Config.(ir.ToolConfig); ok {
+		s.setContextDefault("tool_stdout", "success")
+		s.setContextDefault("outcome", "success")
+	}
+}
+
+// setContextDefault sets a context key only if it doesn't already exist
+// and wasn't injected via the --scenario flag. Scenario values always
+// take precedence over node defaults.
+func (s *simulator) setContextDefault(key, value string) {
+	if _, isScenario := s.opts.Scenario[key]; isScenario {
+		return
+	}
+	if _, exists := s.ctx[key]; !exists {
+		s.updateContext(key, value)
+	}
+}
+
+// operatorFuncs maps condition operators to their evaluation functions.
+var operatorFuncs = map[string]func(ctxVal, value string) bool{
+	"=":          func(a, b string) bool { return a == b },
+	"==":         func(a, b string) bool { return a == b },
+	"!=":         func(a, b string) bool { return a != b },
+	"contains":   func(a, b string) bool { return strings.Contains(a, b) },
+	"startswith": func(a, b string) bool { return strings.HasPrefix(a, b) },
+	"endswith":   func(a, b string) bool { return strings.HasSuffix(a, b) },
+}
+
+func (s *simulator) evalCondition(expr ir.ConditionExpr) bool {
+	switch e := expr.(type) {
+	case ir.CondCompare:
+		return s.evalCompare(e)
+	case ir.CondAnd:
+		return s.evalCondAnd(e)
+	case ir.CondOr:
+		return s.evalCondOr(e)
+	case ir.CondNot:
+		return !s.evalCondition(e.Inner)
+	}
+	return false
+}
+
+func (s *simulator) evalCondAnd(e ir.CondAnd) bool {
+	return s.evalCondition(e.Left) && s.evalCondition(e.Right)
+}
+
+func (s *simulator) evalCondOr(e ir.CondOr) bool {
+	return s.evalCondition(e.Left) || s.evalCondition(e.Right)
+}
+
+// evalCompare evaluates a single comparison condition.
+func (s *simulator) evalCompare(e ir.CondCompare) bool {
+	ctxVal := s.resolveVariable(e.Variable)
+
+	if fn, ok := operatorFuncs[e.Op]; ok {
+		return fn(ctxVal, e.Value)
+	}
+	if e.Op == "in" {
+		return evalIn(ctxVal, e.Value)
+	}
+	return false
+}
+
+// evalIn checks if ctxVal matches any comma-separated item in value.
+func evalIn(ctxVal, value string) bool {
+	for _, p := range strings.Split(value, ",") {
+		if ctxVal == strings.TrimSpace(p) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *simulator) resolveVariable(variable string) string {
+	// Variables use namespaced access: "ctx.outcome", "ctx.tool_stdout",
+	// "graph.goal", "ctx.internal.loop_restart_count", etc.
+	// Strip "ctx." prefix for simple context lookups.
+	key := variable
+	if strings.HasPrefix(key, "ctx.") {
+		key = strings.TrimPrefix(key, "ctx.")
+	}
+
+	// Check scenario/context map (bare key first, then full variable name).
+	if v, ok := s.ctx[key]; ok {
+		return v
+	}
+	if v, ok := s.ctx[variable]; ok {
+		return v
+	}
+
+	// Handle graph.* references.
+	if variable == "graph.goal" {
+		return s.workflow.Goal
+	}
+
+	return ""
+}

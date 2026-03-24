@@ -1,0 +1,41 @@
+package main
+
+import (
+	"flag"
+	"fmt"
+
+	"github.com/2389-research/dippin-lang/export"
+)
+
+// CmdExportDOT exports a workflow to DOT graph format.
+//   - --rankdir=LR|TB (default TB)
+//   - --prompts includes prompt text in DOT node attributes
+func (c *CLI) CmdExportDOT(args []string) ExitCode {
+	fs := flag.NewFlagSet("export-dot", flag.ContinueOnError)
+	fs.SetOutput(c.Stderr)
+	rankdir := fs.String("rankdir", "TB", "graph layout direction (LR|TB)")
+	prompts := fs.Bool("prompts", false, "include prompt text in DOT attributes")
+	if err := fs.Parse(args); err != nil {
+		return ExitUsageError
+	}
+	if fs.NArg() < 1 {
+		fmt.Fprintln(c.Stderr, "usage: dippin export-dot [--rankdir=LR|TB] [--prompts] <file>")
+		return ExitUsageError
+	}
+
+	path := fs.Arg(0)
+	w, err := loadWorkflow(path)
+	if err != nil {
+		c.renderError(err, path)
+		return ExitError
+	}
+
+	opts := export.ExportOptions{
+		IncludePrompts: *prompts,
+		RankDir:        *rankdir,
+	}
+
+	dot := export.ExportDOT(w, opts)
+	fmt.Fprint(c.Stdout, dot)
+	return ExitOK
+}
