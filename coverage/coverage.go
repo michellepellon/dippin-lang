@@ -79,7 +79,10 @@ func analyzeNodes(w *ir.Workflow, r *Report) {
 
 // analyzeToolNode computes coverage for a single tool node.
 func analyzeToolNode(w *ir.Workflow, n *ir.Node) NodeCoverage {
-	cfg := n.Config.(ir.ToolConfig)
+	cfg, ok := n.Config.(ir.ToolConfig)
+	if !ok {
+		return NodeCoverage{NodeID: n.ID}
+	}
 	edges := w.EdgesFrom(n.ID)
 	conditions, hasFallback := collectEdgeConditions(edges)
 
@@ -289,9 +292,7 @@ func addReverseNodeEdges(adj map[string][]string, n *ir.Node) {
 			adj[t] = append(adj[t], n.ID)
 		}
 	case ir.FanInConfig:
-		for _, src := range cfg.Sources {
-			adj[n.ID] = append(adj[n.ID], src)
-		}
+		adj[n.ID] = append(adj[n.ID], cfg.Sources...)
 	}
 }
 
