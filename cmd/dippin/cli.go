@@ -122,6 +122,10 @@ func Run(args []string, stdout, stderr io.Writer) ExitCode {
 		return code
 	}
 
+	return c.dispatch(remaining, stdout, stderr)
+}
+
+func (c *CLI) dispatch(remaining []string, stdout, stderr io.Writer) ExitCode {
 	cmd := remaining[0]
 	cmdArgs := remaining[1:]
 

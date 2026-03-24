@@ -14,3 +14,4 @@ paths.jsonl
 # Tracker build artifacts
 .tracker/
 .ai/
+.DS_Store
