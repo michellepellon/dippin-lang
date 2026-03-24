@@ -39,6 +39,7 @@ func Lint(w *ir.Workflow) Result {
 	diags = append(diags, lintCompactionThreshold(w)...)
 	diags = append(diags, lintOnResume(w)...)
 	diags = append(diags, lintReasoningEffort(w)...)
+	diags = append(diags, lintConditionNamespace(w)...)
 	diags = append(diags, lintStylesheetRefs(w)...)
 
 	return Result{Diagnostics: diags}
@@ -875,6 +876,44 @@ func lintOnResume(w *ir.Workflow) []Diagnostic {
 		})
 	}
 	return diags
+}
+
+// lintConditionNamespace checks DIP120: condition variables should use a
+// namespace prefix (ctx., graph., params.). Bare variables like "outcome"
+// work at runtime but are inconsistent with the spec convention.
+func lintConditionNamespace(w *ir.Workflow) []Diagnostic {
+	var diags []Diagnostic
+	for _, e := range w.Edges {
+		if e.Condition == nil || e.Condition.Parsed == nil {
+			continue
+		}
+		diags = append(diags, checkConditionVarNamespaces(e)...)
+	}
+	return diags
+}
+
+// checkConditionVarNamespaces checks all comparisons in a single edge condition.
+func checkConditionVarNamespaces(e *ir.Edge) []Diagnostic {
+	comparisons := extractComparisons(e.Condition.Parsed)
+	var diags []Diagnostic
+	for _, cmp := range comparisons {
+		if isBareVariable(cmp.Variable) {
+			diags = append(diags, Diagnostic{
+				Code:     DIP120,
+				Severity: SeverityWarning,
+				Message:  fmt.Sprintf("edge %s → %s: condition variable %q has no namespace prefix", e.From, e.To, cmp.Variable),
+				Location: e.Source,
+				Help:     fmt.Sprintf("use ctx.%s instead of %s for consistency", cmp.Variable, cmp.Variable),
+			})
+		}
+	}
+	return diags
+}
+
+// isBareVariable returns true if the variable has no known namespace prefix.
+func isBareVariable(v string) bool {
+	parts := strings.SplitN(v, ".", 2)
+	return len(parts) < 2 || !knownNamespaces[parts[0]]
 }
 
 // validReasoningEfforts is the set of reasoning effort levels recognized by LLM providers.

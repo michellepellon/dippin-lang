@@ -21,6 +21,7 @@ const (
 	DIP117 = "DIP117" // stylesheet .class references undefined class
 	DIP118 = "DIP118" // stylesheet #id references unknown node
 	DIP119 = "DIP119" // invalid reasoning_effort value
+	DIP120 = "DIP120" // condition variable missing namespace prefix
 )
 
 func init() {
@@ -44,4 +45,5 @@ func init() {
 	CodeDescription[DIP117] = "stylesheet class references undefined class"
 	CodeDescription[DIP118] = "stylesheet ID references unknown node"
 	CodeDescription[DIP119] = "invalid reasoning_effort value"
+	CodeDescription[DIP120] = "condition variable missing namespace prefix"
 }

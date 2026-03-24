@@ -1107,6 +1107,57 @@ func TestLint_DIP115_NoGoalGate_NoDiag(t *testing.T) {
 	assertNoCode(t, res, DIP115)
 }
 
+// --- DIP120: condition variable namespace ---
+
+func TestLint_DIP120_BareVariable(t *testing.T) {
+	w := cleanMinimalWorkflow()
+	w.Edges[0].Condition = &ir.Condition{
+		Raw:    "outcome = success",
+		Parsed: ir.CondCompare{Variable: "outcome", Op: "=", Value: "success"},
+	}
+	res := Lint(w)
+	assertHasCode(t, res, DIP120)
+}
+
+func TestLint_DIP120_NamespacedVariable_NoDiag(t *testing.T) {
+	w := cleanMinimalWorkflow()
+	w.Edges[0].Condition = &ir.Condition{
+		Raw:    "ctx.outcome = success",
+		Parsed: ir.CondCompare{Variable: "ctx.outcome", Op: "=", Value: "success"},
+	}
+	res := Lint(w)
+	assertNoCode(t, res, DIP120)
+}
+
+func TestLint_DIP120_GraphNamespace_NoDiag(t *testing.T) {
+	w := cleanMinimalWorkflow()
+	w.Edges[0].Condition = &ir.Condition{
+		Raw:    "graph.goal = build",
+		Parsed: ir.CondCompare{Variable: "graph.goal", Op: "=", Value: "build"},
+	}
+	res := Lint(w)
+	assertNoCode(t, res, DIP120)
+}
+
+func TestLint_DIP120_BareVariableInAnd(t *testing.T) {
+	w := cleanMinimalWorkflow()
+	w.Edges[0].Condition = &ir.Condition{
+		Raw: "outcome = success and tool_stdout != empty",
+		Parsed: ir.CondAnd{
+			Left:  ir.CondCompare{Variable: "outcome", Op: "=", Value: "success"},
+			Right: ir.CondCompare{Variable: "tool_stdout", Op: "!=", Value: "empty"},
+		},
+	}
+	res := Lint(w)
+	assertHasCode(t, res, DIP120)
+}
+
+func TestLint_DIP120_NoCondition_NoDiag(t *testing.T) {
+	w := cleanMinimalWorkflow()
+	res := Lint(w)
+	assertNoCode(t, res, DIP120)
+}
+
 // --- DIP114: BranchConfig fidelity ---
 
 func TestLint_DIP114_InvalidBranchFidelity(t *testing.T) {
