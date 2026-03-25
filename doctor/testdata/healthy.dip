@@ -1,0 +1,14 @@
+workflow Healthy
+  goal: "A well-structured workflow"
+  start: Ask
+  exit: Done
+
+  human Ask
+    mode: freeform
+
+  agent Done
+    prompt:
+      Complete the task.
+
+  edges
+    Ask -> Done

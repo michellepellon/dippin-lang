@@ -1,0 +1,23 @@
+workflow Unhealthy
+  goal: "A workflow with issues"
+  start: Start
+  exit: Done
+
+  agent Start
+    prompt:
+
+  agent Middle
+    prompt:
+      Do something.
+
+  agent Orphan
+    prompt:
+      Never reached.
+
+  agent Done
+    prompt:
+      Finish.
+
+  edges
+    Start -> Middle
+    Middle -> Done

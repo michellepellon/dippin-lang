@@ -1,0 +1,116 @@
+name: 'Dippin Lint'
+description: 'Lint and analyze Dippin workflow files'
+inputs:
+  version:
+    description: 'Dippin version to install (default: latest)'
+    required: false
+    default: 'latest'
+  files:
+    description: 'Glob pattern for .dip files'
+    required: false
+    default: '**/*.dip'
+  fail-on-warnings:
+    description: 'Fail if lint warnings are found'
+    required: false
+    default: 'false'
+  cost-threshold:
+    description: 'Maximum expected cost in USD (0 to disable)'
+    required: false
+    default: '0'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.25'
+        cache: true
+
+    - name: Install dippin
+      shell: bash
+      run: |
+        if [ "${{ inputs.version }}" = "latest" ]; then
+          go install github.com/2389-research/dippin-lang/cmd/dippin@latest
+        else
+          go install github.com/2389-research/dippin-lang/cmd/dippin@${{ inputs.version }}
+        fi
+
+    - name: Find .dip files
+      id: find-files
+      shell: bash
+      run: |
+        shopt -s globstar nullglob
+        files=(${{ inputs.files }})
+        if [ ${#files[@]} -eq 0 ]; then
+          echo "No .dip files found matching '${{ inputs.files }}'"
+          echo "found=false" >> "$GITHUB_OUTPUT"
+        else
+          echo "found=true" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "${files[@]}" > /tmp/dippin-files.txt
+          echo "Found ${#files[@]} .dip file(s)"
+        fi
+
+    - name: Run dippin check
+      if: steps.find-files.outputs.found == 'true'
+      shell: bash
+      run: |
+        failed=0
+        summary="## Dippin Lint Results\n\n"
+        summary+="| File | Status | Errors | Warnings |\n"
+        summary+="|------|--------|--------|----------|\n"
+
+        while IFS= read -r f; do
+          output=$(dippin --format json check "$f" 2>/dev/null) || true
+          valid=$(echo "$output" | jq -r '.valid // false')
+          errors=$(echo "$output" | jq -r '.errors // 0')
+          warnings=$(echo "$output" | jq -r '.warnings // 0')
+
+          if [ "$valid" = "true" ]; then
+            status="pass"
+          else
+            status="fail"
+            failed=1
+          fi
+
+          if [ "${{ inputs.fail-on-warnings }}" = "true" ] && [ "$warnings" -gt 0 ]; then
+            failed=1
+          fi
+
+          summary+="| \`$f\` | $status | $errors | $warnings |\n"
+        done < /tmp/dippin-files.txt
+
+        echo -e "$summary" >> "$GITHUB_STEP_SUMMARY"
+        exit $failed
+
+    - name: Run dippin cost
+      if: steps.find-files.outputs.found == 'true'
+      shell: bash
+      run: |
+        summary="\n## Cost Analysis\n\n"
+        summary+="| File | Min | Expected | Max |\n"
+        summary+="|------|-----|----------|-----|\n"
+        threshold=${{ inputs.cost-threshold }}
+        exceeded=0
+
+        while IFS= read -r f; do
+          output=$(dippin --format json cost "$f" 2>/dev/null) || true
+          min=$(echo "$output" | jq -r '.total.min // 0')
+          expected=$(echo "$output" | jq -r '.total.expected // 0')
+          max=$(echo "$output" | jq -r '.total.max // 0')
+          summary+="| \`$f\` | \$$min | \$$expected | \$$max |\n"
+
+          if [ "$threshold" != "0" ]; then
+            over=$(echo "$expected > $threshold" | bc -l 2>/dev/null || echo "0")
+            if [ "$over" = "1" ]; then
+              exceeded=1
+              echo "::warning::$f expected cost \$$expected exceeds threshold \$$threshold"
+            fi
+          fi
+        done < /tmp/dippin-files.txt
+
+        echo -e "$summary" >> "$GITHUB_STEP_SUMMARY"
+        if [ "$exceeded" = "1" ]; then
+          echo "::error::One or more files exceed cost threshold"
+          exit 1
+        fi

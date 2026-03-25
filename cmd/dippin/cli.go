@@ -58,6 +58,11 @@ func (c *CLI) commandDispatch() map[string]func([]string) ExitCode {
 		"simulate":           c.CmdSimulate,
 		"cost":               c.CmdCost,
 		"coverage":           c.CmdCoverage,
+		"doctor":             c.CmdDoctor,
+		"optimize":           c.CmdOptimize,
+		"diff":               c.CmdDiff,
+		"feedback":           c.CmdFeedback,
+		"lsp":                c.CmdLSP,
 	}
 }
 
@@ -170,6 +175,11 @@ func printGlobalUsage(w io.Writer) {
 	fmt.Fprintln(w, "                                    --all-paths         Enumerate all paths")
 	fmt.Fprintln(w, "  cost <file>                       Estimate workflow execution cost")
 	fmt.Fprintln(w, "  coverage <file>                   Analyze edge coverage and reachability")
+	fmt.Fprintln(w, "  doctor <file>                     Health report card (grade A-F, suggestions)")
+	fmt.Fprintln(w, "  optimize <file>                   Model cost optimization suggestions")
+	fmt.Fprintln(w, "  diff <old.dip> <new.dip>          Semantic diff between two workflows")
+	fmt.Fprintln(w, "  feedback <workflow> <telemetry>    Compare predicted vs actual costs")
+	fmt.Fprintln(w, "  lsp                               Start LSP server on stdio")
 	fmt.Fprintln(w, "  version                           Show version info")
 	fmt.Fprintln(w, "  help                              Show this help")
 }

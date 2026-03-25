@@ -208,3 +208,49 @@ jobs:
               ./dippin simulate "$f" 2>&1 | tail -5 || true
             fi
           done
+
+      - name: Doctor all examples
+        run: |
+          for f in examples/*.dip; do
+            echo "--- $f ---"
+            ./dippin doctor "$f" 2>&1 || true
+          done
+
+      - name: Cost-optimize all examples
+        run: |
+          for f in examples/*.dip; do
+            echo "--- $f ---"
+            ./dippin optimize "$f" 2>&1 || true
+          done
+
+  dippin-lint:
+    name: Dippin Lint Action (dogfood)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Build and install dippin
+        run: go install ./cmd/dippin/
+
+      - name: Lint examples
+        run: |
+          summary="## Dippin Lint Results\n\n"
+          summary+="| File | Status | Errors | Warnings |\n"
+          summary+="|------|--------|--------|----------|\n"
+          for f in examples/*.dip; do
+            output=$(dippin --format json check "$f" 2>/dev/null) || true
+            valid=$(echo "$output" | jq -r '.valid // false')
+            errors=$(echo "$output" | jq -r '.errors // 0')
+            warnings=$(echo "$output" | jq -r '.warnings // 0')
+            status="pass"
+            [ "$valid" != "true" ] && status="fail"
+            summary+="| \`$f\` | $status | $errors | $warnings |\n"
+          done
+          echo -e "$summary" >> "$GITHUB_STEP_SUMMARY"

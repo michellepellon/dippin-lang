@@ -1,0 +1,18 @@
+workflow Optimal
+  goal: "Workflow with appropriate model choices"
+  start: Ask
+  exit: Done
+
+  defaults
+    model: claude-haiku-4-5
+    provider: anthropic
+
+  human Ask
+    mode: freeform
+
+  agent Done
+    prompt:
+      Complete the task.
+
+  edges
+    Ask -> Done

@@ -1,0 +1,34 @@
+workflow Pipeline
+  goal: "Version 2 of the pipeline"
+  start: Intake
+  exit: Done
+
+  defaults
+    model: claude-sonnet-4-6
+    provider: anthropic
+
+  agent Intake
+    label: "Intake"
+    prompt:
+      Gather requirements from the user.
+
+  agent Process
+    label: "Process"
+    model: claude-sonnet-4-6
+    prompt:
+      Process the requirements and produce a plan with detailed steps.
+
+  agent Review
+    label: "Review"
+    prompt:
+      Review the plan for quality.
+
+  agent Done
+    label: "Done"
+    prompt:
+      Summarize results.
+
+  edges
+    Intake -> Process
+    Process -> Review
+    Review -> Done
