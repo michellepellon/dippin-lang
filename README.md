@@ -258,7 +258,7 @@ workflow <Name>
     Retry -> Start restart: true                    # Loop restart
 ```
 
-**Condition operators:** `==`, `!=`, `<`, `>`, `<=`, `>=`, `and`, `or`, `not`, `contains`, `startswith`, `endswith`.
+**Condition operators:** `=`, `==`, `!=`, `contains`, `not contains`, `startswith`, `endswith`, `in`, `and`, `or`, `not`.
 
 **Context variables** use dotted namespaces: `ctx.outcome`, `ctx.last_response`, `graph.goal`.
 
@@ -311,6 +311,7 @@ Comments are not stripped inside multiline blocks — a `#` inside a prompt or c
 | `max_turns` | agent | Max LLM conversation turns |
 | `command` | tool | Shell command (multiline) |
 | `timeout` | tool | Duration (30s, 5m, 1h) |
+| `outputs` | tool | Declared stdout values for coverage analysis |
 | `mode` | human | freeform or choice |
 | `default` | human | Default choice |
 | `ref` | subgraph | Workflow path |

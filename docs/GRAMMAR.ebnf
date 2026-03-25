@@ -88,7 +88,8 @@ tool_node       = "tool" IDENTIFIER NEWLINE
                   INDENT { tool_field | common_field } OUTDENT ;
 
 tool_field      = "command" ":" field_value
-                | "timeout" ":" DURATION ;
+                | "timeout" ":" DURATION
+                | "outputs" ":" identifier_list ;
 
 (* --- Subgraph Node ---------------------------------------- *)
 
@@ -171,9 +172,9 @@ selector        = "*"                              (* universal *)
 (* Condition Expressions                                      *)
 (* ═══════════════════════════════════════════════════════════ *)
 
-(* Note: the parser currently stores conditions as raw text.  *)
-(* The grammar below describes the intended syntax that the   *)
-(* simulator's condition evaluator parses at runtime.         *)
+(* Note: the parser stores conditions as raw text (Condition.Raw).     *)
+(* The AST (Condition.Parsed) is populated by EnsureConditionsParsed  *)
+(* before lint checks run and before simulation.                      *)
 
 condition       = or_expr ;
 
@@ -184,13 +185,19 @@ and_expr        = unary_expr { "and" unary_expr } ;
 unary_expr      = "not" unary_expr
                 | compare_expr ;
 
-compare_expr    = operand compare_op operand ;
+(* Infix negation: "ctx.outcome not contains val" is equivalent to   *)
+(* "not (ctx.outcome contains val)". Both prefix and infix forms     *)
+(* produce CondNot{Inner: CondCompare{...}} in the AST.              *)
+compare_expr    = operand [ "not" ] compare_op operand ;
 
-compare_op      = "==" | "!=" | "=" | "<" | ">" | "<=" | ">="
+(* All operators perform string comparison — no numeric coercion.    *)
+compare_op      = "==" | "!=" | "="
                 | "contains" | "startswith" | "endswith" | "in" ;
 
 operand         = variable | STRING | IDENTIFIER ;
 
+(* Variables use dotted namespaces. Bare identifiers (e.g., "outcome" *)
+(* instead of "ctx.outcome") are accepted but trigger DIP120.         *)
 variable        = IDENTIFIER "." IDENTIFIER ;  (* e.g., ctx.outcome, graph.goal *)
 
 (* ═══════════════════════════════════════════════════════════ *)

@@ -256,14 +256,19 @@ Conditions appear on edges after the `when` keyword. They are boolean expression
 
 ### Comparison operators
 
+All operators perform string comparison — there is no numeric coercion.
+
 | Operator | Meaning | Example |
 |----------|---------|---------|
-| `=` | String equality | `ctx.outcome = success` |
+| `=`, `==` | String equality | `ctx.outcome = success` |
 | `!=` | String inequality | `ctx.outcome != fail` |
 | `contains` | Substring match | `ctx.response contains "approved"` |
+| `not contains` | Negated substring | `ctx.tool_stdout not contains all-done` |
 | `startswith` | Prefix match | `ctx.response startswith "yes"` |
 | `endswith` | Suffix match | `ctx.response endswith "done"` |
 | `in` | Value in list | `ctx.status in "pass,fail,skip"` |
+
+Infix `not` can negate any operator: `ctx.outcome not contains "error"` is equivalent to `not ctx.outcome contains "error"`.
 
 ### Logical operators
 
@@ -289,7 +294,7 @@ All variables in conditions use explicit namespaces:
 |-----------|----------|----------|
 | `ctx.*` | Runtime context (handler outputs) | `ctx.outcome`, `ctx.last_response`, `ctx.tool_stdout` |
 | `graph.*` | Workflow-level attributes | `graph.goal`, `graph.name` |
-| `state.*` | Pipeline state | `state.checkpoint`, `state.iteration` |
+| `params.*` | Subgraph parameters | `params.model`, `params.severity` |
 
 See [context.md](context.md) for the full variable reference.
 

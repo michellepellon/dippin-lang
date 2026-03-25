@@ -55,7 +55,7 @@ when <expr> or <expr>
 when not <expr>
 ```
 
-**Comparison operators:** `=`, `==`, `!=`, `<`, `>`, `<=`, `>=`, `contains`, `startswith`, `endswith`, `in`
+**Comparison operators:** `=`, `==`, `!=`, `contains`, `not contains`, `startswith`, `endswith`, `in` (all string comparison, no numeric ops)
 
 **Variables:** Always namespace-qualified: `ctx.outcome`, `ctx.status`, `graph.goal`
 

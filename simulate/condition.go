@@ -140,9 +140,9 @@ func (p *condParser) parseOpValue(variable string) (string, string, error) {
 }
 
 // validOperators is the set of recognized comparison operators.
+// All operators do string comparison — there is no numeric coercion.
 var validOperators = map[string]bool{
 	"=": true, "==": true, "!=": true,
-	"<": true, ">": true, "<=": true, ">=": true,
 	"contains": true, "startswith": true, "endswith": true, "in": true,
 }
 

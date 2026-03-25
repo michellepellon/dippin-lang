@@ -42,7 +42,6 @@ The primary namespace. Contains handler outputs and reserved keys.
 | `ctx.human_response` | Human nodes | The human's input text |
 | `ctx.tool_stdout` | Tool nodes | Standard output from the shell command |
 | `ctx.tool_stderr` | Tool nodes | Standard error from the shell command |
-| `ctx.preferred_label` | Engine | Edge routing hint from the handler's outcome |
 
 These reserved keys are **always available** — the validator knows about them at parse time and can flag typos.
 

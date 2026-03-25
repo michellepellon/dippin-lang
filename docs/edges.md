@@ -126,14 +126,19 @@ This means conditions always take precedence over labels, and labels over weight
 
 ### Comparison Operators
 
+All operators perform string comparison — there is no numeric coercion.
+
 | Operator | Meaning | Example |
 |----------|---------|---------|
-| `=` | Exact string equality | `ctx.outcome = success` |
+| `=`, `==` | Exact string equality | `ctx.outcome = success` |
 | `!=` | String inequality | `ctx.outcome != fail` |
 | `contains` | Substring match | `ctx.response contains "approved"` |
+| `not contains` | Negated substring | `ctx.tool_stdout not contains all-done` |
 | `startswith` | Prefix match | `ctx.response startswith "ERROR"` |
 | `endswith` | Suffix match | `ctx.filename endswith ".go"` |
 | `in` | Value in comma-separated list | `ctx.status in "pass,fail,skip"` |
+
+Infix `not` can negate any operator: `var not contains val` is equivalent to `not var contains val`.
 
 ### Logical Operators
 
