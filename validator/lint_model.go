@@ -11,9 +11,6 @@ import (
 // knownModelProviders lists known valid model/provider combinations.
 // This is a best-effort catalog — unknown combinations produce a warning,
 // not an error, since new models may be added at any time.
-// knownModelProviders lists known valid model/provider combinations.
-// This is a best-effort catalog — unknown combinations produce a warning,
-// not an error, since new models may be added at any time.
 //
 // Sources:
 //
