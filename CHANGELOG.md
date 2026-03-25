@@ -2,6 +2,21 @@
 
 All notable changes to dippin-lang are documented here. Versions follow [semver](https://semver.org/).
 
+## [v0.4.1] — 2026-03-25
+
+### Fixed
+- **EBNF grammar** audited against parser — added infix negation, tool `outputs` field, removed undocumented numeric operators (`<`, `>`, `<=`, `>=` parsed but silently returned false)
+- **Docs accuracy** — removed `state.*` namespace (not implemented), removed `ctx.preferred_label` (not in codebase), added `==` as `=` alias, added `not contains` infix syntax
+- **Condition parser** — removed `<`, `>`, `<=`, `>=` from valid operators (never evaluated, silent false was a trap)
+
+### Added
+- `CHANGELOG.md` with retroactive history for all versions
+- `docs/CONTRIBUTING.md` — documentation accuracy protocol with persona matrix
+- `CLAUDE.md` — project conventions, gotchas, versioning policy
+- Integration test (`TestLintExamples`) — lints all examples through real parser
+- "Last verified" dates on model catalog and pricing table
+- Tool `outputs` field documented in nodes.md and README.md
+
 ## [v0.4.0] — 2026-03-25
 
 ### Added
@@ -69,6 +84,7 @@ All notable changes to dippin-lang are documented here. Versions follow [semver]
 - 15 example workflows including 5 stress tests
 - VS Code extension (syntax highlighting)
 
+[v0.4.1]: https://github.com/2389-research/dippin-lang/compare/v0.4.0...v0.4.1
 [v0.4.0]: https://github.com/2389-research/dippin-lang/compare/v0.3.0...v0.4.0
 [v0.3.0]: https://github.com/2389-research/dippin-lang/compare/v0.2.0...v0.3.0
 [v0.2.0]: https://github.com/2389-research/dippin-lang/compare/v0.1.0...v0.2.0
