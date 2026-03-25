@@ -2,6 +2,11 @@
 
 All notable changes to dippin-lang are documented here. Versions follow [semver](https://semver.org/).
 
+## [v0.4.3] — 2026-03-25
+
+### Fixed
+- **DIP101 suppressed for mixed routing** — when a source node has both unconditional and conditional outgoing edges, the conditional branches are intentional routing. DIP101 no longer fires on their destinations. Covers all four reported patterns: compound inequality conditions, exhaustive set + fallback, mixed unconditional/conditional, and labeled fallback edges.
+
 ## [v0.4.2] — 2026-03-25
 
 ### Fixed
@@ -89,6 +94,7 @@ All notable changes to dippin-lang are documented here. Versions follow [semver]
 - 15 example workflows including 5 stress tests
 - VS Code extension (syntax highlighting)
 
+[v0.4.3]: https://github.com/2389-research/dippin-lang/compare/v0.4.2...v0.4.3
 [v0.4.2]: https://github.com/2389-research/dippin-lang/compare/v0.4.1...v0.4.2
 [v0.4.1]: https://github.com/2389-research/dippin-lang/compare/v0.4.0...v0.4.1
 [v0.4.0]: https://github.com/2389-research/dippin-lang/compare/v0.3.0...v0.4.0

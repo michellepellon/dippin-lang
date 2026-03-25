@@ -16,10 +16,11 @@ import (
 func lintConditionalReachability(w *ir.Workflow) []Diagnostic {
 	var diags []Diagnostic
 	incoming := buildIncomingEdgeMap(w)
+	outgoing := buildOutgoingEdgeMap(w)
 	exhaustiveSources := findExhaustiveSources(w)
 
 	for _, n := range w.Nodes {
-		if d, ok := checkConditionalReachability(n, w.Start, incoming, exhaustiveSources); ok {
+		if d, ok := checkConditionalReachability(n, w.Start, incoming, outgoing, exhaustiveSources); ok {
 			diags = append(diags, d)
 		}
 	}
@@ -27,7 +28,7 @@ func lintConditionalReachability(w *ir.Workflow) []Diagnostic {
 }
 
 // checkConditionalReachability checks a single node for DIP101.
-func checkConditionalReachability(n *ir.Node, start string, incoming map[string][]*ir.Edge, exhaustive map[string]bool) (Diagnostic, bool) {
+func checkConditionalReachability(n *ir.Node, start string, incoming, outgoing map[string][]*ir.Edge, exhaustive map[string]bool) (Diagnostic, bool) {
 	if n.ID == start {
 		return Diagnostic{}, false
 	}
@@ -35,7 +36,7 @@ func checkConditionalReachability(n *ir.Node, start string, incoming map[string]
 	if len(edges) == 0 {
 		return Diagnostic{}, false
 	}
-	if allEdgesConditional(edges) && !allSourcesExhaustive(edges, exhaustive) {
+	if allEdgesConditional(edges) && !allSourcesSafe(edges, outgoing, exhaustive) {
 		return Diagnostic{
 			Code:     DIP101,
 			Severity: SeverityWarning,
@@ -47,15 +48,38 @@ func checkConditionalReachability(n *ir.Node, start string, incoming map[string]
 	return Diagnostic{}, false
 }
 
-// allSourcesExhaustive returns true if every source node feeding these edges
-// has exhaustive outgoing conditions.
-func allSourcesExhaustive(edges []*ir.Edge, exhaustive map[string]bool) bool {
+// allSourcesSafe returns true if every source node feeding these edges
+// either has exhaustive outgoing conditions OR has at least one
+// unconditional outgoing edge. A source with an unconditional edge
+// has normal execution flow — the conditional branch to our target
+// is intentional routing that fires when the condition matches.
+func allSourcesSafe(edges []*ir.Edge, outgoing map[string][]*ir.Edge, exhaustive map[string]bool) bool {
 	for _, e := range edges {
-		if !exhaustive[e.From] {
+		if !sourceIsSafe(e.From, outgoing, exhaustive) {
 			return false
 		}
 	}
 	return true
+}
+
+// sourceIsSafe returns true if a source node guarantees its conditional
+// destinations are intentional: either via exhaustive conditions or by
+// having an unconditional outgoing edge (mixed routing).
+func sourceIsSafe(nodeID string, outgoing map[string][]*ir.Edge, exhaustive map[string]bool) bool {
+	if exhaustive[nodeID] {
+		return true
+	}
+	return hasUnconditionalEdge(outgoing[nodeID])
+}
+
+// hasUnconditionalEdge returns true if any edge in the set has no condition.
+func hasUnconditionalEdge(edges []*ir.Edge) bool {
+	for _, e := range edges {
+		if e.Condition == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // buildIncomingEdgeMap builds a map of incoming edges per node.

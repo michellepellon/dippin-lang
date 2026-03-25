@@ -109,7 +109,7 @@ func TestLint(t *testing.T) {
 
 		// --- DIP101: Unreachable nodes after conditional branches ---
 		{
-			name: "DIP101: node only reachable via conditional edges",
+			name: "DIP101: source has unconditional edge, conditional branch is safe",
 			workflow: &ir.Workflow{
 				Name:  "cond_only",
 				Start: "A",
@@ -128,7 +128,8 @@ func TestLint(t *testing.T) {
 					{From: "B", To: "C"},
 				},
 			},
-			wantCodes: []string{DIP101},
+			// A has unconditional edge to C → conditional branch to B is intentional.
+			wantNoDiag: true,
 		},
 		{
 			name: "DIP101: node with unconditional incoming edge is fine",
@@ -190,8 +191,8 @@ func TestLint(t *testing.T) {
 					{From: "B", To: "C"},
 				},
 			},
-			// B is only reachable via conditional edge (DIP101), but no DIP102.
-			wantCodes: []string{DIP101},
+			// A has unconditional edge → conditional branch to B is intentional. No DIP101 or DIP102.
+			wantNoDiag: true,
 		},
 
 		// --- DIP103: Overlapping conditions ---
@@ -416,6 +417,78 @@ func TestLint(t *testing.T) {
 				},
 			},
 			// Single conditional edge — not exhaustive, DIP101 should fire.
+			wantCodes: []string{DIP101},
+		},
+		{
+			name: "DIP101: mixed unconditional + conditional from same source (pattern 3)",
+			workflow: &ir.Workflow{
+				Name:  "mixed_routing",
+				Start: "Start",
+				Exit:  "Done",
+				Nodes: []*ir.Node{
+					{ID: "Start", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go"}},
+					{ID: "Impl", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "impl"}},
+					{ID: "Review", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "review"}},
+					{ID: "Debug", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "debug"}},
+					{ID: "Done", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done"}},
+				},
+				Edges: []*ir.Edge{
+					{From: "Start", To: "Impl"},
+					{From: "Impl", To: "Review"}, // unconditional
+					{From: "Impl", To: "Debug", Condition: &ir.Condition{Raw: "ctx.outcome = fail"}}, // conditional
+					{From: "Review", To: "Done"},
+					{From: "Debug", To: "Impl"},
+				},
+			},
+			// Source has unconditional edge → conditional branch is intentional.
+			wantNoDiag: true,
+		},
+		{
+			name: "DIP101: conditional edge with labeled fallback from source (pattern 4)",
+			workflow: &ir.Workflow{
+				Name:  "labeled_fallback",
+				Start: "Start",
+				Exit:  "Done",
+				Nodes: []*ir.Node{
+					{ID: "Start", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go"}},
+					{ID: "Gate", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "gate"}},
+					{ID: "Pass", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "pass"}},
+					{ID: "Fix", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "fix"}},
+					{ID: "Fallback", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "fallback"}},
+					{ID: "Done", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done"}},
+				},
+				Edges: []*ir.Edge{
+					{From: "Start", To: "Gate"},
+					{From: "Gate", To: "Pass", Condition: &ir.Condition{Raw: "ctx.outcome = success"}},
+					{From: "Gate", To: "Fix", Condition: &ir.Condition{Raw: "ctx.outcome = fail"}},
+					{From: "Gate", To: "Fallback"}, // unconditional labeled fallback
+					{From: "Pass", To: "Done"},
+					{From: "Fix", To: "Gate"},
+					{From: "Fallback", To: "Done"},
+				},
+			},
+			// Source has exhaustive conditions + unconditional fallback.
+			wantNoDiag: true,
+		},
+		{
+			name: "DIP101: only conditional edges, source has no unconditional out, NOT safe",
+			workflow: &ir.Workflow{
+				Name:  "unsafe_conditional",
+				Start: "Start",
+				Exit:  "Done",
+				Nodes: []*ir.Node{
+					{ID: "Start", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go"}},
+					{ID: "Gate", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "gate"}},
+					{ID: "Only", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "only"}},
+					{ID: "Done", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done"}},
+				},
+				Edges: []*ir.Edge{
+					{From: "Start", To: "Gate"},
+					{From: "Gate", To: "Only", Condition: &ir.Condition{Raw: "ctx.outcome = success"}},
+					{From: "Only", To: "Done"},
+				},
+			},
+			// Source has only conditional edges, no unconditional out, not exhaustive.
 			wantCodes: []string{DIP101},
 		},
 
@@ -939,6 +1012,8 @@ func TestLintDiagnosticSeverity(t *testing.T) {
 }
 
 func TestLintDIP101MessageContent(t *testing.T) {
+	// Source has ONLY conditional outgoing edges (no unconditional) and is not
+	// exhaustive → DIP101 fires on the conditional destination.
 	w := &ir.Workflow{
 		Name:  "msg_check",
 		Start: "A",
@@ -950,10 +1025,8 @@ func TestLintDIP101MessageContent(t *testing.T) {
 		},
 		Edges: []*ir.Edge{
 			{From: "A", To: "B", Condition: &ir.Condition{
-				Raw:    "ctx.x = 1",
-				Parsed: ir.CondCompare{Variable: "ctx.x", Op: "=", Value: "1"},
+				Raw: "ctx.x = 1",
 			}},
-			{From: "A", To: "C"},
 			{From: "B", To: "C"},
 		},
 	}
