@@ -62,6 +62,9 @@ func (c *CLI) commandDispatch() map[string]func([]string) ExitCode {
 		"optimize":           c.CmdOptimize,
 		"diff":               c.CmdDiff,
 		"feedback":           c.CmdFeedback,
+		"explain":            c.CmdExplain,
+		"unused":             c.CmdUnused,
+		"graph":              c.CmdGraph,
 		"lsp":                c.CmdLSP,
 	}
 }
@@ -179,6 +182,9 @@ func printGlobalUsage(w io.Writer) {
 	fmt.Fprintln(w, "  optimize <file>                   Model cost optimization suggestions")
 	fmt.Fprintln(w, "  diff <old.dip> <new.dip>          Semantic diff between two workflows")
 	fmt.Fprintln(w, "  feedback <workflow> <telemetry>    Compare predicted vs actual costs")
+	fmt.Fprintln(w, "  explain <DIPxxx>                   Explain a diagnostic code in detail")
+	fmt.Fprintln(w, "  graph [--compact] <file>           Render ASCII DAG of the workflow")
+	fmt.Fprintln(w, "  unused <file>                     Detect dead-branch nodes and wasted cost")
 	fmt.Fprintln(w, "  lsp                               Start LSP server on stdio")
 	fmt.Fprintln(w, "  version                           Show version info")
 	fmt.Fprintln(w, "  help                              Show this help")

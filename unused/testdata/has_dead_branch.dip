@@ -1,0 +1,34 @@
+workflow DeadBranch
+  goal: "Test dead branch detection"
+  start: Start
+  exit: Exit
+
+  agent Start
+    label: Start
+
+  agent Exit
+    label: Exit
+
+  agent Gate
+    label: Gate
+    model: claude-sonnet-4-6
+    provider: anthropic
+    prompt: Route based on outcome.
+
+  agent Pass
+    label: Pass
+    model: claude-sonnet-4-6
+    provider: anthropic
+    prompt: Process success case.
+
+  agent DeadEnd
+    label: Dead End
+    model: claude-sonnet-4-6
+    provider: anthropic
+    prompt: This node goes nowhere.
+
+  edges
+    Start -> Gate
+    Gate -> Pass  when ctx.outcome = success
+    Gate -> DeadEnd  when ctx.outcome = fail
+    Pass -> Exit

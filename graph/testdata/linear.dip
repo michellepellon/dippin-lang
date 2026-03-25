@@ -1,0 +1,20 @@
+workflow Linear
+  goal: "Simple linear workflow"
+  start: Start
+  exit: Exit
+
+  agent Start
+    label: Start
+
+  agent Middle
+    label: Middle
+    model: claude-sonnet-4-6
+    provider: anthropic
+    prompt: Process.
+
+  agent Exit
+    label: Exit
+
+  edges
+    Start -> Middle
+    Middle -> Exit

@@ -21,9 +21,9 @@ graph LR
     CLI["dippin"] --> |"--format text\|json"| CMD{Command}
     CMD --> A["Authoring<br>parse, validate, lint,<br>check, fmt, new"]
     CMD --> B["Export / Migration<br>export-dot, migrate,<br>validate-migration"]
-    CMD --> C["Analysis<br>simulate, cost, coverage,<br>doctor, optimize, diff, feedback"]
+    CMD --> C["Analysis<br>simulate, cost, coverage,<br>doctor, optimize, diff,<br>feedback, unused, graph"]
     CMD --> D["Editor<br>lsp"]
-    CMD --> E["Info<br>version, help"]
+    CMD --> E["Info / Testing<br>version, help, explain, test"]
 ```
 
 ```
@@ -481,6 +481,101 @@ dippin feedback <workflow.dip> <telemetry.csv>
 ```
 
 See [analysis.md](analysis.md#feedback) for input format and output schema.
+
+---
+
+### explain
+
+Print a detailed explanation for any diagnostic code.
+
+```bash
+dippin explain <DIPxxx>
+```
+
+**Input**: A diagnostic code string (e.g., `DIP101`, `DIP003`).
+
+**Output**: Rich explanation including what triggers the diagnostic, how to fix it, and an example snippet.
+
+**Example**:
+```bash
+$ dippin explain DIP101
+═══ DIP101 ═════════════════════════════════════════
+  unreachable node after conditional branches
+
+  Trigger: A node follows conditional branches that already cover all outcomes.
+  Fix:     Route the node through a condition, or remove it if unreachable.
+
+  Example:
+    A -> B [success]
+    A -> C [failure]
+    A -> D  // unreachable
+```
+
+In JSON mode, outputs the `Explanation` struct with `code`, `summary`, `trigger`, `fix`, and `example` fields.
+
+---
+
+### unused
+
+Detect dead-branch nodes — reachable from start but with no path to exit — and estimate wasted cost.
+
+```bash
+dippin unused <file>
+```
+
+**Input**: `.dip` or `.dot` file.
+
+**Output**: List of unused (sink) nodes with their kind, label, and estimated wasted cost per run.
+
+**Example**:
+```bash
+$ dippin unused pipeline.dip
+═══ Unused Nodes ══════════════════════════════════════════
+  ✗ DeadEnd                      agent  (Dead End)
+─── Wasted Cost ───────────────────────────────────────────
+  $0.05 - $0.12 estimated wasted per run
+─── Summary ───────────────────────────────────────────────
+  1 unused node(s) found
+```
+
+---
+
+### graph
+
+Render a terminal-friendly ASCII DAG of the workflow.
+
+```bash
+dippin graph [--compact] <file>
+```
+
+**Flags**:
+
+| Flag | Description |
+|------|-------------|
+| `--compact` | Single-line format: `[Start] → [Middle] → [Exit]` |
+
+**Output**: ASCII box-drawing diagram showing topological layers. In JSON mode, outputs the layer structure.
+
+**Example**:
+```bash
+$ dippin graph pipeline.dip
+  ┌──────────┐
+  │  Start   │
+  └──────────┘
+       │
+       ▼
+  ┌──────────┐
+  │  Middle  │
+  └──────────┘
+       │
+       ▼
+  ┌──────────┐
+  │   Exit   │
+  └──────────┘
+
+$ dippin graph --compact pipeline.dip
+[Start] → [Middle] → [Exit]
+```
 
 ---
 

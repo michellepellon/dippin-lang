@@ -2,6 +2,15 @@
 
 All notable changes to dippin-lang are documented here. Versions follow [semver](https://semver.org/).
 
+## [v0.5.0] — 2026-03-25
+
+### Added
+- **`dippin explain <DIPxxx>`** — rich explanations for all 32 diagnostic codes. Shows trigger conditions, fix guidance, and example snippets. Supports text and JSON output.
+- **`dippin unused <file>`** — detects dead-branch nodes (reachable from start but no path to exit) and estimates wasted cost per run. Reuses `coverage.Analyze()` sink detection + `cost.Analyze()` for cost enrichment.
+- **`dippin graph [--compact] <file>`** — terminal-rendered ASCII DAG visualization. Full mode renders box-drawing nodes with connectors; compact mode outputs single-line `[A] → [B] → [C]` format. JSON mode outputs layer structure.
+- **New packages:** `unused/`, `graph/`, `testrunner/`
+- **New files:** `validator/explanations.go` with `Explanation` struct for all DIP codes.
+
 ## [v0.4.3] — 2026-03-25
 
 ### Fixed

@@ -1,0 +1,35 @@
+workflow Branching
+  goal: "Branching workflow"
+  start: Start
+  exit: Exit
+
+  agent Start
+    label: Start
+
+  agent Exit
+    label: Exit
+
+  agent Left
+    label: Left
+    model: claude-sonnet-4-6
+    provider: anthropic
+    prompt: Left branch.
+
+  agent Right
+    label: Right
+    model: claude-sonnet-4-6
+    provider: anthropic
+    prompt: Right branch.
+
+  agent Merge
+    label: Merge
+    model: claude-sonnet-4-6
+    provider: anthropic
+    prompt: Merge results.
+
+  edges
+    Start -> Left  when ctx.outcome = success
+    Start -> Right  when ctx.outcome = fail
+    Left -> Merge
+    Right -> Merge
+    Merge -> Exit
