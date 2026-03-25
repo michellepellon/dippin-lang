@@ -65,14 +65,9 @@ func appendLayerLines(lines []string, layer []string, w *ir.Workflow) []string {
 }
 
 // appendConnector adds the vertical connector and arrow between layers.
-func appendConnector(lines []string, layer []string) []string {
-	if len(layer) == 1 {
-		lines = append(lines, "       \u2502")
-		lines = append(lines, "       \u25bc")
-	} else {
-		lines = append(lines, "       \u2502")
-		lines = append(lines, "       \u25bc")
-	}
+func appendConnector(lines []string, _ []string) []string {
+	lines = append(lines, "       \u2502")
+	lines = append(lines, "       \u25bc")
 	return lines
 }
 

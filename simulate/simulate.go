@@ -36,6 +36,11 @@ type Options struct {
 	// reported with a distinct run ID suffix.
 	AllPaths bool
 
+	// MaxNodeVisits limits how many times a single node can be visited.
+	// When exceeded, the simulator forces the loop-exit edge (the first
+	// conditional edge that doesn't match). 0 means unlimited (use maxSteps only).
+	MaxNodeVisits int
+
 	// Stdin is used for interactive human prompts. Ignored if Interactive is false.
 	Stdin io.Reader
 
@@ -89,10 +94,11 @@ func Run(w *ir.Workflow, opts Options) (*Result, error) {
 	}
 
 	s := &simulator{
-		workflow: w,
-		opts:     opts,
-		ctx:      make(map[string]string),
-		visited:  make(map[string]bool),
+		workflow:   w,
+		opts:       opts,
+		ctx:        make(map[string]string),
+		visited:    make(map[string]bool),
+		nodeVisits: make(map[string]int),
 	}
 
 	// Seed context with scenario values.
@@ -120,13 +126,14 @@ func EmitJSONL(w io.Writer, events []event.Event) error {
 // --- Internal simulator ---
 
 type simulator struct {
-	workflow *ir.Workflow
-	opts     Options
-	ctx      map[string]string
-	visited  map[string]bool
-	events   []event.Event
-	path     []string
-	steps    int
+	workflow   *ir.Workflow
+	opts       Options
+	ctx        map[string]string
+	visited    map[string]bool
+	nodeVisits map[string]int
+	events     []event.Event
+	path       []string
+	steps      int
 }
 
 const maxSteps = 500 // safety valve against infinite loops
@@ -206,6 +213,7 @@ func (s *simulator) finishRun(status string) *Result {
 
 func (s *simulator) visitNode(node *ir.Node) error {
 	s.visited[node.ID] = true
+	s.nodeVisits[node.ID]++
 	s.path = append(s.path, node.ID)
 
 	enterEvt := buildNodeEnterEvent(node, s.workflow)
@@ -238,9 +246,11 @@ func (s *simulator) visitNode(node *ir.Node) error {
 // resolveNext determines which node to visit after the current one.
 // Resolution order:
 //  1. If there is exactly one unconditional edge, take it.
-//  2. Try all conditional edges in declaration order; take the first match.
-//  3. Fall back to the first unconditional edge (default path).
-//  4. If no conditions match and no unconditional edge exists, fall back to
+//  2. If MaxNodeVisits is set and this node has been visited too many times,
+//     force the loop-exit edge (first non-matching conditional or unconditional).
+//  3. Try all conditional edges in declaration order; take the first match.
+//  4. Fall back to the first unconditional edge (default path).
+//  5. If no conditions match and no unconditional edge exists, fall back to
 //     the first conditional edge (happy-path / no-scenario default).
 func (s *simulator) resolveNext(node *ir.Node) (string, error) {
 	edges := s.workflow.EdgesFrom(node.ID)
@@ -254,15 +264,65 @@ func (s *simulator) resolveNext(node *ir.Node) (string, error) {
 		return edges[0].To, nil
 	}
 
-	// Try conditional edges, then unconditional fallback.
+	return s.resolveConditionalNext(node.ID, edges)
+}
+
+// resolveConditionalNext handles edge resolution for nodes with multiple
+// or conditional edges, including loop-exit forcing.
+func (s *simulator) resolveConditionalNext(nodeID string, edges []*ir.Edge) (string, error) {
+	if s.shouldBreakLoop(nodeID) {
+		return s.forceLoopExit(nodeID, edges)
+	}
+
 	if next := s.findMatchingEdge(edges); next != nil {
 		return next.To, nil
 	}
 
-	// No conditional matched and no unconditional default exists.
-	// Fall back to the first edge — this gives a "happy path" traversal.
+	// No match — fall back to the first edge (happy-path default).
 	s.emitEdgeTraverse(edges[0])
 	return edges[0].To, nil
+}
+
+// shouldBreakLoop returns true if a node has been visited too many times.
+func (s *simulator) shouldBreakLoop(nodeID string) bool {
+	return s.opts.MaxNodeVisits > 0 && s.nodeVisits[nodeID] > s.opts.MaxNodeVisits
+}
+
+// forceLoopExit selects the exit edge when a loop is detected.
+// It tries the first non-matching conditional (the exit condition),
+// then unconditional edges, then falls back to the first edge.
+func (s *simulator) forceLoopExit(nodeID string, edges []*ir.Edge) (string, error) {
+	s.emitLoopBreak(nodeID)
+	if e := s.firstNonMatchingCond(edges); e != nil {
+		return e.To, nil
+	}
+	if e := s.firstUnconditional(edges); e != nil {
+		return e.To, nil
+	}
+	s.emitEdgeTraverse(edges[0])
+	return edges[0].To, nil
+}
+
+// firstNonMatchingCond returns the first conditional edge whose condition
+// is NOT satisfied — typically the loop-exit edge.
+func (s *simulator) firstNonMatchingCond(edges []*ir.Edge) *ir.Edge {
+	for _, e := range edges {
+		if e.Condition != nil && !s.evalCondition(e.Condition.Parsed) {
+			s.emitEdgeTraverse(e)
+			return e
+		}
+	}
+	return nil
+}
+
+// emitLoopBreak emits a context_update event signaling a forced loop exit.
+func (s *simulator) emitLoopBreak(nodeID string) {
+	s.emit(event.ContextUpdate{
+		Event:     event.TypeContextUpdate,
+		Key:       "_loop_break",
+		Value:     nodeID,
+		Timestamp: event.Now(),
+	})
 }
 
 // findMatchingEdge tries conditional edges first, then unconditional ones.

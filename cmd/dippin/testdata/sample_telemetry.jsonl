@@ -1,0 +1,2 @@
+{"event":"node_complete","node":"Ask","model":"","provider":"","tokens_in":0,"tokens_out":0,"actual_cost":0.0,"turns":0,"timestamp":"2024-01-01T00:00:00Z"}
+{"event":"node_complete","node":"Done","model":"claude-sonnet-4-6","provider":"anthropic","tokens_in":500,"tokens_out":200,"actual_cost":0.005,"turns":1,"timestamp":"2024-01-01T00:01:00Z"}

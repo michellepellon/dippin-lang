@@ -30,7 +30,7 @@ graph LR
 | Shell scripts | `tool_command="#!/bin/sh\nset -eu\nif..."` | Real multiline, real syntax |
 | Model config | Untyped `llm_model="..."` attribute | Typed `model:` field with validation |
 | Branching | `condition="context.x!=y && context.a==b"` | `when ctx.x != "y" and ctx.a == "b"` |
-| Validation | Silent — typos in attrs are ignored | 30 diagnostic codes (DIP001–DIP009, DIP101–DIP120) |
+| Validation | Silent — typos in attrs are ignored | 32 diagnostic codes (DIP001–DIP009, DIP101–DIP122) |
 | Node types | Shape overloading (`box`=agent, `hexagon`=human) | Explicit `agent`, `tool`, `human` keywords |
 | Composition | No import/include system | `subgraph` with ref (v2) |
 
@@ -119,7 +119,7 @@ dippin lint pipeline.dip
 |---------|-------------|
 | `dippin parse <file>` | Parse and output IR as JSON |
 | `dippin validate <file>` | Structural validation (DIP001–DIP009) |
-| `dippin lint <file>` | Validation + semantic warnings (DIP101–DIP120) |
+| `dippin lint <file>` | Validation + semantic warnings (DIP101–DIP122) |
 | `dippin check [--format json\|text] <file>` | Parse+validate+lint in one shot (JSON default, for LLM tooling) |
 | `dippin fmt [--check] [--write] <file>` | Format to canonical style |
 | `dippin new [--name N] [--write F] <template>` | Generate a starter .dip from a template |
@@ -138,6 +138,10 @@ dippin lint pipeline.dip
 | `dippin optimize <file>` | Model cost optimization suggestions |
 | `dippin diff <old.dip> <new.dip>` | Semantic diff between two workflows |
 | `dippin feedback <workflow> <telemetry>` | Compare predicted vs actual costs |
+| `dippin explain <DIPxxx>` | Explain a diagnostic code in detail |
+| `dippin unused <file>` | Detect dead-branch nodes and wasted cost |
+| `dippin graph [--compact] <file>` | Render ASCII DAG of the workflow |
+| `dippin test [--verbose] <file>` | Run scenario tests from .test.json |
 
 ### Editor & Tooling
 
@@ -348,7 +352,7 @@ error[DIP003]: unknown node reference "InterpretX" in edge
 | DIP008 | Duplicate node ID |
 | DIP009 | Duplicate edge |
 
-### Warnings (DIP101–DIP120)
+### Warnings (DIP101–DIP122)
 
 | Code | What it catches |
 |------|----------------|
@@ -372,6 +376,8 @@ error[DIP003]: unknown node reference "InterpretX" in edge
 | DIP118 | Stylesheet references unknown node ID |
 | DIP119 | Invalid reasoning_effort value |
 | DIP120 | Condition variable missing namespace prefix |
+| DIP121 | Condition references variable not in source node writes |
+| DIP122 | Condition tests value not in source node outputs |
 
 ## Simulation
 
@@ -424,7 +430,7 @@ See the [extension README](editors/vscode/README.md) for installation.
 
 ## Examples
 
-The [`examples/`](examples/) directory contains 15 workflows:
+The [`examples/`](examples/) directory contains 17 workflows:
 
 **Production patterns** (migrated from Tracker, with original `.dot` files):
 
@@ -457,7 +463,7 @@ graph LR
     Parser --> IR["IR (Workflow)"]
     Migrator --> IR
     IR --> Validator["Validator<br>(DIP001–009)"]
-    IR --> Linter["Linter<br>(DIP101–120)"]
+    IR --> Linter["Linter<br>(DIP101–122)"]
     IR --> Formatter["Formatter<br>(canonical .dip)"]
     IR --> DOT["DOT Exporter<br>(visualization)"]
     IR --> Sim["Simulator<br>(dry-run)"]
@@ -472,7 +478,7 @@ Everything flows through `ir.Workflow` — the canonical intermediate representa
 |---------|-------------|
 | `ir/` | Core types: `Workflow`, `Node`, `Edge`, `Condition` AST, typed `NodeConfig` sealed interface |
 | `parser/` | Indentation-aware lexer + recursive-descent parser producing IR |
-| `validator/` | 9 structural checks + 21 semantic lint rules |
+| `validator/` | 9 structural checks + 22 semantic lint rules |
 | `formatter/` | Canonical pretty-printer (idempotent: `format(format(x)) == format(x)`) |
 | `export/` | DOT export with shape mapping, condition serialization, restart edge styling |
 | `migrate/` | DOT→IR→Dippin converter with namespace prefixing and structural parity checker |

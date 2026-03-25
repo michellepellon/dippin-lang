@@ -72,6 +72,20 @@ func TestRunCase_WrongStatus(t *testing.T) {
 	}
 }
 
+func TestLoadTestFile_WrongSchema(t *testing.T) {
+	_, err := testrunner.LoadTestFile("testdata/wrong_schema.test.json")
+	if err == nil {
+		t.Error("expected error for wrong schema")
+	}
+}
+
+func TestLoadTestFile_EmptyTests(t *testing.T) {
+	_, err := testrunner.LoadTestFile("testdata/empty_tests.test.json")
+	if err == nil {
+		t.Error("expected error for empty tests")
+	}
+}
+
 func parseFixture(t *testing.T, path string) *ir.Workflow {
 	t.Helper()
 	src, err := os.ReadFile(path)

@@ -1585,6 +1585,44 @@ func TestLint_DIP121_DeclaredWrite_NoWarning(t *testing.T) {
 	assertNoCode(t, res, DIP121)
 }
 
+func TestLint_DIP121_CompoundCondition(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "dip121_compound",
+		Start: "A",
+		Exit:  "B",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "a"},
+				IO: ir.NodeIO{Writes: []string{"score"}}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "b"}},
+		},
+		Edges: []*ir.Edge{
+			{From: "A", To: "B", Condition: &ir.Condition{
+				Raw: "ctx.score = high and ctx.mood = happy",
+			}},
+		},
+	}
+	res := Lint(w)
+	// score IS in writes, so no DIP121 for it.
+	// mood is NOT in writes → should get DIP121.
+	assertHasCode(t, res, DIP121)
+	// Verify the warning is specifically about "mood", not "score"
+	found := false
+	for _, d := range res.Diagnostics {
+		if d.Code == DIP121 && strings.Contains(d.Message, "mood") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected DIP121 warning about 'mood' variable")
+	}
+	// Verify no DIP121 for "score" (which IS declared in writes)
+	for _, d := range res.Diagnostics {
+		if d.Code == DIP121 && strings.Contains(d.Message, "score") {
+			t.Error("should not warn about 'score' which is in writes")
+		}
+	}
+}
+
 // --- DIP122: Condition tests value not in source tool outputs ---
 
 func TestLint_DIP122_UndeclaredValue(t *testing.T) {

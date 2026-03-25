@@ -38,9 +38,14 @@ func assignLayers(w *ir.Workflow) [][]string {
 }
 
 // buildAdjacency builds a forward adjacency list from edges and implicit connections.
+// Restart (back) edges are excluded because they create cycles that prevent
+// Kahn's algorithm from assigning layers to downstream nodes.
 func buildAdjacency(w *ir.Workflow) map[string][]string {
 	adj := make(map[string][]string)
 	for _, e := range w.Edges {
+		if e.Restart {
+			continue
+		}
 		adj[e.From] = append(adj[e.From], e.To)
 	}
 	addImplicitEdges(w, adj)

@@ -17,6 +17,9 @@ func LoadTestFile(path string) (*TestSuite, error) {
 	if err := json.Unmarshal(data, &suite); err != nil {
 		return nil, fmt.Errorf("parse test file: %w", err)
 	}
+	if len(suite.Tests) == 0 {
+		return nil, fmt.Errorf("test file has no tests")
+	}
 	return &suite, nil
 }
 

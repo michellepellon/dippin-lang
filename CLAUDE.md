@@ -4,16 +4,28 @@
 
 dippin-lang is a DSL and toolchain for authoring AI pipeline workflows. It replaces Graphviz DOT as the authoring format for Tracker pipelines.
 
-## Build & Test
+## Build & Test — always use `just`
+
+All common operations go through the justfile. Never run raw `go build`, `go test`, `gocyclo`, etc. directly — use the corresponding `just` recipe. If you find yourself running a command repeatedly that isn't in the justfile, add a recipe for it first.
 
 ```sh
-just check          # full suite: build, vet, fmt, test, complexity, examples
-just test           # go test ./...
-just complexity     # cyclomatic + cognitive complexity checks
-just setup-hooks    # install pre-commit hook (required for commits)
+just check              # full suite: build, vet, fmt, test-race, complexity, validate-examples
+just test               # go test ./... -count=1
+just test-race          # go test ./... -count=1 -race
+just test-pkg validator # test a single package with -v
+just build              # build the dippin binary
+just install            # go install to $GOBIN
+just vet                # go vet ./...
+just fmt                # gofmt -w .
+just fmt-check          # check formatting (CI-style, exit 1 if unformatted)
+just complexity         # cyclomatic ≤ 5 + cognitive ≤ 7 (excludes tests)
+just validate-examples  # run dippin validate on all examples/*.dip
+just lint-examples      # run dippin lint on all examples/*.dip
+just cover              # generate test coverage report
+just cover-html         # open coverage in browser
+just setup-hooks        # install pre-commit hook (required for first checkout)
+just clean              # remove build artifacts
 ```
-
-Single package: `go test ./validator/ -run TestLint -count=1`
 
 ## Code Quality
 

@@ -2,6 +2,26 @@
 
 All notable changes to dippin-lang are documented here. Versions follow [semver](https://semver.org/).
 
+## [v0.8.0] — 2026-03-25
+
+### Fixed
+- **Graph truncation on pipelines with restart edges** — `buildAdjacency()` included restart (back) edges, creating cycles that prevented Kahn's algorithm from assigning layers to downstream nodes. All nodes are now rendered. Affects both full and compact modes.
+- **Simulator infinite loop on tool-gated loops** — pipelines with `when ctx.tool_stdout not contains all-done` loops would spin to the 500-step limit. New `MaxNodeVisits` option forces the loop-exit edge after N visits. The test runner sets this to 3 by default.
+- **Per-node scenario injection in `dippin test`** — `NodeName.key=value` scenarios now work reliably because the loop-breaking fix allows the simulation to reach the target node.
+- **Testrunner accepts empty/invalid schemas silently** — `LoadTestFile` now rejects `.test.json` files with zero tests.
+
+### Added
+- **CLI integration tests** — 32 new tests covering 10 previously untested commands (cost, coverage, doctor, optimize, unused, graph, diff, feedback, explain, test). `cmd/dippin` coverage: 44.9% → 79.3%.
+- **Graph tests for parallel and restart-loop fixtures**.
+- **DIP121 compound condition test** — verifies `and`/`or` conditions correctly fire per-variable.
+- **Unused clean-workflow test** — verifies no false positives on linear workflows.
+- `just release tag msg` recipe for tagging releases.
+- DIP121/DIP122 added to README warnings table; `explain`, `unused`, `graph`, `test` added to commands table.
+
+### Fixed (cosmetic)
+- **README stale numbers** — diagnostic codes 30→32, DIP120→DIP122, examples 15→17, lint rules 21→22.
+- **`appendConnector` dead branch** — identical if/else branches collapsed.
+
 ## [v0.7.0] — 2026-03-25
 
 ### Added
@@ -117,6 +137,10 @@ All notable changes to dippin-lang are documented here. Versions follow [semver]
 - 15 example workflows including 5 stress tests
 - VS Code extension (syntax highlighting)
 
+[v0.8.0]: https://github.com/2389-research/dippin-lang/compare/v0.7.0...v0.8.0
+[v0.7.0]: https://github.com/2389-research/dippin-lang/compare/v0.6.0...v0.7.0
+[v0.6.0]: https://github.com/2389-research/dippin-lang/compare/v0.5.0...v0.6.0
+[v0.5.0]: https://github.com/2389-research/dippin-lang/compare/v0.4.3...v0.5.0
 [v0.4.3]: https://github.com/2389-research/dippin-lang/compare/v0.4.2...v0.4.3
 [v0.4.2]: https://github.com/2389-research/dippin-lang/compare/v0.4.1...v0.4.2
 [v0.4.1]: https://github.com/2389-research/dippin-lang/compare/v0.4.0...v0.4.1

@@ -95,6 +95,11 @@ setup-hooks:
     chmod +x .git/hooks/pre-commit
     @echo "Pre-commit hook installed."
 
+# Tag a semver release and push (e.g., just release v0.8.0 "add CLI integration tests")
+release tag msg:
+    git tag -a {{tag}} -m "{{msg}}"
+    git push origin {{tag}}
+
 # Clean build artifacts
 clean:
     rm -f dippin cover.out cover_check.out

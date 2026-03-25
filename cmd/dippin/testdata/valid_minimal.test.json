@@ -1,0 +1,12 @@
+{
+  "tests": [
+    {
+      "name": "basic path",
+      "scenario": {"outcome": "success"},
+      "expect": {
+        "status": "success",
+        "visited": ["Ask", "Done"]
+      }
+    }
+  ]
+}

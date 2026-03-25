@@ -1,0 +1,29 @@
+workflow RestartLoop
+  goal: "Test graph rendering with restart edges"
+  start: Start
+  exit: Done
+
+  agent Start
+    auto_status: true
+    prompt:
+      Begin.
+
+  agent Process
+    auto_status: true
+    prompt:
+      Process work.
+
+  agent Check
+    auto_status: true
+    prompt:
+      Check result.
+
+  agent Done
+    prompt:
+      Finish.
+
+  edges
+    Start -> Process
+    Process -> Check
+    Check -> Done when ctx.outcome = success
+    Check -> Process restart: true when ctx.outcome = fail

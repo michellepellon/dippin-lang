@@ -1,0 +1,20 @@
+workflow Clean
+  goal: "Simple linear workflow"
+  start: Start
+  exit: Done
+
+  agent Start
+    prompt:
+      Begin.
+
+  agent Middle
+    prompt:
+      Process.
+
+  agent Done
+    prompt:
+      Finish.
+
+  edges
+    Start -> Middle
+    Middle -> Done

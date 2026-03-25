@@ -7,6 +7,12 @@ import (
 	"github.com/2389-research/dippin-lang/simulate"
 )
 
+// defaultMaxNodeVisits is the per-node visit limit for test scenarios.
+// When a node is visited more times than this, the simulator forces the
+// loop-exit edge. This prevents tool-gated loops from spinning to the
+// global maxSteps limit while still allowing reasonable loop iterations.
+const defaultMaxNodeVisits = 3
+
 // RunSuite runs all test cases in a suite against the given workflow.
 func RunSuite(w *ir.Workflow, suite *TestSuite) *SuiteResult {
 	sr := &SuiteResult{Total: len(suite.Tests)}
@@ -27,7 +33,8 @@ func RunCase(w *ir.Workflow, tc TestCase) CaseResult {
 	cr := CaseResult{Name: tc.Name}
 
 	result, err := simulate.Run(w, simulate.Options{
-		Scenario: tc.Scenario,
+		Scenario:      tc.Scenario,
+		MaxNodeVisits: defaultMaxNodeVisits,
 	})
 	if err != nil {
 		cr.Errors = append(cr.Errors, fmt.Sprintf("simulation error: %v", err))

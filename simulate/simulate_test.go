@@ -928,6 +928,96 @@ func TestRunScenario_ToolStdoutOverride(t *testing.T) {
 	assertPathNotContains(t, res.Path, "OK")
 }
 
+// --- Loop Detection Tests ---
+
+// toolGatedLoopWorkflow creates a workflow with a tool-gated loop:
+// Start → PickNext(tool) → Work → PickNext (restart)
+// PickNext → Done when ctx.tool_stdout contains all-done
+// The tool default (tool_stdout=success) never contains "all-done",
+// so without MaxNodeVisits the loop runs to maxSteps.
+func toolGatedLoopWorkflow() *ir.Workflow {
+	return &ir.Workflow{
+		Name:  "ToolLoop",
+		Start: "Start",
+		Exit:  "Done",
+		Nodes: []*ir.Node{
+			{ID: "Start", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Go."}},
+			{ID: "PickNext", Kind: ir.NodeTool, Config: ir.ToolConfig{Command: "pick"}},
+			{ID: "Work", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Do work."}},
+			{ID: "Done", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Done."}},
+		},
+		Edges: []*ir.Edge{
+			{From: "Start", To: "PickNext"},
+			{From: "PickNext", To: "Work", Condition: &ir.Condition{
+				Raw: "ctx.tool_stdout not contains all-done",
+				Parsed: ir.CondNot{Inner: ir.CondCompare{
+					Variable: "ctx.tool_stdout", Op: "contains", Value: "all-done",
+				}},
+			}},
+			{From: "PickNext", To: "Done", Condition: &ir.Condition{
+				Raw:    "ctx.tool_stdout contains all-done",
+				Parsed: ir.CondCompare{Variable: "ctx.tool_stdout", Op: "contains", Value: "all-done"},
+			}},
+			{From: "Work", To: "PickNext", Restart: true},
+		},
+	}
+}
+
+func TestMaxNodeVisits_BreaksToolLoop(t *testing.T) {
+	ResetRunCounter()
+	w := toolGatedLoopWorkflow()
+
+	res, err := Run(w, Options{MaxNodeVisits: 3})
+	if err != nil {
+		t.Fatalf("expected loop to break, got error: %v", err)
+	}
+	if res.Status != "success" {
+		t.Errorf("Status = %q, want success", res.Status)
+	}
+	assertPathContains(t, res.Path, "Done")
+}
+
+func TestMaxNodeVisits_Zero_UsesMaxSteps(t *testing.T) {
+	ResetRunCounter()
+	w := toolGatedLoopWorkflow()
+
+	// Without MaxNodeVisits, should hit maxSteps error.
+	_, err := Run(w, Options{MaxNodeVisits: 0})
+	if err == nil {
+		t.Fatal("expected maxSteps error without MaxNodeVisits")
+	}
+	if !strings.Contains(err.Error(), "500 steps") {
+		t.Errorf("error = %q, want maxSteps message", err.Error())
+	}
+}
+
+func TestPerNodeScenario_InLoop(t *testing.T) {
+	ResetRunCounter()
+	w := restartWorkflow()
+
+	// Per-node scenario: Review.outcome=fail causes a loop.
+	// With MaxNodeVisits, the loop should break and exit.
+	res, err := Run(w, Options{
+		Scenario:      map[string]string{"Review.outcome": "fail"},
+		MaxNodeVisits: 3,
+	})
+	if err != nil {
+		t.Fatalf("expected loop to break, got error: %v", err)
+	}
+	// After loop breaking, should reach Done.
+	assertPathContains(t, res.Path, "Done")
+	// Review should have been visited multiple times.
+	reviewCount := 0
+	for _, n := range res.Path {
+		if n == "Review" {
+			reviewCount++
+		}
+	}
+	if reviewCount < 2 {
+		t.Errorf("Review visited %d times, expected at least 2", reviewCount)
+	}
+}
+
 // --- Helpers ---
 
 func assertEventSequence(t *testing.T, events []event.Event, expected []event.Type) {

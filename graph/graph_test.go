@@ -62,6 +62,65 @@ func TestCompactBranching(t *testing.T) {
 	}
 }
 
+func TestParallelLayers(t *testing.T) {
+	w := parseFixture(t, "testdata/parallel.dip")
+	info := graph.Layers(w)
+
+	assertSameLayer(t, info, "ReviewA", "ReviewB")
+	assertOrderInLayers(t, info, "Start", "ReviewA")
+	assertOrderInLayers(t, info, "ReviewA", "Done")
+}
+
+func TestParallelRender(t *testing.T) {
+	w := parseFixture(t, "testdata/parallel.dip")
+	out := graph.Render(w, graph.Options{})
+
+	assertContains(t, out, "ReviewA")
+	assertContains(t, out, "ReviewB")
+	assertContains(t, out, "Done")
+}
+
+func TestParallelCompact(t *testing.T) {
+	w := parseFixture(t, "testdata/parallel.dip")
+	out := graph.Render(w, graph.Options{Compact: true})
+
+	assertContains(t, out, "→")
+	// ReviewA and ReviewB should be combined in a bracket
+	if !strings.Contains(out, "ReviewA | ReviewB") && !strings.Contains(out, "ReviewB | ReviewA") {
+		t.Errorf("expected ReviewA and ReviewB combined, got: %s", out)
+	}
+}
+
+func TestRestartLoopLayers(t *testing.T) {
+	w := parseFixture(t, "testdata/restart_loop.dip")
+	info := graph.Layers(w)
+
+	// All 4 nodes should be assigned to layers (restart edge excluded from DAG).
+	assertOrderInLayers(t, info, "Start", "Process")
+	assertOrderInLayers(t, info, "Process", "Check")
+	assertOrderInLayers(t, info, "Check", "Done")
+}
+
+func TestRestartLoopRender(t *testing.T) {
+	w := parseFixture(t, "testdata/restart_loop.dip")
+	out := graph.Render(w, graph.Options{})
+
+	// All nodes should appear in the full render.
+	assertContains(t, out, "Start")
+	assertContains(t, out, "Process")
+	assertContains(t, out, "Check")
+	assertContains(t, out, "Done")
+}
+
+func TestRestartLoopCompact(t *testing.T) {
+	w := parseFixture(t, "testdata/restart_loop.dip")
+	out := graph.Render(w, graph.Options{Compact: true})
+
+	assertContains(t, out, "[Start]")
+	assertContains(t, out, "[Done]")
+	assertContains(t, out, "→")
+}
+
 func parseFixture(t *testing.T, path string) *ir.Workflow {
 	t.Helper()
 	src, err := os.ReadFile(path)

@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/2389-research/dippin-lang/simulate"
 )
 
 // helper runs the CLI with the given args and returns stdout, stderr, and exit code.
@@ -850,6 +852,96 @@ func TestExitCodes(t *testing.T) {
 			args:     []string{"help"},
 			wantCode: ExitOK,
 		},
+		{
+			name:     "cost missing file arg",
+			args:     []string{"cost"},
+			wantCode: ExitUsageError,
+		},
+		{
+			name:     "cost valid file",
+			args:     []string{"cost", testdata("valid_minimal.dip")},
+			wantCode: ExitOK,
+		},
+		{
+			name:     "coverage missing file arg",
+			args:     []string{"coverage"},
+			wantCode: ExitUsageError,
+		},
+		{
+			name:     "coverage valid file",
+			args:     []string{"coverage", testdata("valid_minimal.dip")},
+			wantCode: ExitOK,
+		},
+		{
+			name:     "doctor missing file arg",
+			args:     []string{"doctor"},
+			wantCode: ExitUsageError,
+		},
+		{
+			name:     "doctor valid file",
+			args:     []string{"doctor", testdata("valid_minimal.dip")},
+			wantCode: ExitOK,
+		},
+		{
+			name:     "optimize missing file arg",
+			args:     []string{"optimize"},
+			wantCode: ExitUsageError,
+		},
+		{
+			name:     "optimize valid file",
+			args:     []string{"optimize", testdata("valid_minimal.dip")},
+			wantCode: ExitOK,
+		},
+		{
+			name:     "unused missing file arg",
+			args:     []string{"unused"},
+			wantCode: ExitUsageError,
+		},
+		{
+			name:     "unused valid file",
+			args:     []string{"unused", testdata("valid_minimal.dip")},
+			wantCode: ExitOK,
+		},
+		{
+			name:     "graph missing file arg",
+			args:     []string{"graph"},
+			wantCode: ExitUsageError,
+		},
+		{
+			name:     "graph valid file",
+			args:     []string{"graph", testdata("valid_minimal.dip")},
+			wantCode: ExitOK,
+		},
+		{
+			name:     "diff missing args",
+			args:     []string{"diff"},
+			wantCode: ExitUsageError,
+		},
+		{
+			name:     "feedback missing args",
+			args:     []string{"feedback"},
+			wantCode: ExitUsageError,
+		},
+		{
+			name:     "explain missing arg",
+			args:     []string{"explain"},
+			wantCode: ExitUsageError,
+		},
+		{
+			name:     "explain valid code",
+			args:     []string{"explain", "DIP001"},
+			wantCode: ExitOK,
+		},
+		{
+			name:     "explain unknown code",
+			args:     []string{"explain", "DIP999"},
+			wantCode: ExitError,
+		},
+		{
+			name:     "test missing arg",
+			args:     []string{"test"},
+			wantCode: ExitUsageError,
+		},
 	}
 
 	for _, tt := range tests {
@@ -1128,5 +1220,403 @@ func TestCmdSimulate_AllPaths(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "PathB") {
 		t.Error("expected PathB in output")
+	}
+}
+
+// --- Cost Command ---
+
+func TestCmdCost_Valid(t *testing.T) {
+	stdout, stderr, code := runCLI(t, "cost", testdata("valid_minimal.dip"))
+
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d; stderr: %s", code, stderr)
+	}
+	if !strings.Contains(stdout, "Cost Estimate") {
+		t.Errorf("expected 'Cost Estimate' in stdout, got: %s", stdout)
+	}
+}
+
+func TestCmdCost_MissingArg(t *testing.T) {
+	_, stderr, code := runCLI(t, "cost")
+
+	if code != ExitUsageError {
+		t.Fatalf("expected exit 2, got %d", code)
+	}
+	if !strings.Contains(stderr, "usage:") {
+		t.Errorf("expected usage message on stderr, got: %s", stderr)
+	}
+}
+
+func TestCmdCost_JSON(t *testing.T) {
+	stdout, stderr, code := runCLI(t, "--format", "json", "cost", testdata("valid_minimal.dip"))
+
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d; stderr: %s", code, stderr)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &result); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\nstdout: %s", err, stdout)
+	}
+}
+
+// --- Coverage Command ---
+
+func TestCmdCoverage_Valid(t *testing.T) {
+	stdout, stderr, code := runCLI(t, "coverage", testdata("valid_minimal.dip"))
+
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d; stderr: %s", code, stderr)
+	}
+	if !strings.Contains(stdout, "Coverage Analysis") {
+		t.Errorf("expected 'Coverage Analysis' in stdout, got: %s", stdout)
+	}
+}
+
+func TestCmdCoverage_MissingArg(t *testing.T) {
+	_, stderr, code := runCLI(t, "coverage")
+
+	if code != ExitUsageError {
+		t.Fatalf("expected exit 2, got %d", code)
+	}
+	if !strings.Contains(stderr, "usage:") {
+		t.Errorf("expected usage message on stderr, got: %s", stderr)
+	}
+}
+
+func TestCmdCoverage_JSON(t *testing.T) {
+	stdout, stderr, code := runCLI(t, "--format", "json", "coverage", testdata("valid_minimal.dip"))
+
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d; stderr: %s", code, stderr)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &result); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\nstdout: %s", err, stdout)
+	}
+}
+
+// --- Doctor Command ---
+
+func TestCmdDoctor_Valid(t *testing.T) {
+	stdout, stderr, code := runCLI(t, "doctor", testdata("valid_minimal.dip"))
+
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d; stderr: %s", code, stderr)
+	}
+	if !strings.Contains(stdout, "Health Report") {
+		t.Errorf("expected 'Health Report' in stdout, got: %s", stdout)
+	}
+}
+
+func TestCmdDoctor_MissingArg(t *testing.T) {
+	_, stderr, code := runCLI(t, "doctor")
+
+	if code != ExitUsageError {
+		t.Fatalf("expected exit 2, got %d", code)
+	}
+	if !strings.Contains(stderr, "usage:") {
+		t.Errorf("expected usage message on stderr, got: %s", stderr)
+	}
+}
+
+func TestCmdDoctor_JSON(t *testing.T) {
+	stdout, stderr, code := runCLI(t, "--format", "json", "doctor", testdata("valid_minimal.dip"))
+
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d; stderr: %s", code, stderr)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &result); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\nstdout: %s", err, stdout)
+	}
+	if _, ok := result["grade"]; !ok {
+		t.Error("expected 'grade' field in JSON output")
+	}
+}
+
+// --- Optimize Command ---
+
+func TestCmdOptimize_Valid(t *testing.T) {
+	stdout, stderr, code := runCLI(t, "optimize", testdata("valid_minimal.dip"))
+
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d; stderr: %s", code, stderr)
+	}
+	if !strings.Contains(stdout, "Optimization") {
+		t.Errorf("expected 'Optimization' in stdout, got: %s", stdout)
+	}
+}
+
+func TestCmdOptimize_MissingArg(t *testing.T) {
+	_, stderr, code := runCLI(t, "optimize")
+
+	if code != ExitUsageError {
+		t.Fatalf("expected exit 2, got %d", code)
+	}
+	if !strings.Contains(stderr, "usage:") {
+		t.Errorf("expected usage message on stderr, got: %s", stderr)
+	}
+}
+
+func TestCmdOptimize_JSON(t *testing.T) {
+	stdout, stderr, code := runCLI(t, "--format", "json", "optimize", testdata("valid_minimal.dip"))
+
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d; stderr: %s", code, stderr)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &result); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\nstdout: %s", err, stdout)
+	}
+}
+
+// --- Unused Command ---
+
+func TestCmdUnused_Valid(t *testing.T) {
+	stdout, stderr, code := runCLI(t, "unused", testdata("valid_minimal.dip"))
+
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d; stderr: %s", code, stderr)
+	}
+	if !strings.Contains(stdout, "Unused Nodes") {
+		t.Errorf("expected 'Unused Nodes' in stdout, got: %s", stdout)
+	}
+}
+
+func TestCmdUnused_MissingArg(t *testing.T) {
+	_, stderr, code := runCLI(t, "unused")
+
+	if code != ExitUsageError {
+		t.Fatalf("expected exit 2, got %d", code)
+	}
+	if !strings.Contains(stderr, "usage:") {
+		t.Errorf("expected usage message on stderr, got: %s", stderr)
+	}
+}
+
+func TestCmdUnused_JSON(t *testing.T) {
+	stdout, stderr, code := runCLI(t, "--format", "json", "unused", testdata("valid_minimal.dip"))
+
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d; stderr: %s", code, stderr)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &result); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\nstdout: %s", err, stdout)
+	}
+}
+
+// --- Graph Command ---
+
+func TestCmdGraph_Full(t *testing.T) {
+	stdout, stderr, code := runCLI(t, "graph", testdata("valid_minimal.dip"))
+
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d; stderr: %s", code, stderr)
+	}
+	if !strings.Contains(stdout, "Ask") {
+		t.Errorf("expected 'Ask' in graph output, got: %s", stdout)
+	}
+	if !strings.Contains(stdout, "Done") {
+		t.Errorf("expected 'Done' in graph output, got: %s", stdout)
+	}
+}
+
+func TestCmdGraph_Compact(t *testing.T) {
+	stdout, stderr, code := runCLI(t, "graph", "--compact", testdata("valid_minimal.dip"))
+
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d; stderr: %s", code, stderr)
+	}
+	if !strings.Contains(stdout, "\u2192") {
+		t.Errorf("expected arrow character in compact output, got: %s", stdout)
+	}
+}
+
+func TestCmdGraph_JSON(t *testing.T) {
+	stdout, stderr, code := runCLI(t, "--format", "json", "graph", testdata("valid_minimal.dip"))
+
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d; stderr: %s", code, stderr)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &result); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\nstdout: %s", err, stdout)
+	}
+	if _, ok := result["layers"]; !ok {
+		t.Error("expected 'layers' field in JSON output")
+	}
+}
+
+func TestCmdGraph_MissingArg(t *testing.T) {
+	_, stderr, code := runCLI(t, "graph")
+
+	if code != ExitUsageError {
+		t.Fatalf("expected exit 2, got %d", code)
+	}
+	if !strings.Contains(stderr, "usage:") {
+		t.Errorf("expected usage message on stderr, got: %s", stderr)
+	}
+}
+
+// --- Diff Command ---
+
+func TestCmdDiff_Basic(t *testing.T) {
+	stdout, stderr, code := runCLI(t, "diff", testdata("valid_minimal.dip"), testdata("valid_minimal.dip"))
+
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d; stderr: %s", code, stderr)
+	}
+	if !strings.Contains(stdout, "Diff") {
+		t.Errorf("expected 'Diff' in stdout, got: %s", stdout)
+	}
+}
+
+func TestCmdDiff_JSON(t *testing.T) {
+	stdout, stderr, code := runCLI(t, "--format", "json", "diff", testdata("valid_minimal.dip"), testdata("valid_minimal.dip"))
+
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d; stderr: %s", code, stderr)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &result); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\nstdout: %s", err, stdout)
+	}
+}
+
+func TestCmdDiff_MissingArg(t *testing.T) {
+	_, stderr, code := runCLI(t, "diff")
+
+	if code != ExitUsageError {
+		t.Fatalf("expected exit 2, got %d", code)
+	}
+	if !strings.Contains(stderr, "usage:") {
+		t.Errorf("expected usage message on stderr, got: %s", stderr)
+	}
+}
+
+// --- Feedback Command ---
+
+func TestCmdFeedback_Basic(t *testing.T) {
+	stdout, stderr, code := runCLI(t, "feedback", testdata("valid_minimal.dip"), testdata("sample_telemetry.jsonl"))
+
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d; stderr: %s", code, stderr)
+	}
+	if !strings.Contains(stdout, "Calibration") && !strings.Contains(stdout, "Cost") {
+		t.Errorf("expected 'Calibration' or 'Cost' in stdout, got: %s", stdout)
+	}
+}
+
+func TestCmdFeedback_JSON(t *testing.T) {
+	stdout, stderr, code := runCLI(t, "--format", "json", "feedback", testdata("valid_minimal.dip"), testdata("sample_telemetry.jsonl"))
+
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d; stderr: %s", code, stderr)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &result); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\nstdout: %s", err, stdout)
+	}
+}
+
+func TestCmdFeedback_MissingArg(t *testing.T) {
+	_, stderr, code := runCLI(t, "feedback")
+
+	if code != ExitUsageError {
+		t.Fatalf("expected exit 2, got %d", code)
+	}
+	if !strings.Contains(stderr, "usage:") {
+		t.Errorf("expected usage message on stderr, got: %s", stderr)
+	}
+}
+
+// --- Explain Command ---
+
+func TestCmdExplain_ValidCode(t *testing.T) {
+	stdout, stderr, code := runCLI(t, "explain", "DIP001")
+
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d; stderr: %s", code, stderr)
+	}
+	if !strings.Contains(stdout, "DIP001") {
+		t.Errorf("expected 'DIP001' in stdout, got: %s", stdout)
+	}
+}
+
+func TestCmdExplain_UnknownCode(t *testing.T) {
+	_, stderr, code := runCLI(t, "explain", "DIP999")
+
+	if code != ExitError {
+		t.Fatalf("expected exit 1, got %d", code)
+	}
+	if !strings.Contains(stderr, "unknown") {
+		t.Errorf("expected 'unknown' on stderr, got: %s", stderr)
+	}
+}
+
+func TestCmdExplain_BadFormat(t *testing.T) {
+	_, stderr, code := runCLI(t, "explain", "foobar")
+
+	if code != ExitUsageError {
+		t.Fatalf("expected exit 2, got %d", code)
+	}
+	if !strings.Contains(stderr, "invalid") {
+		t.Errorf("expected 'invalid' on stderr, got: %s", stderr)
+	}
+}
+
+func TestCmdExplain_MissingArg(t *testing.T) {
+	_, stderr, code := runCLI(t, "explain")
+
+	if code != ExitUsageError {
+		t.Fatalf("expected exit 2, got %d", code)
+	}
+	if !strings.Contains(stderr, "usage:") {
+		t.Errorf("expected usage message on stderr, got: %s", stderr)
+	}
+}
+
+// --- Test Command ---
+
+func TestCmdTest_Pass(t *testing.T) {
+	simulate.ResetRunCounter()
+	stdout, stderr, code := runCLI(t, "test", testdata("valid_minimal.dip"))
+
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d; stderr: %s", code, stderr)
+	}
+	if !strings.Contains(stdout, "PASS") && !strings.Contains(stdout, "Test Results") {
+		t.Errorf("expected 'PASS' or 'Test Results' in stdout, got: %s", stdout)
+	}
+}
+
+func TestCmdTest_MissingArg(t *testing.T) {
+	_, stderr, code := runCLI(t, "test")
+
+	if code != ExitUsageError {
+		t.Fatalf("expected exit 2, got %d", code)
+	}
+	if !strings.Contains(stderr, "usage:") {
+		t.Errorf("expected usage message on stderr, got: %s", stderr)
+	}
+}
+
+func TestCmdTest_MissingTestFile(t *testing.T) {
+	_, stderr, code := runCLI(t, "test", testdata("lint_warnings.dip"))
+
+	if code != ExitError {
+		t.Fatalf("expected exit 1, got %d", code)
+	}
+	if !strings.Contains(stderr, "error") && !strings.Contains(stderr, "no such file") {
+		t.Errorf("expected error about missing test file on stderr, got: %s", stderr)
 	}
 }

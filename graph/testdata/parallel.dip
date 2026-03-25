@@ -1,0 +1,28 @@
+workflow Parallel
+  goal: "Test parallel rendering"
+  start: Start
+  exit: Done
+
+  agent Start
+    prompt:
+      Begin.
+
+  parallel Fan -> ReviewA, ReviewB
+
+  agent ReviewA
+    prompt:
+      Review A.
+
+  agent ReviewB
+    prompt:
+      Review B.
+
+  fan_in Join <- ReviewA, ReviewB
+
+  agent Done
+    prompt:
+      Finish.
+
+  edges
+    Start -> Fan
+    Join -> Done

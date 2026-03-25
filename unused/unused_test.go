@@ -26,6 +26,23 @@ func TestAnalyze(t *testing.T) {
 	assertWastedCost(t, report)
 }
 
+func TestAnalyze_CleanWorkflow(t *testing.T) {
+	src, err := os.ReadFile("testdata/clean.dip")
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	p := parser.NewParser(string(src), "testdata/clean.dip")
+	w, err := p.Parse()
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	report := unused.Analyze(w)
+	if len(report.UnusedNodes) != 0 {
+		t.Errorf("expected 0 unused nodes, got %d: %v", len(report.UnusedNodes), report.UnusedNodes)
+	}
+}
+
 func assertDeadEndPresent(t *testing.T, report *unused.Report) {
 	t.Helper()
 	if len(report.UnusedNodes) != 1 {
