@@ -22,6 +22,8 @@ const (
 	DIP118 = "DIP118" // stylesheet #id references unknown node
 	DIP119 = "DIP119" // invalid reasoning_effort value
 	DIP120 = "DIP120" // condition variable missing namespace prefix
+	DIP121 = "DIP121" // condition references variable not in source node writes
+	DIP122 = "DIP122" // condition tests value not in source tool outputs
 )
 
 func init() {
@@ -46,4 +48,6 @@ func init() {
 	CodeDescription[DIP118] = "stylesheet ID references unknown node"
 	CodeDescription[DIP119] = "invalid reasoning_effort value"
 	CodeDescription[DIP120] = "condition variable missing namespace prefix"
+	CodeDescription[DIP121] = "condition references variable not in source node writes"
+	CodeDescription[DIP122] = "condition tests value not in source tool outputs"
 }

@@ -1,9 +1,9 @@
 # Validation and Linting Reference
 
-Dippin provides 30 diagnostic checks split into two categories:
+Dippin provides 32 diagnostic checks split into two categories:
 
 - **Structural validation** (DIP001–DIP009): Errors that **must** be fixed. A workflow with any of these cannot execute.
-- **Semantic linting** (DIP101–DIP120): Warnings that flag likely bugs or questionable patterns. They don't block execution but should be reviewed.
+- **Semantic linting** (DIP101–DIP122): Warnings that flag likely bugs or questionable patterns. They don't block execution but should be reviewed.
 
 Run `dippin validate <file>` for structural checks only, or `dippin lint <file>` for both.
 
@@ -224,7 +224,7 @@ error[DIP009]: duplicate edge
 
 ---
 
-## Semantic Lint Warnings (DIP101–DIP120)
+## Semantic Lint Warnings (DIP101–DIP122)
 
 ### DIP101: Node Only Reachable via Conditional Edges
 
@@ -621,6 +621,44 @@ warning[DIP120]: condition variable "outcome" should use a namespace prefix (e.g
 
 ---
 
+### DIP121: Condition References Variable Not in Source Writes
+
+**Severity**: Warning
+
+An edge condition references a variable that the source node doesn't declare in its `writes`.
+
+```
+warning[DIP121]: edge Gate → Pass: condition references "ctx.score" but node "Gate" does not declare it in writes
+  --> pipeline.dip:45:5
+  = help: add writes: score to node "Gate", or use a reserved variable
+```
+
+**What triggers it**: An edge from node A has a condition like `ctx.score = high`, but node A's `IO.Writes` doesn't include `score`. Only fires when the source node has non-empty `writes` declarations.
+
+**Skipped for**: Reserved runtime variables (`ctx.outcome`, `ctx.status`, `ctx.tool_stdout`, `ctx.tool_stderr`, `ctx.internal.*`, `graph.*`, `params.*`).
+
+**How to fix**: Add the variable to the source node's `writes` list, or verify the condition references the correct variable.
+
+---
+
+### DIP122: Condition Tests Value Not in Tool Outputs
+
+**Severity**: Warning
+
+An edge condition tests a value that the source tool node doesn't declare in its `outputs`.
+
+```
+warning[DIP122]: edge RunTest → Pass: condition tests value "retry" but tool "RunTest" does not declare it in outputs
+  --> pipeline.dip:50:5
+  = help: add "retry" to tool "RunTest" outputs, or check for typos
+```
+
+**What triggers it**: A tool node declares `outputs: ["success", "fail"]` but an outgoing edge condition checks `ctx.outcome = retry`. Only fires for tool nodes with explicitly declared outputs.
+
+**How to fix**: Add the missing value to the tool's `outputs` list, or fix the typo in the condition.
+
+---
+
 ## Running Validation
 
 ### Structural validation only
@@ -637,7 +675,7 @@ Runs DIP001–DIP009. Exit code 0 if all pass, 1 if any errors.
 dippin lint pipeline.dip
 ```
 
-Runs all DIP001–DIP009 errors and DIP101–DIP120 warnings. Exit code 1 only for errors; warnings alone exit 0.
+Runs all DIP001–DIP009 errors and DIP101–DIP122 warnings. Exit code 1 only for errors; warnings alone exit 0.
 
 ### JSON output for CI
 

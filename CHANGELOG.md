@@ -2,6 +2,13 @@
 
 All notable changes to dippin-lang are documented here. Versions follow [semver](https://semver.org/).
 
+## [v0.6.0] — 2026-03-25
+
+### Added
+- **DIP121** lint rule: condition references variable not produced by source node's `IO.Writes`. Skips when writes are empty (advisory) or variable is a reserved runtime key (`ctx.outcome`, `ctx.status`, `ctx.internal.*`, `graph.*`, `params.*`).
+- **DIP122** lint rule: condition tests value not declared in source tool's `ToolConfig.Outputs`. Only fires for tool nodes with explicitly declared outputs.
+- Explanations for DIP121/DIP122 in `dippin explain`.
+
 ## [v0.5.0] — 2026-03-25
 
 ### Added

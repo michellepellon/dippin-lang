@@ -229,5 +229,19 @@ func buildLintExplanations() map[string]Explanation {
 			Fix:     "Add the namespace prefix to the variable (e.g., ctx.variable).",
 			Example: "A -> B [status == done]  // should be ctx.status",
 		},
+		DIP121: {
+			Code:    DIP121,
+			Summary: "condition references variable not in source node writes",
+			Trigger: "An edge condition references a variable that the source node does not declare in its writes.",
+			Fix:     "Add the variable to the source node's writes, or use a reserved runtime variable.",
+			Example: "node A { writes [result] }\nA -> B [ctx.score = high]  // score not in A's writes",
+		},
+		DIP122: {
+			Code:    DIP122,
+			Summary: "condition tests value not in source tool outputs",
+			Trigger: "An edge condition tests a value that the source tool node does not declare in its outputs.",
+			Fix:     "Add the value to the tool's outputs, or check for typos.",
+			Example: "node T { role tool outputs [success, fail] }\nT -> B [ctx.outcome = retry]  // retry not declared",
+		},
 	}
 }

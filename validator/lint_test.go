@@ -1507,3 +1507,158 @@ func assertNoCode(t *testing.T, res Result, code string) {
 		}
 	}
 }
+
+// --- DIP121: Condition references variable not in source node writes ---
+
+func TestLint_DIP121_UndeclaredVariable(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "dip121_warn",
+		Start: "A",
+		Exit:  "B",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeTool, Config: ir.ToolConfig{
+				Command: "echo ok", Timeout: 30e9,
+			}, IO: ir.NodeIO{Writes: []string{"result"}}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done"}},
+		},
+		Edges: []*ir.Edge{
+			{From: "A", To: "B", Condition: &ir.Condition{Raw: "ctx.score = high"}},
+		},
+	}
+	res := Lint(w)
+	assertHasCode(t, res, DIP121)
+}
+
+func TestLint_DIP121_EmptyWrites_NoWarning(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "dip121_skip",
+		Start: "A",
+		Exit:  "B",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeTool, Config: ir.ToolConfig{
+				Command: "echo ok", Timeout: 30e9,
+			}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done"}},
+		},
+		Edges: []*ir.Edge{
+			{From: "A", To: "B", Condition: &ir.Condition{Raw: "ctx.score = high"}},
+		},
+	}
+	res := Lint(w)
+	assertNoCode(t, res, DIP121)
+}
+
+func TestLint_DIP121_ReservedVariable_NoWarning(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "dip121_reserved",
+		Start: "A",
+		Exit:  "B",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeTool, Config: ir.ToolConfig{
+				Command: "echo ok", Timeout: 30e9,
+			}, IO: ir.NodeIO{Writes: []string{"result"}}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done"}},
+		},
+		Edges: []*ir.Edge{
+			{From: "A", To: "B", Condition: &ir.Condition{Raw: "ctx.outcome = success"}},
+		},
+	}
+	res := Lint(w)
+	assertNoCode(t, res, DIP121)
+}
+
+func TestLint_DIP121_DeclaredWrite_NoWarning(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "dip121_declared",
+		Start: "A",
+		Exit:  "B",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go"},
+				IO: ir.NodeIO{Writes: []string{"score"}}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done"}},
+		},
+		Edges: []*ir.Edge{
+			{From: "A", To: "B", Condition: &ir.Condition{Raw: "ctx.score = high"}},
+		},
+	}
+	res := Lint(w)
+	assertNoCode(t, res, DIP121)
+}
+
+// --- DIP122: Condition tests value not in source tool outputs ---
+
+func TestLint_DIP122_UndeclaredValue(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "dip122_warn",
+		Start: "T",
+		Exit:  "B",
+		Nodes: []*ir.Node{
+			{ID: "T", Kind: ir.NodeTool, Config: ir.ToolConfig{
+				Command: "check", Timeout: 30e9,
+				Outputs: []string{"success", "fail"},
+			}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done"}},
+		},
+		Edges: []*ir.Edge{
+			{From: "T", To: "B", Condition: &ir.Condition{Raw: "ctx.outcome = retry"}},
+		},
+	}
+	res := Lint(w)
+	assertHasCode(t, res, DIP122)
+}
+
+func TestLint_DIP122_EmptyOutputs_NoWarning(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "dip122_skip",
+		Start: "T",
+		Exit:  "B",
+		Nodes: []*ir.Node{
+			{ID: "T", Kind: ir.NodeTool, Config: ir.ToolConfig{
+				Command: "check", Timeout: 30e9,
+			}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done"}},
+		},
+		Edges: []*ir.Edge{
+			{From: "T", To: "B", Condition: &ir.Condition{Raw: "ctx.outcome = retry"}},
+		},
+	}
+	res := Lint(w)
+	assertNoCode(t, res, DIP122)
+}
+
+func TestLint_DIP122_AgentNode_NoWarning(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "dip122_agent",
+		Start: "A",
+		Exit:  "B",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go"}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done"}},
+		},
+		Edges: []*ir.Edge{
+			{From: "A", To: "B", Condition: &ir.Condition{Raw: "ctx.outcome = retry"}},
+		},
+	}
+	res := Lint(w)
+	assertNoCode(t, res, DIP122)
+}
+
+func TestLint_DIP122_DeclaredOutput_NoWarning(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "dip122_declared",
+		Start: "T",
+		Exit:  "B",
+		Nodes: []*ir.Node{
+			{ID: "T", Kind: ir.NodeTool, Config: ir.ToolConfig{
+				Command: "check", Timeout: 30e9,
+				Outputs: []string{"success", "fail"},
+			}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done"}},
+		},
+		Edges: []*ir.Edge{
+			{From: "T", To: "B", Condition: &ir.Condition{Raw: "ctx.outcome = success"}},
+		},
+	}
+	res := Lint(w)
+	assertNoCode(t, res, DIP122)
+}
