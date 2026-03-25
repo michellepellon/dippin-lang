@@ -183,10 +183,14 @@ func buildOutgoingEdgeMap(w *ir.Workflow) map[string][]*ir.Edge {
 }
 
 // edgesAreExhaustive returns true if a set of sibling edges covers all values
-// of a variable according to knownExhaustiveSets.
+// of a variable according to knownExhaustiveSets, or if the edges contain
+// a complementary pair (e.g., "contains X" + "not contains X").
 func edgesAreExhaustive(edges []*ir.Edge) bool {
 	byVar := collectConditionValues(edges)
-	return matchesExhaustiveSet(byVar)
+	if matchesExhaustiveSet(byVar) {
+		return true
+	}
+	return hasComplementaryPair(edges)
 }
 
 // collectConditionValues groups equality condition values by variable name.
@@ -251,6 +255,56 @@ func variableIsExhaustive(variable string, values map[string]bool) bool {
 		}
 	}
 	return false
+}
+
+// hasComplementaryPair returns true if any two edges form a complementary pair:
+// one edge has condition "var op val" and another has "not var op val".
+// For example: "ctx.tool_stdout contains all-done" + "ctx.tool_stdout not contains all-done".
+func hasComplementaryPair(edges []*ir.Edge) bool {
+	positives, negatives := classifyConditions(edges)
+	for key := range positives {
+		if negatives[key] {
+			return true
+		}
+	}
+	return false
+}
+
+// classifyConditions separates edge conditions into positive comparisons
+// and negated comparisons, keyed by "variable|op|value".
+func classifyConditions(edges []*ir.Edge) (pos, neg map[string]bool) {
+	pos = make(map[string]bool)
+	neg = make(map[string]bool)
+	for _, e := range edges {
+		if !hasCondition(e) {
+			continue
+		}
+		if key, ok := conditionKey(e.Condition.Parsed); ok {
+			pos[key] = true
+		}
+		if key, ok := negatedConditionKey(e.Condition.Parsed); ok {
+			neg[key] = true
+		}
+	}
+	return pos, neg
+}
+
+// conditionKey returns a string key for a simple comparison condition.
+func conditionKey(expr ir.ConditionExpr) (string, bool) {
+	cmp, ok := expr.(ir.CondCompare)
+	if !ok {
+		return "", false
+	}
+	return cmp.Variable + "|" + cmp.Op + "|" + cmp.Value, true
+}
+
+// negatedConditionKey returns the key for the inner comparison of a CondNot.
+func negatedConditionKey(expr ir.ConditionExpr) (string, bool) {
+	neg, ok := expr.(ir.CondNot)
+	if !ok {
+		return "", false
+	}
+	return conditionKey(neg.Inner)
 }
 
 // coversAll returns true if values contains every element in required.

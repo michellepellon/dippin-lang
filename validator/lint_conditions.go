@@ -31,11 +31,18 @@ func groupConditionalEdgesBySource(w *ir.Workflow) map[string][]*ir.Edge {
 	return edgesBySource
 }
 
-// condKey identifies a unique condition comparison.
+// condKey identifies a unique condition comparison, including negation.
 type condKey struct {
 	variable string
 	op       string
 	value    string
+	negated  bool
+}
+
+// signedComparison pairs a comparison with its negation status.
+type signedComparison struct {
+	cmp     ir.CondCompare
+	negated bool
 }
 
 // findOverlaps detects duplicate condition comparisons among edges from the same node.
@@ -43,22 +50,22 @@ func findOverlaps(from string, edges []*ir.Edge) []Diagnostic {
 	var diags []Diagnostic
 	seen := make(map[condKey]*ir.Edge)
 	for _, e := range edges {
-		comparisons := extractComparisons(e.Condition.Parsed)
+		comparisons := extractSignedComparisons(e.Condition.Parsed, false)
 		diags = append(diags, checkComparisonOverlaps(from, e, comparisons, seen)...)
 	}
 	return diags
 }
 
 // checkComparisonOverlaps checks a set of comparisons against previously seen ones.
-func checkComparisonOverlaps(from string, e *ir.Edge, comparisons []ir.CondCompare, seen map[condKey]*ir.Edge) []Diagnostic {
+func checkComparisonOverlaps(from string, e *ir.Edge, comparisons []signedComparison, seen map[condKey]*ir.Edge) []Diagnostic {
 	var diags []Diagnostic
-	for _, cmp := range comparisons {
-		key := condKey{variable: cmp.Variable, op: cmp.Op, value: cmp.Value}
+	for _, sc := range comparisons {
+		key := condKey{variable: sc.cmp.Variable, op: sc.cmp.Op, value: sc.cmp.Value, negated: sc.negated}
 		if first, ok := seen[key]; ok {
 			diags = append(diags, Diagnostic{
 				Code:     DIP103,
 				Severity: SeverityWarning,
-				Message:  fmt.Sprintf("node %q has overlapping conditions: edges to %q and %q both check %s %s %s", from, first.To, e.To, cmp.Variable, cmp.Op, cmp.Value),
+				Message:  fmt.Sprintf("node %q has overlapping conditions: edges to %q and %q both check %s %s %s", from, first.To, e.To, sc.cmp.Variable, sc.cmp.Op, sc.cmp.Value),
 				Location: e.Source,
 				Help:     "review the conditions to ensure they route to different targets for different states",
 			})
@@ -67,6 +74,25 @@ func checkComparisonOverlaps(from string, e *ir.Edge, comparisons []ir.CondCompa
 		}
 	}
 	return diags
+}
+
+// extractSignedComparisons recursively extracts CondCompare nodes with
+// their negation status. This tracks whether each comparison is inside a CondNot.
+func extractSignedComparisons(expr ir.ConditionExpr, negated bool) []signedComparison {
+	switch e := expr.(type) {
+	case ir.CondCompare:
+		return []signedComparison{{cmp: e, negated: negated}}
+	case ir.CondAnd:
+		left := extractSignedComparisons(e.Left, negated)
+		return append(left, extractSignedComparisons(e.Right, negated)...)
+	case ir.CondOr:
+		left := extractSignedComparisons(e.Left, negated)
+		return append(left, extractSignedComparisons(e.Right, negated)...)
+	case ir.CondNot:
+		return extractSignedComparisons(e.Inner, !negated)
+	default:
+		return nil
+	}
 }
 
 // extractComparisons recursively extracts all CondCompare nodes from a

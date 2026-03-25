@@ -2,6 +2,7 @@ package validator
 
 import (
 	"github.com/2389-research/dippin-lang/ir"
+	"github.com/2389-research/dippin-lang/simulate"
 )
 
 // Lint runs all semantic quality checks (DIP101–DIP120) on the workflow
@@ -14,6 +15,10 @@ import (
 //	structureResult := validator.Validate(w)
 //	lintResult := validator.Lint(w)
 func Lint(w *ir.Workflow) Result {
+	// Ensure condition ASTs are populated — the parser stores raw text
+	// but lint checks (DIP101, DIP102, DIP103) need parsed ASTs.
+	_ = simulate.EnsureConditionsParsed(w)
+
 	var diags []Diagnostic
 
 	diags = append(diags, lintConditionalReachability(w)...)

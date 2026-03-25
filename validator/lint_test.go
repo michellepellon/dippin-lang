@@ -248,6 +248,108 @@ func TestLint(t *testing.T) {
 			// No DIP103, and success/fail is an exhaustive condition set, so no DIP101/DIP102 either.
 			wantNoDiag: true,
 		},
+		{
+			name: "DIP101: exhaustive conditions from raw text (not pre-parsed)",
+			workflow: &ir.Workflow{
+				Name:  "raw_exhaustive",
+				Start: "A",
+				Exit:  "C",
+				Nodes: []*ir.Node{
+					{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "a"}},
+					{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "b"}},
+					{ID: "C", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "c"}},
+				},
+				Edges: []*ir.Edge{
+					{From: "A", To: "B", Condition: &ir.Condition{Raw: "ctx.outcome = success"}},
+					{From: "A", To: "C", Condition: &ir.Condition{Raw: "ctx.outcome = fail"}},
+					{From: "B", To: "C"},
+				},
+			},
+			// Lint must parse raw conditions and recognize success/fail as exhaustive.
+			wantNoDiag: true,
+		},
+		{
+			name: "DIP101: exhaustive conditions + unconditional fallback (pattern 1)",
+			workflow: &ir.Workflow{
+				Name:  "exhaustive_with_fallback",
+				Start: "Start",
+				Exit:  "Done",
+				Nodes: []*ir.Node{
+					{ID: "Start", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go"}},
+					{ID: "Gate", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "gate"}},
+					{ID: "Pass", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "pass"}},
+					{ID: "Fix", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "fix"}},
+					{ID: "Escalate", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "escalate"}},
+					{ID: "Done", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done"}},
+				},
+				Edges: []*ir.Edge{
+					{From: "Start", To: "Gate"},
+					{From: "Gate", To: "Pass", Condition: &ir.Condition{Raw: "ctx.outcome = success"}},
+					{From: "Gate", To: "Fix", Condition: &ir.Condition{Raw: "ctx.outcome = fail"}},
+					{From: "Gate", To: "Escalate"}, // unconditional fallback
+					{From: "Pass", To: "Done"},
+					{From: "Fix", To: "Gate"},
+					{From: "Escalate", To: "Done"},
+				},
+			},
+			// Gate has exhaustive conditions (success+fail) plus an unconditional edge.
+			// Pass and Fix should NOT get DIP101 since they're behind exhaustive conditions.
+			wantNoDiag: true,
+		},
+		{
+			name: "DIP101: exhaustive conditions + extra variable conditions (pattern 2)",
+			workflow: &ir.Workflow{
+				Name:  "exhaustive_with_extra_conds",
+				Start: "Start",
+				Exit:  "Done",
+				Nodes: []*ir.Node{
+					{ID: "Start", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go"}},
+					{ID: "Gate", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "gate"}},
+					{ID: "Pass", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "pass"}},
+					{ID: "Fix", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "fix"}},
+					{ID: "Escalate", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "escalate"}},
+					{ID: "Done", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done"}},
+				},
+				Edges: []*ir.Edge{
+					{From: "Start", To: "Gate"},
+					{From: "Gate", To: "Pass", Condition: &ir.Condition{Raw: "ctx.outcome = success"}},
+					{From: "Gate", To: "Fix", Condition: &ir.Condition{Raw: "ctx.outcome = fail"}},
+					{From: "Gate", To: "Escalate", Condition: &ir.Condition{Raw: "ctx.tool_stdout contains escalate"}},
+					{From: "Gate", To: "Escalate"}, // unconditional fallback
+					{From: "Pass", To: "Done"},
+					{From: "Fix", To: "Gate"},
+					{From: "Escalate", To: "Done"},
+				},
+			},
+			// Gate has outcome=success + outcome=fail (exhaustive) plus an extra
+			// condition on tool_stdout. Pass and Fix should not get DIP101.
+			wantNoDiag: true,
+		},
+
+		{
+			name: "DIP101: complementary contains/not contains pair (pattern 3)",
+			workflow: &ir.Workflow{
+				Name:  "complementary_pair",
+				Start: "Start",
+				Exit:  "Done",
+				Nodes: []*ir.Node{
+					{ID: "Start", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go"}},
+					{ID: "Pick", Kind: ir.NodeTool, Config: ir.ToolConfig{Command: "echo done", Timeout: 60 * 1e9}},
+					{ID: "Implement", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "implement"}},
+					{ID: "Review", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "review"}},
+					{ID: "Done", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done"}},
+				},
+				Edges: []*ir.Edge{
+					{From: "Start", To: "Pick"},
+					{From: "Pick", To: "Implement", Condition: &ir.Condition{Raw: "ctx.tool_stdout not contains all-done"}},
+					{From: "Pick", To: "Review", Condition: &ir.Condition{Raw: "ctx.tool_stdout contains all-done"}},
+					{From: "Implement", To: "Pick"},
+					{From: "Review", To: "Done"},
+				},
+			},
+			// "contains X" + "not contains X" is complementary — no DIP101.
+			wantNoDiag: true,
+		},
 
 		// --- DIP104: Unbounded retry ---
 		{

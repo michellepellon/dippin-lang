@@ -99,25 +99,44 @@ func (p *condParser) parseCompare() (ir.ConditionExpr, error) {
 		return nil, fmt.Errorf("expected variable, got end of input")
 	}
 
+	// Handle infix negation: "variable not contains value" → CondNot{CondCompare{...}}
+	negated := p.consumeInfixNot()
+
+	op, value, err := p.parseOpValue(variable)
+	if err != nil {
+		return nil, err
+	}
+
+	cmp := ir.CondCompare{Variable: variable, Op: op, Value: value}
+	if negated {
+		return ir.CondNot{Inner: cmp}, nil
+	}
+	return cmp, nil
+}
+
+// consumeInfixNot consumes an infix "not" token if present.
+func (p *condParser) consumeInfixNot() bool {
+	if p.peek() != "not" {
+		return false
+	}
+	p.next()
+	return true
+}
+
+// parseOpValue parses the operator and value parts of a comparison.
+func (p *condParser) parseOpValue(variable string) (string, string, error) {
 	op := p.next()
 	if op == "" {
-		return nil, fmt.Errorf("expected operator after %q, got end of input", variable)
+		return "", "", fmt.Errorf("expected operator after %q, got end of input", variable)
 	}
-
 	if !isValidOperator(op) {
-		return nil, fmt.Errorf("unknown operator %q", op)
+		return "", "", fmt.Errorf("unknown operator %q", op)
 	}
-
 	value := p.next()
 	if value == "" {
-		return nil, fmt.Errorf("expected value after %q %s, got end of input", variable, op)
+		return "", "", fmt.Errorf("expected value after %q %s, got end of input", variable, op)
 	}
-
-	return ir.CondCompare{
-		Variable: variable,
-		Op:       op,
-		Value:    value,
-	}, nil
+	return op, value, nil
 }
 
 // validOperators is the set of recognized comparison operators.
