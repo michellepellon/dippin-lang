@@ -12,6 +12,8 @@ import (
 // This is a best-effort catalog — unknown combinations produce a warning,
 // not an error, since new models may be added at any time.
 //
+// Last verified: 2026-03-25
+//
 // Sources:
 //
 //	Anthropic:  https://platform.claude.com/docs/en/docs/about-claude/models

@@ -2,6 +2,8 @@ package cost
 
 // DefaultPricing returns a PricingTable with current model prices (USD per 1M tokens).
 //
+// Last verified: 2026-03-25
+//
 // Sources:
 //
 //	Anthropic:  https://platform.claude.com/docs/en/docs/about-claude/models

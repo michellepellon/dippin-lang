@@ -34,15 +34,21 @@ Key gotcha: The parser stores edge conditions as `Condition.Raw` (plain text). `
 
 ## Versioning
 
-Tag semver releases after batches of meaningful changes. The tracker team installs via `go install ...@latest` and needs stable versions to pin to.
+Tag semver releases after batches of meaningful changes. The tracker team installs via `go install ...@latest` and needs stable versions to pin to. Update CHANGELOG.md when tagging.
 
 ```sh
 git tag -a v0.X.0 -m "description" && git push origin v0.X.0
 ```
 
+GoReleaser is configured (`.goreleaser.yml`) — pushing a tag triggers GitHub Actions to build cross-platform binaries and publish to Homebrew tap.
+
 ## Model Catalog & Pricing
 
-Model names and pricing in `validator/lint_model.go` and `cost/pricing.go` must be verified against official provider documentation before committing. Source URLs are maintained as code comments. Never use training data for pricing — it goes stale.
+Model names and pricing in `validator/lint_model.go` and `cost/pricing.go` must be verified against official provider documentation before committing. Source URLs and "Last verified" dates are maintained as code comments. Never use training data for pricing — it goes stale.
+
+Supported providers: Anthropic, OpenAI, Google/Gemini, DeepSeek, xAI/Grok, Mistral, Cohere.
+
+`TestLintExamples` in `validator/lint_examples_test.go` parses all example .dip files through the real parser and asserts zero DIP108 warnings — this catches model catalog staleness and invalid model IDs.
 
 ## Lint Rules
 
@@ -51,3 +57,5 @@ Model names and pricing in `validator/lint_model.go` and `cost/pricing.go` must 
 ## Testing
 
 Test fixtures should match real parser output. If the parser doesn't populate a field, tests shouldn't either. The DIP101 bug was caused by tests pre-populating `Condition.Parsed` by hand, masking that production code never set it.
+
+Integration test `TestLintExamples` runs every example through parse → lint to catch regressions that unit tests with hand-built IR would miss.
