@@ -14,9 +14,13 @@ import (
 //
 // Sources:
 //
-//	Anthropic: https://platform.claude.com/docs/en/docs/about-claude/models
-//	Google:    https://ai.google.dev/gemini-api/docs/models
-//	OpenAI:    https://developers.openai.com/api/docs/pricing
+//	Anthropic:  https://platform.claude.com/docs/en/docs/about-claude/models
+//	Google:     https://ai.google.dev/gemini-api/docs/models
+//	OpenAI:     https://developers.openai.com/api/docs/pricing
+//	DeepSeek:   https://api-docs.deepseek.com/quick_start/pricing
+//	xAI (Grok): https://docs.x.ai/developers/models
+//	Mistral:    https://mistral.ai/pricing
+//	Cohere:     https://cohere.com/pricing
 var knownModelProviders = map[string]map[string]bool{
 	"anthropic": {
 		"claude-opus-4-6":   true,
@@ -50,6 +54,28 @@ var knownModelProviders = map[string]map[string]bool{
 		"o3-pro":        true,
 		"o4-mini":       true,
 	},
+	"deepseek": {
+		"deepseek-chat":     true,
+		"deepseek-reasoner": true,
+	},
+	"xai":  grokModels(),
+	"grok": grokModels(),
+	"mistral": {
+		"mistral-large-3":   true,
+		"mistral-medium-3":  true,
+		"mistral-small-3.2": true,
+		"mistral-small":     true,
+		"ministral-8b":      true,
+		"codestral":         true,
+		"magistral-medium":  true,
+		"mistral-nemo":      true,
+		"pixtral-large":     true,
+	},
+	"cohere": {
+		"command-r-plus": true,
+		"command-r":      true,
+		"command-r7b":    true,
+	},
 }
 
 // geminiModels returns the set of known Gemini model IDs.
@@ -66,6 +92,17 @@ func geminiModels() map[string]bool {
 		"gemini-2.5-flash":      true,
 		"gemini-2.5-flash-lite": true,
 		"gemini-2.0-flash":      true,
+	}
+}
+
+// grokModels returns the set of known xAI Grok model IDs.
+func grokModels() map[string]bool {
+	return map[string]bool{
+		"grok-4.20-0309-reasoning":     true,
+		"grok-4.20-0309-non-reasoning": true,
+		"grok-4-1-fast-reasoning":      true,
+		"grok-4-1-fast-non-reasoning":  true,
+		"grok-4.20-multi-agent-0309":   true,
 	}
 }
 

@@ -4,11 +4,16 @@ package cost
 //
 // Sources:
 //
-//	Anthropic: https://platform.claude.com/docs/en/docs/about-claude/models
-//	Google:    https://ai.google.dev/gemini-api/docs/pricing
-//	OpenAI:    https://developers.openai.com/api/docs/pricing
+//	Anthropic:  https://platform.claude.com/docs/en/docs/about-claude/models
+//	Google:     https://ai.google.dev/gemini-api/docs/pricing
+//	OpenAI:     https://developers.openai.com/api/docs/pricing
+//	DeepSeek:   https://api-docs.deepseek.com/quick_start/pricing
+//	xAI (Grok): https://docs.x.ai/developers/models
+//	Mistral:    https://mistral.ai/pricing
+//	Cohere:     https://cohere.com/pricing
 func DefaultPricing() PricingTable {
 	gemini := geminiPricing()
+	grok := grokPricing()
 	return PricingTable{
 		"anthropic": {
 			"claude-opus-4-6":   {InputPer1M: 5.00, OutputPer1M: 25.00},
@@ -41,6 +46,39 @@ func DefaultPricing() PricingTable {
 		},
 		"google": gemini,
 		"gemini": gemini,
+		"deepseek": {
+			"deepseek-chat":     {InputPer1M: 0.28, OutputPer1M: 0.42},
+			"deepseek-reasoner": {InputPer1M: 0.28, OutputPer1M: 0.42},
+		},
+		"xai":  grok,
+		"grok": grok,
+		"mistral": {
+			"mistral-large-3":   {InputPer1M: 0.50, OutputPer1M: 1.50},
+			"mistral-medium-3":  {InputPer1M: 0.40, OutputPer1M: 2.00},
+			"mistral-small-3.2": {InputPer1M: 0.075, OutputPer1M: 0.20},
+			"mistral-small":     {InputPer1M: 0.10, OutputPer1M: 0.30},
+			"ministral-8b":      {InputPer1M: 0.10, OutputPer1M: 0.10},
+			"codestral":         {InputPer1M: 0.30, OutputPer1M: 0.90},
+			"magistral-medium":  {InputPer1M: 2.00, OutputPer1M: 5.00},
+			"mistral-nemo":      {InputPer1M: 0.02, OutputPer1M: 0.04},
+			"pixtral-large":     {InputPer1M: 2.00, OutputPer1M: 6.00},
+		},
+		"cohere": {
+			"command-r-plus": {InputPer1M: 2.50, OutputPer1M: 10.00},
+			"command-r":      {InputPer1M: 0.50, OutputPer1M: 1.50},
+			"command-r7b":    {InputPer1M: 0.0375, OutputPer1M: 0.15},
+		},
+	}
+}
+
+// grokPricing returns pricing for xAI Grok models.
+func grokPricing() map[string]ModelPrice {
+	return map[string]ModelPrice{
+		"grok-4.20-0309-reasoning":     {InputPer1M: 2.00, OutputPer1M: 6.00},
+		"grok-4.20-0309-non-reasoning": {InputPer1M: 2.00, OutputPer1M: 6.00},
+		"grok-4-1-fast-reasoning":      {InputPer1M: 0.20, OutputPer1M: 0.50},
+		"grok-4-1-fast-non-reasoning":  {InputPer1M: 0.20, OutputPer1M: 0.50},
+		"grok-4.20-multi-agent-0309":   {InputPer1M: 2.00, OutputPer1M: 6.00},
 	}
 }
 
