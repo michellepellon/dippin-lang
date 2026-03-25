@@ -1,7 +1,11 @@
 workflow Warned
   goal: "Trigger warnings"
-  start: Ask
+  start: Init
   exit: Done
+
+  agent Init
+    prompt:
+      Initialize pipeline.
 
   agent Ask
     prompt:
@@ -15,5 +19,6 @@ workflow Warned
       Finish up.
 
   edges
+    Init -> Ask
     Ask -> Run
     Run -> Done

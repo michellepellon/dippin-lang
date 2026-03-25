@@ -39,21 +39,32 @@ func lintNamespaceCollisions(w *ir.Workflow) []Diagnostic {
 func lintEmptyPrompts(w *ir.Workflow) []Diagnostic {
 	var diags []Diagnostic
 	for _, n := range w.Nodes {
-		cfg, ok := n.Config.(ir.AgentConfig)
-		if !ok {
-			continue
-		}
-		if strings.TrimSpace(cfg.Prompt) == "" {
-			diags = append(diags, Diagnostic{
-				Code:     DIP110,
-				Severity: SeverityWarning,
-				Message:  fmt.Sprintf("agent node %q has an empty prompt", n.ID),
-				Location: n.Source,
-				Help:     "add a prompt: field with instructions for the LLM",
-			})
+		if d, ok := checkEmptyPrompt(n, w); ok {
+			diags = append(diags, d)
 		}
 	}
 	return diags
+}
+
+// checkEmptyPrompt checks a single node for DIP110.
+func checkEmptyPrompt(n *ir.Node, w *ir.Workflow) (Diagnostic, bool) {
+	if n.ID == w.Start || n.ID == w.Exit {
+		return Diagnostic{}, false
+	}
+	cfg, ok := n.Config.(ir.AgentConfig)
+	if !ok {
+		return Diagnostic{}, false
+	}
+	if strings.TrimSpace(cfg.Prompt) == "" {
+		return Diagnostic{
+			Code:     DIP110,
+			Severity: SeverityWarning,
+			Message:  fmt.Sprintf("agent node %q has an empty prompt", n.ID),
+			Location: n.Source,
+			Help:     "add a prompt: field with instructions for the LLM",
+		}, true
+	}
+	return Diagnostic{}, false
 }
 
 // lintToolTimeout checks DIP111: tool nodes should have a timeout configured.

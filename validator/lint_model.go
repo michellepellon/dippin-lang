@@ -19,6 +19,16 @@ var knownModelProviders = map[string]map[string]bool{
 		"claude-haiku-3-5":       true,
 		"claude-opus-4-20250116": true,
 	},
+	"google": {
+		"gemini-2.5-pro":   true,
+		"gemini-2.5-flash": true,
+		"gemini-2.0-flash": true,
+	},
+	"gemini": {
+		"gemini-2.5-pro":   true,
+		"gemini-2.5-flash": true,
+		"gemini-2.0-flash": true,
+	},
 	"openai": {
 		"gpt-5.4":       true,
 		"gpt-5.3-codex": true,

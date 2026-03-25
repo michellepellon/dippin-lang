@@ -7,26 +7,48 @@ import (
 )
 
 // applyNodeDefaults seeds default context values for agent and tool nodes.
+// Per-node scenario values (e.g., --scenario NodeName.outcome=fail) are
+// applied first, then global defaults fill in any remaining keys.
 func (s *simulator) applyNodeDefaults(node *ir.Node) {
+	// Apply per-node scenario overrides for this node.
+	s.applyNodeScenario(node.ID)
+
 	if ac, ok := node.Config.(ir.AgentConfig); ok && ac.AutoStatus {
-		s.setContextDefault("outcome", "success")
+		s.setContextDefaultForNode("outcome", "success", node.ID)
 	}
 	if _, ok := node.Config.(ir.ToolConfig); ok {
-		s.setContextDefault("tool_stdout", "success")
-		s.setContextDefault("outcome", "success")
+		s.setContextDefaultForNode("tool_stdout", "success", node.ID)
+		s.setContextDefaultForNode("outcome", "success", node.ID)
 	}
 }
 
-// setContextDefault sets a context key only if it doesn't already exist
-// and wasn't injected via the --scenario flag. Scenario values always
+// applyNodeScenario applies per-node scenario values matching "NodeID.key".
+// For example, --scenario "Planner.outcome=fail" sets ctx["outcome"]="fail"
+// only when processing the Planner node.
+func (s *simulator) applyNodeScenario(nodeID string) {
+	prefix := nodeID + "."
+	for k, v := range s.opts.Scenario {
+		if strings.HasPrefix(k, prefix) {
+			key := strings.TrimPrefix(k, prefix)
+			s.updateContext(key, v)
+		}
+	}
+}
+
+// setContextDefaultForNode sets a context key only if it wasn't injected
+// via the --scenario flag (global or per-node). Scenario values always
 // take precedence over node defaults.
-func (s *simulator) setContextDefault(key, value string) {
-	if _, isScenario := s.opts.Scenario[key]; isScenario {
+func (s *simulator) setContextDefaultForNode(key, value, nodeID string) {
+	// Global scenario for this key — never override.
+	if _, ok := s.opts.Scenario[key]; ok {
 		return
 	}
-	if _, exists := s.ctx[key]; !exists {
-		s.updateContext(key, value)
+	// Per-node scenario for this specific node.key — already applied
+	// by applyNodeScenario, don't overwrite.
+	if _, ok := s.opts.Scenario[nodeID+"."+key]; ok {
+		return
 	}
+	s.updateContext(key, value)
 }
 
 // operatorFuncs maps condition operators to their evaluation functions.

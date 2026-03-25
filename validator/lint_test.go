@@ -245,8 +245,8 @@ func TestLint(t *testing.T) {
 					{From: "B", To: "C"},
 				},
 			},
-			// No DIP103, but DIP101 (B, C only via conditional) and DIP102 (A has no default).
-			wantCodes: []string{DIP101, DIP102},
+			// No DIP103, and success/fail is an exhaustive condition set, so no DIP101/DIP102 either.
+			wantNoDiag: true,
 		},
 
 		// --- DIP104: Unbounded retry ---
@@ -493,10 +493,16 @@ func TestLint(t *testing.T) {
 			name: "DIP110: agent with empty prompt",
 			workflow: &ir.Workflow{
 				Name:  "empty_prompt",
-				Start: "A",
-				Exit:  "A",
+				Start: "Begin",
+				Exit:  "End",
 				Nodes: []*ir.Node{
-					{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: ""}},
+					{ID: "Begin", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "start"}},
+					{ID: "Mid", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: ""}},
+					{ID: "End", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done"}},
+				},
+				Edges: []*ir.Edge{
+					{From: "Begin", To: "Mid"},
+					{From: "Mid", To: "End"},
 				},
 			},
 			wantCodes: []string{DIP110},
@@ -505,13 +511,35 @@ func TestLint(t *testing.T) {
 			name: "DIP110: agent with whitespace-only prompt",
 			workflow: &ir.Workflow{
 				Name:  "ws_prompt",
-				Start: "A",
-				Exit:  "A",
+				Start: "Begin",
+				Exit:  "End",
 				Nodes: []*ir.Node{
-					{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "   \n  "}},
+					{ID: "Begin", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "start"}},
+					{ID: "Mid", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "   \n  "}},
+					{ID: "End", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done"}},
+				},
+				Edges: []*ir.Edge{
+					{From: "Begin", To: "Mid"},
+					{From: "Mid", To: "End"},
 				},
 			},
 			wantCodes: []string{DIP110},
+		},
+		{
+			name: "DIP110: start/exit lifecycle nodes exempt from empty prompt",
+			workflow: &ir.Workflow{
+				Name:  "lifecycle_exempt",
+				Start: "Init",
+				Exit:  "Done",
+				Nodes: []*ir.Node{
+					{ID: "Init", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: ""}},
+					{ID: "Done", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: ""}},
+				},
+				Edges: []*ir.Edge{
+					{From: "Init", To: "Done"},
+				},
+			},
+			wantNoDiag: true,
 		},
 		{
 			name: "DIP110: non-agent node types do not trigger",
@@ -605,12 +633,18 @@ func TestLint(t *testing.T) {
 			name: "multiple lint warnings at once",
 			workflow: &ir.Workflow{
 				Name:  "multi_warn",
-				Start: "A",
-				Exit:  "A",
+				Start: "Begin",
+				Exit:  "End",
 				Nodes: []*ir.Node{
-					{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+					{ID: "Begin", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go"}},
+					{ID: "Mid", Kind: ir.NodeAgent, Config: ir.AgentConfig{
 						Prompt: "", // DIP110
 					}, Retry: ir.RetryConfig{Policy: "aggressive"}}, // DIP104
+					{ID: "End", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done"}},
+				},
+				Edges: []*ir.Edge{
+					{From: "Begin", To: "Mid"},
+					{From: "Mid", To: "End"},
 				},
 			},
 			wantCodes: []string{DIP110, DIP104},
