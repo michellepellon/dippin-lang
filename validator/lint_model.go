@@ -11,34 +11,38 @@ import (
 // knownModelProviders lists known valid model/provider combinations.
 // This is a best-effort catalog — unknown combinations produce a warning,
 // not an error, since new models may be added at any time.
+// knownModelProviders lists known valid model/provider combinations.
+// This is a best-effort catalog — unknown combinations produce a warning,
+// not an error, since new models may be added at any time.
+//
+// Sources:
+//
+//	Anthropic: https://platform.claude.com/docs/en/docs/about-claude/models
+//	Google:    https://ai.google.dev/gemini-api/docs/models
+//	OpenAI:    https://developers.openai.com/api/docs/pricing
 var knownModelProviders = map[string]map[string]bool{
 	"anthropic": {
-		"claude-opus-4-6":        true,
-		"claude-sonnet-4-6":      true,
-		"claude-haiku-4-5":       true,
-		"claude-haiku-3-5":       true,
-		"claude-opus-4-20250116": true,
+		"claude-opus-4-6":   true,
+		"claude-sonnet-4-6": true,
+		"claude-haiku-4-5":  true,
+		// Legacy models still available via API.
+		"claude-sonnet-4-5": true,
+		"claude-opus-4-5":   true,
+		"claude-opus-4-1":   true,
+		"claude-sonnet-4-0": true,
+		"claude-opus-4-0":   true,
+		// Deprecated — retires 2026-04-19.
+		"claude-haiku-3-5": true,
 	},
-	"google": {
-		"gemini-3-pro":                       true,
-		"gemini-3-flash-preview":             true,
-		"gemini-3.1-pro-preview-customtools": true,
-		"gemini-2.5-pro":                     true,
-		"gemini-2.5-flash":                   true,
-		"gemini-2.0-flash":                   true,
-	},
-	"gemini": {
-		"gemini-3-pro":                       true,
-		"gemini-3-flash-preview":             true,
-		"gemini-3.1-pro-preview-customtools": true,
-		"gemini-2.5-pro":                     true,
-		"gemini-2.5-flash":                   true,
-		"gemini-2.0-flash":                   true,
-	},
+	"google": geminiModels(),
+	"gemini": geminiModels(),
 	"openai": {
 		"gpt-5.4":       true,
+		"gpt-5.4-mini":  true,
+		"gpt-5.4-nano":  true,
 		"gpt-5.3-codex": true,
 		"gpt-5.2":       true,
+		"gpt-5.1":       true,
 		"gpt-4.1":       true,
 		"gpt-4.1-mini":  true,
 		"gpt-4.1-nano":  true,
@@ -46,9 +50,26 @@ var knownModelProviders = map[string]map[string]bool{
 		"gpt-4o-mini":   true,
 		"o3":            true,
 		"o3-mini":       true,
-		"o4-mini":       true,
 		"o3-pro":        true,
+		"o4-mini":       true,
 	},
+}
+
+// geminiModels returns the set of known Gemini model IDs.
+func geminiModels() map[string]bool {
+	return map[string]bool{
+		// Gemini 3.x
+		"gemini-3.1-pro-preview":        true,
+		"gemini-3-flash-preview":        true,
+		"gemini-3.1-flash-lite-preview": true,
+		// Gemini 3 Pro (shut down 2026-03-09, replaced by 3.1)
+		"gemini-3-pro-preview": true,
+		// Gemini 2.x
+		"gemini-2.5-pro":        true,
+		"gemini-2.5-flash":      true,
+		"gemini-2.5-flash-lite": true,
+		"gemini-2.0-flash":      true,
+	}
 }
 
 // lintModelProvider checks DIP108: model/provider combinations should be

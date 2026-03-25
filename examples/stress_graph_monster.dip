@@ -51,7 +51,7 @@ workflow GraphMonster
 
   agent UrgentGemini
     label: "Urgent: Gemini"
-    model: gemini-3-pro
+    model: gemini-3.1-pro-preview
     provider: gemini
     reasoning_effort: high
     prompt:
