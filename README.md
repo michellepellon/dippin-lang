@@ -30,7 +30,7 @@ graph LR
 | Shell scripts | `tool_command="#!/bin/sh\nset -eu\nif..."` | Real multiline, real syntax |
 | Model config | Untyped `llm_model="..."` attribute | Typed `model:` field with validation |
 | Branching | `condition="context.x!=y && context.a==b"` | `when ctx.x != "y" and ctx.a == "b"` |
-| Validation | Silent — typos in attrs are ignored | 24 diagnostic codes (DIP001–DIP009, DIP101–DIP115) |
+| Validation | Silent — typos in attrs are ignored | 30 diagnostic codes (DIP001–DIP009, DIP101–DIP120) |
 | Node types | Shape overloading (`box`=agent, `hexagon`=human) | Explicit `agent`, `tool`, `human` keywords |
 | Composition | No import/include system | `subgraph` with ref (v2) |
 
@@ -113,24 +113,47 @@ dippin lint pipeline.dip
 
 ## Commands
 
+### Authoring
+
 | Command | Description |
 |---------|-------------|
 | `dippin parse <file>` | Parse and output IR as JSON |
 | `dippin validate <file>` | Structural validation (DIP001–DIP009) |
-| `dippin lint <file>` | Validation + semantic warnings (DIP101–DIP115) |
+| `dippin lint <file>` | Validation + semantic warnings (DIP101–DIP120) |
 | `dippin check [--format json\|text] <file>` | Parse+validate+lint in one shot (JSON default, for LLM tooling) |
 | `dippin fmt [--check] [--write] <file>` | Format to canonical style |
 | `dippin new [--name N] [--write F] <template>` | Generate a starter .dip from a template |
 | `dippin export-dot [--rankdir LR] [--prompts] <file>` | Export to Graphviz DOT |
 | `dippin migrate [--output <file>] <file.dot>` | Convert DOT to Dippin |
 | `dippin validate-migration <old.dot> <new.dip>` | Verify migration parity |
-| `dippin simulate [--scenario k=v] [--all-paths] <file>` | Dry-run the execution graph |
+
+### Analysis
+
+| Command | Description |
+|---------|-------------|
+| `dippin simulate [--scenario k=v] [--all-paths] <file>` | Dry-run the execution graph (JSONL events) |
+| `dippin cost <file>` | Estimate execution cost by model/provider |
+| `dippin coverage <file>` | Analyze edge coverage and reachability |
+| `dippin doctor <file>` | Health report card (grade A–F with suggestions) |
+| `dippin optimize <file>` | Model cost optimization suggestions |
+| `dippin diff <old.dip> <new.dip>` | Semantic diff between two workflows |
+| `dippin feedback <workflow> <telemetry>` | Compare predicted vs actual costs |
+
+### Editor & Tooling
+
+| Command | Description |
+|---------|-------------|
+| `dippin lsp` | Start Language Server Protocol server (stdio) |
+| `dippin version` | Show version info |
+| `dippin help` | Show usage |
 
 **Exit codes:** 0 = ok, 1 = errors found, 2 = usage error.
 
 **Machine-readable output:** Add `--format json` to any command for JSON diagnostics on stderr.
 
 **CI usage:** `dippin fmt --check` exits 1 if the file isn't canonically formatted. `dippin lint` exits 0 even with warnings (only errors cause exit 1).
+
+See [`docs/cli.md`](docs/cli.md) for full command reference, and [`docs/analysis.md`](docs/analysis.md) for analysis command output formats.
 
 ## Language Reference
 
@@ -324,23 +347,30 @@ error[DIP003]: unknown node reference "InterpretX" in edge
 | DIP008 | Duplicate node ID |
 | DIP009 | Duplicate edge |
 
-### Warnings (DIP101–DIP115)
+### Warnings (DIP101–DIP120)
 
 | Code | What it catches |
 |------|----------------|
-| DIP101 | Node only reachable via conditional edges (fragile) |
-| DIP102 | Conditional edges with no unconditional fallback |
+| DIP101 | Node only reachable via conditional edges (suppressed when source conditions are exhaustive) |
+| DIP102 | Conditional edges with no unconditional fallback (suppressed when conditions are exhaustive) |
 | DIP103 | Overlapping edge conditions |
 | DIP104 | Unbounded retries (no max_retries) |
+| DIP105 | No forward path from start to exit (excluding restart edges) |
 | DIP106 | Unknown variable namespace in `${...}` |
 | DIP107 | Node reads context key no upstream node writes |
 | DIP108 | Unknown model or provider name |
-| DIP110 | Agent with empty prompt |
+| DIP109 | Subgraph namespace collision |
+| DIP110 | Agent with empty prompt (start/exit nodes exempt) |
 | DIP111 | Tool with no timeout |
 | DIP112 | I/O data flow — reads key not written upstream |
 | DIP113 | Invalid retry policy name (typo or unrecognized) |
 | DIP114 | Invalid fidelity level (typo or unrecognized) |
 | DIP115 | Goal gate node without retry or fallback target |
+| DIP116 | Invalid compaction_threshold or on_resume value |
+| DIP117 | Stylesheet references undefined class |
+| DIP118 | Stylesheet references unknown node ID |
+| DIP119 | Invalid reasoning_effort value |
+| DIP120 | Condition variable missing namespace prefix |
 
 ## Simulation
 
@@ -370,7 +400,20 @@ dippin simulate workflow.dip --all-paths
 
 ## Editor Support
 
-A VS Code extension is available in [`editors/vscode/`](editors/vscode/) providing:
+### LSP Server
+
+`dippin lsp` starts a Language Server Protocol server on stdio, providing:
+- Real-time diagnostics (parse errors + lint warnings on every keystroke)
+- Hover tooltips (node kind, model, provider, prompt preview)
+- Go-to-definition (jump from edge node references to node declarations)
+- Autocomplete (node IDs in edges, field names, keywords)
+- Document symbols (outline of nodes and edges)
+
+Works with any LSP-compatible editor. See [`docs/editor-setup.md`](docs/editor-setup.md) for configuration.
+
+### VS Code Extension
+
+A dedicated extension is available in [`editors/vscode/`](editors/vscode/) providing:
 - Syntax highlighting for `.dip` files
 - Comment toggling (`Ctrl+/`)
 - Indentation-based folding
@@ -409,14 +452,17 @@ The [`examples/`](examples/) directory contains 15 workflows:
 ```mermaid
 graph LR
     DIP[".dip source"] --> Parser
+    DOT_FILE[".dot file"] --> Migrator
     Parser --> IR["IR (Workflow)"]
-    IR --> Validator["Validator<br>(DIP001-009)"]
-    IR --> Linter["Linter<br>(DIP101-112)"]
+    Migrator --> IR
+    IR --> Validator["Validator<br>(DIP001–009)"]
+    IR --> Linter["Linter<br>(DIP101–120)"]
     IR --> Formatter["Formatter<br>(canonical .dip)"]
     IR --> DOT["DOT Exporter<br>(visualization)"]
     IR --> Sim["Simulator<br>(dry-run)"]
-    DOT_FILE[".dot file"] --> Migrator
-    Migrator --> IR2["IR"] --> DIP_OUT[".dip source"]
+    IR --> Cost["Cost / Coverage<br>/ Doctor / Optimize"]
+    IR --> Diff["Diff"]
+    IR --> LSP["LSP Server"]
 ```
 
 Everything flows through `ir.Workflow` — the canonical intermediate representation. Packages never reach into each other's internals.
@@ -425,15 +471,25 @@ Everything flows through `ir.Workflow` — the canonical intermediate representa
 |---------|-------------|
 | `ir/` | Core types: `Workflow`, `Node`, `Edge`, `Condition` AST, typed `NodeConfig` sealed interface |
 | `parser/` | Indentation-aware lexer + recursive-descent parser producing IR |
-| `validator/` | 9 structural checks + 15 semantic lint rules |
+| `validator/` | 9 structural checks + 21 semantic lint rules |
 | `formatter/` | Canonical pretty-printer (idempotent: `format(format(x)) == format(x)`) |
 | `export/` | DOT export with shape mapping, condition serialization, restart edge styling |
 | `migrate/` | DOT→IR→Dippin converter with namespace prefixing and structural parity checker |
 | `simulate/` | Reference graph executor emitting standardized JSONL events |
 | `event/` | Canonical event types for the execution protocol |
+| `cost/` | Per-node cost estimation by model/provider with pricing tables |
+| `coverage/` | Edge coverage analysis, reachability, and termination checks |
+| `doctor/` | Health report card aggregating lint + coverage + cost into a grade |
+| `optimize/` | Rule-based model substitution suggestions for cost savings |
+| `diff/` | Semantic workflow comparison with field-level change tracking |
+| `feedback/` | Predicted vs actual cost calibration from telemetry data |
+| `lsp/` | Language Server Protocol server (hover, go-to-def, completion, diagnostics) |
+| `scaffold/` | Template generation for `dippin new` |
 | `cmd/dippin/` | CLI wiring |
 
-Zero external dependencies. Pure Go standard library.
+Zero external dependencies for core packages. The LSP server uses `go.lsp.dev` libraries.
+
+See [`docs/architecture.md`](docs/architecture.md) for the full architecture guide.
 
 ## Development
 

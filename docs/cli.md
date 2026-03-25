@@ -1,6 +1,6 @@
 # CLI Reference
 
-The `dippin` command-line tool provides parsing, validation, formatting, export, and migration capabilities for `.dip` workflow files.
+The `dippin` command-line tool provides parsing, validation, formatting, export, migration, analysis, and editor integration for `.dip` workflow files.
 
 ---
 
@@ -19,16 +19,11 @@ go build -o dippin ./cmd/dippin
 ```mermaid
 graph LR
     CLI["dippin"] --> |"--format text\|json"| CMD{Command}
-    CMD --> parse
-    CMD --> validate
-    CMD --> lint
-    CMD --> fmt
-    CMD --> export-dot
-    CMD --> migrate
-    CMD --> validate-migration
-    CMD --> check
-    CMD --> new
-    CMD --> help
+    CMD --> A["Authoring<br>parse, validate, lint,<br>check, fmt, new"]
+    CMD --> B["Export / Migration<br>export-dot, migrate,<br>validate-migration"]
+    CMD --> C["Analysis<br>simulate, cost, coverage,<br>doctor, optimize, diff, feedback"]
+    CMD --> D["Editor<br>lsp"]
+    CMD --> E["Info<br>version, help"]
 ```
 
 ```
@@ -119,7 +114,7 @@ error[DIP003]: unknown node reference "InterpretX" in edge
 
 ### lint
 
-Run both structural validation and semantic linting (DIP001–DIP009 + DIP101–DIP115).
+Run both structural validation and semantic linting (DIP001–DIP009 + DIP101–DIP120).
 
 ```bash
 dippin lint <file>
@@ -127,7 +122,7 @@ dippin lint <file>
 
 **Input**: `.dip` or `.dot` file
 
-**Checks**: All 21 diagnostic rules. Errors (DIP001–DIP009) cause exit code 1. Warnings (DIP101–DIP115) are reported but don't affect the exit code.
+**Checks**: All 30 diagnostic rules. Errors (DIP001–DIP009) cause exit code 1. Warnings (DIP101–DIP120) are reported but don't affect the exit code.
 
 **Output**: All diagnostics (errors and warnings) to stderr.
 
@@ -370,6 +365,143 @@ $ dippin validate-migration old.dot broken.dip
 parity check failed: 2 difference(s) found
   [node] missing node "ReviewStep" in new file
   [edge] edge Validate->Approve has different condition
+```
+
+---
+
+### simulate
+
+Dry-run a workflow's execution graph without calling LLMs or running commands. Emits JSONL events to stdout.
+
+```bash
+dippin simulate [--scenario key=val] [--interactive] [--all-paths] <file>
+```
+
+**Flags**:
+
+| Flag | Description |
+|------|-------------|
+| `--scenario key=val` | Inject context values (repeatable). Use `NodeID.key=val` for per-node overrides. |
+| `--interactive` | Prompt at human nodes instead of auto-selecting |
+| `--all-paths` | Enumerate all possible paths through the graph |
+
+**Output**: JSONL (one JSON object per line) with event types:
+
+| Event | Fields | Description |
+|-------|--------|-------------|
+| `pipeline_start` | `run_id`, `workflow` | Simulation begins |
+| `node_enter` | `node`, `kind`, `model`, `provider`, `prompt` | Node execution starts |
+| `node_exit` | `node`, `status`, `duration_ms` | Node execution ends |
+| `edge_traverse` | `from`, `to` | Edge followed |
+| `pipeline_end` | `status`, `nodes_visited` | Simulation ends |
+
+**Examples**:
+```bash
+# Default (all nodes succeed):
+dippin simulate pipeline.dip
+
+# Explore failure path:
+dippin simulate pipeline.dip --scenario outcome=fail
+
+# Fail only at a specific node:
+dippin simulate pipeline.dip --scenario Validate.outcome=fail
+
+# Count all possible paths:
+dippin simulate pipeline.dip --all-paths
+```
+
+---
+
+### cost
+
+Estimate workflow execution cost based on model pricing tables.
+
+```bash
+dippin cost <file>
+```
+
+See [analysis.md](analysis.md#cost) for output format and JSON schema.
+
+---
+
+### coverage
+
+Analyze edge coverage and reachability.
+
+```bash
+dippin coverage <file>
+```
+
+See [analysis.md](analysis.md#coverage) for output format and JSON schema.
+
+---
+
+### doctor
+
+Health report card aggregating lint, coverage, and cost into a letter grade (A–F).
+
+```bash
+dippin doctor <file>
+```
+
+See [analysis.md](analysis.md#doctor) for scoring and output format.
+
+---
+
+### optimize
+
+Suggest cheaper model substitutions.
+
+```bash
+dippin optimize <file>
+```
+
+See [analysis.md](analysis.md#optimize) for rules applied and output format.
+
+---
+
+### diff
+
+Semantic comparison between two workflow versions.
+
+```bash
+dippin diff <old.dip> <new.dip>
+```
+
+See [analysis.md](analysis.md#diff) for output format and JSON schema.
+
+---
+
+### feedback
+
+Compare predicted costs against actual execution telemetry.
+
+```bash
+dippin feedback <workflow.dip> <telemetry.csv>
+```
+
+See [analysis.md](analysis.md#feedback) for input format and output schema.
+
+---
+
+### lsp
+
+Start a Language Server Protocol server on stdio.
+
+```bash
+dippin lsp
+```
+
+Provides real-time diagnostics, hover, go-to-definition, autocomplete, and document symbols. See [editor-setup.md](editor-setup.md) for editor configuration.
+
+---
+
+### version
+
+Show version information.
+
+```bash
+dippin version
 ```
 
 ---

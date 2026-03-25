@@ -11,16 +11,16 @@ Dippin provides two integration paths:
 ```mermaid
 graph LR
     subgraph "Go Consumers (e.g., Tracker)"
-        LIB["Import as Go library<br/><code>github.com/2389-research/dippin-lang</code>"]
+        LIB["Import as Go library<br><code>github.com/2389-research/dippin-lang</code>"]
         LIB --> PARSE["parser.NewParser().Parse()"]
         PARSE --> IR["*ir.Workflow"]
-        IR --> ADAPT["Your adapter<br/>ir.Workflow → your types"]
+        IR --> ADAPT["Your adapter<br>ir.Workflow → your types"]
     end
 
     subgraph "Non-Go Consumers"
         CLI["dippin parse file.dip"]
         CLI --> JSON["JSON on stdout"]
-        JSON --> YOUR["Your parser<br/>JSON → your types"]
+        JSON --> YOUR["Your parser<br>JSON → your types"]
     end
 ```
 
@@ -129,7 +129,7 @@ The `ir.Workflow` is the central type all integration code works with. Understan
 ```mermaid
 graph TD
     W["Workflow"] --> Name["Name, Goal, Start, Exit"]
-    W --> Defaults["WorkflowDefaults<br/>model, provider, retry_policy, ..."]
+    W --> Defaults["WorkflowDefaults<br>model, provider, retry_policy, ..."]
     W --> Nodes["[]*Node"]
     W --> Edges["[]*Edge"]
     Nodes --> N["Node"]

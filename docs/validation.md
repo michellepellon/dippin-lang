@@ -1,9 +1,9 @@
 # Validation and Linting Reference
 
-Dippin provides 24 diagnostic checks split into two categories:
+Dippin provides 30 diagnostic checks split into two categories:
 
 - **Structural validation** (DIP001–DIP009): Errors that **must** be fixed. A workflow with any of these cannot execute.
-- **Semantic linting** (DIP101–DIP115): Warnings that flag likely bugs or questionable patterns. They don't block execution but should be reviewed.
+- **Semantic linting** (DIP101–DIP120): Warnings that flag likely bugs or questionable patterns. They don't block execution but should be reviewed.
 
 Run `dippin validate <file>` for structural checks only, or `dippin lint <file>` for both.
 
@@ -11,8 +11,8 @@ Run `dippin validate <file>` for structural checks only, or `dippin lint <file>`
 graph LR
     SRC[".dip file"] --> PARSE["Parser"]
     PARSE --> IR["IR"]
-    IR --> VAL["Structural Validation<br/>DIP001–DIP009<br/>(errors)"]
-    IR --> LINT["Semantic Linting<br/>DIP101–DIP115<br/>(warnings)"]
+    IR --> VAL["Structural Validation<br>DIP001–DIP009<br>(errors)"]
+    IR --> LINT["Semantic Linting<br>DIP101–DIP120<br>(warnings)"]
     VAL --> DIAG["Diagnostics"]
     LINT --> DIAG
 ```
@@ -224,7 +224,7 @@ error[DIP009]: duplicate edge
 
 ---
 
-## Semantic Lint Warnings (DIP101–DIP115)
+## Semantic Lint Warnings (DIP101–DIP120)
 
 ### DIP101: Node Only Reachable via Conditional Edges
 
@@ -233,15 +233,18 @@ error[DIP009]: duplicate edge
 A node where **all** incoming edges have conditions may be unreachable at runtime if no condition matches.
 
 ```
-warning[DIP101]: unreachable node after conditional branches
+warning[DIP101]: node "NextPhase" is only reachable through conditional edges and may be skipped at runtime
   --> pipeline.dip:25:3
+  = help: add an unconditional edge to this node, or verify all conditions are exhaustive
 ```
 
 **What triggers it**: Every edge leading to this node has a `when` clause. If none of those conditions evaluate to true, execution can never reach this node.
 
-**When it's OK**: If the conditions are exhaustive (cover all possible values), this is a false positive.
+**Exhaustive suppression**: DIP101 is automatically suppressed when **all** source nodes feeding into this node have exhaustive outgoing conditions. For example, if node Gate has edges `Gate -> A when ctx.outcome = success` and `Gate -> B when ctx.outcome = fail`, both A and B are guaranteed reachable because `success` + `fail` covers all outcomes.
 
-**How to fix**: Add an unconditional incoming edge, or verify that the conditions are exhaustive.
+Known exhaustive sets: `ctx.outcome` / `outcome` with values `{success, fail}` or `{success, failure}`.
+
+**How to fix**: Add an unconditional incoming edge, or ensure the source node's conditions are exhaustive.
 
 ---
 
@@ -252,15 +255,18 @@ warning[DIP101]: unreachable node after conditional branches
 A node with conditional outgoing edges but no unconditional fallback.
 
 ```
-warning[DIP102]: routing node has no default/unconditional edge
+warning[DIP102]: node "Gate" has conditional outgoing edges but no unconditional default edge
   --> pipeline.dip:35:3
+  = help: add an unconditional edge as a fallback, or ensure conditions are exhaustive
 ```
 
 **What triggers it**: A node has one or more outgoing edges with `when` conditions, but no outgoing edge without a condition.
 
-**Why it matters**: If no condition matches at runtime, execution gets stuck — there's no default path to follow.
+**Exhaustive suppression**: DIP102 is automatically suppressed when the node's outgoing conditions form an exhaustive set. For example, `when ctx.outcome = success` + `when ctx.outcome = fail` covers all cases — no default edge needed.
 
-**How to fix**: Add an unconditional fallback edge:
+**Why it matters**: If no condition matches at runtime and conditions are not exhaustive, execution gets stuck — there's no default path to follow.
+
+**How to fix**: Add an unconditional fallback edge, or ensure conditions are exhaustive:
 ```dippin
   edges
     Check -> Pass when ctx.outcome = success
@@ -529,6 +535,92 @@ warning[DIP115]: node "validate_tests" has goal_gate: true but no retry_target o
 
 ---
 
+### DIP116: Invalid Compaction Threshold or On-Resume Value
+
+**Severity**: Warning
+
+Configuration values for `compaction_threshold` or `on_resume` are outside valid ranges.
+
+```
+warning[DIP116]: node "Analyze" has compaction_threshold 1.50 outside valid range [0.0, 1.0]
+  --> pipeline.dip:15:3
+```
+
+**What triggers it**:
+- `compaction_threshold` is set to a value outside `[0.0, 1.0]`
+- `on_resume` is set to a value other than `"preserve"` or `"degrade"`
+- `on_resume` is set without `fidelity` being configured
+
+**How to fix**: Use a threshold between 0.0 and 1.0, and set on_resume to `"preserve"` or `"degrade"`.
+
+---
+
+### DIP117: Stylesheet References Undefined Class
+
+**Severity**: Warning
+
+A stylesheet rule targets a class that no node declares.
+
+```
+warning[DIP117]: stylesheet references class "critical" which is not declared on any node
+  --> pipeline.dip:80:5
+  = help: add class: critical to a node declaration
+```
+
+**How to fix**: Add `class: critical` to the relevant node, or fix the class name in the stylesheet.
+
+---
+
+### DIP118: Stylesheet References Unknown Node ID
+
+**Severity**: Warning
+
+A stylesheet rule targets a node ID that doesn't exist.
+
+```
+warning[DIP118]: stylesheet references node ID "Analize" which does not exist
+  --> pipeline.dip:82:5
+```
+
+**How to fix**: Fix the node ID spelling in the stylesheet selector.
+
+---
+
+### DIP119: Invalid Reasoning Effort
+
+**Severity**: Warning
+
+A node specifies a `reasoning_effort` value that isn't recognized.
+
+```
+warning[DIP119]: node "Analyze" has reasoning_effort "max" which is not a recognized level
+  --> pipeline.dip:12:3
+  = help: valid levels: low, medium, high
+```
+
+**Valid levels**: `low`, `medium`, `high`
+
+**How to fix**: Use one of the three recognized levels.
+
+---
+
+### DIP120: Condition Variable Missing Namespace Prefix
+
+**Severity**: Warning
+
+A condition references a variable without a namespace prefix.
+
+```
+warning[DIP120]: condition variable "outcome" should use a namespace prefix (e.g., ctx.outcome)
+  --> pipeline.dip:45:5
+```
+
+**What triggers it**: An edge condition uses a bare variable name like `outcome` instead of `ctx.outcome`.
+
+**How to fix**: Add the appropriate namespace prefix (`ctx.`, `graph.`, `state.`).
+
+---
+
 ## Running Validation
 
 ### Structural validation only
@@ -545,7 +637,7 @@ Runs DIP001–DIP009. Exit code 0 if all pass, 1 if any errors.
 dippin lint pipeline.dip
 ```
 
-Runs all DIP001–DIP009 errors and DIP101–DIP115 warnings. Exit code 1 only for errors; warnings alone exit 0.
+Runs all DIP001–DIP009 errors and DIP101–DIP120 warnings. Exit code 1 only for errors; warnings alone exit 0.
 
 ### JSON output for CI
 

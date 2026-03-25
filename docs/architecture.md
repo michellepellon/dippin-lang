@@ -11,14 +11,19 @@ Dippin is a multi-stage compiler pipeline:
 ```mermaid
 graph TD
     SRC["Source File (.dip or .dot)"]
-    SRC --> DIP_PARSER["Dippin Parser<br/><code>parser</code> pkg"]
-    SRC --> DOT_PARSER["DOT Parser<br/><code>migrate</code> pkg"]
-    DIP_PARSER --> IR["Canonical IR<br/><code>ir</code> pkg"]
+    SRC --> DIP_PARSER["Dippin Parser<br><code>parser</code> pkg"]
+    SRC --> DOT_PARSER["DOT Parser<br><code>migrate</code> pkg"]
+    DIP_PARSER --> IR["Canonical IR<br><code>ir</code> pkg"]
     DOT_PARSER --> IR
-    IR --> VAL["Validator / Linter<br/><code>validator</code> pkg"]
-    IR --> FMT["Formatter<br/><code>formatter</code> pkg"]
-    IR --> EXP["DOT Exporter<br/><code>export</code> pkg"]
-    IR --> ENG["Engine<br/>(external)"]
+    IR --> VAL["Validator / Linter<br><code>validator</code> pkg"]
+    IR --> FMT["Formatter<br><code>formatter</code> pkg"]
+    IR --> EXP["DOT Exporter<br><code>export</code> pkg"]
+    IR --> SIM["Simulator<br><code>simulate</code> pkg"]
+    IR --> COST["Cost / Coverage<br><code>cost</code> + <code>coverage</code> pkgs"]
+    IR --> DOC["Doctor / Optimize<br><code>doctor</code> + <code>optimize</code> pkgs"]
+    IR --> DIFF["Diff<br><code>diff</code> pkg"]
+    IR --> LSP["LSP Server<br><code>lsp</code> pkg"]
+    IR --> ENG["Engine<br>(external)"]
 ```
 
 All downstream consumers program against the **canonical IR** — a set of Go structs defined in the `ir` package. This decouples parsing from everything else.
@@ -33,18 +38,29 @@ dippin-lang/
 │   ├── ir.go           # Workflow, Node, NodeConfig, RetryConfig, NodeIO
 │   ├── edge.go         # Edge, Condition, ConditionExpr
 │   ├── source.go       # SourceLocation, SourceMap
-│   └── lookup.go       # Helper methods (Node, EdgesFrom, EdgesTo, NodeIDs)
+│   └── lookup.go       # Helper methods (Node, EdgesFrom, EdgesTo, AllEdges, NodeIDs)
 │
 ├── parser/             # Lexer + recursive descent parser
 │   ├── lexer.go        # Indentation-aware tokenizer
-│   └── parser.go       # Produces ir.Workflow from tokens
+│   ├── parser.go       # Produces ir.Workflow from tokens
+│   ├── parse_defaults.go  # Defaults block parsing
+│   ├── parse_edges.go     # Edge and condition parsing
+│   ├── parse_nodes.go     # Node declaration parsing
+│   ├── parse_stylesheet.go # Stylesheet section parsing
+│   └── parse_helpers.go   # Shared utilities
 │
 ├── validator/          # Graph validation + semantic linting
 │   ├── codes.go        # Error code constants (DIP001–DIP009)
-│   ├── lint_codes.go   # Warning code constants (DIP101–DIP112)
+│   ├── lint_codes.go   # Warning code constants (DIP101–DIP120)
 │   ├── diagnostic.go   # Diagnostic type, Result, Severity
 │   ├── validate.go     # 9 structural checks
-│   └── lint.go         # 12 semantic checks
+│   ├── lint.go         # Lint orchestration
+│   ├── lint_reachability.go  # DIP101, DIP102, DIP105, exhaustive detection
+│   ├── lint_conditions.go    # DIP103, DIP120
+│   ├── lint_context.go       # DIP106, DIP107, DIP112
+│   ├── lint_retry.go         # DIP104, DIP115
+│   ├── lint_model.go         # DIP108, DIP119
+│   └── lint_style.go         # DIP109, DIP110, DIP111, DIP113, DIP114, DIP116–DIP118
 │
 ├── formatter/          # Canonical .dip source formatter
 │   └── format.go       # IR → canonical .dip text (idempotent)
@@ -57,12 +73,69 @@ dippin-lang/
 │   ├── dot_parser.go   # Custom DOT parser
 │   └── parity.go       # Structural comparison for migration verification
 │
+├── simulate/           # Reference graph executor
+│   ├── simulate.go     # JSONL event-emitting simulator
+│   ├── condition.go    # Condition evaluator (parses and evaluates AST)
+│   ├── defaults.go     # Default value propagation and per-node scenarios
+│   ├── path_enumerator.go  # All-paths enumeration for --all-paths
+│   ├── interactive.go  # Human node interaction simulation
+│   └── events.go       # JSONL event emission
+│
+├── event/              # Execution protocol event types
+│   └── event.go        # pipeline_start, node_enter, node_exit, edge_traverse, pipeline_end
+│
+├── cost/               # Cost estimation engine
+│   ├── cost.go         # Per-node cost analysis with turn/token heuristics
+│   └── pricing.go      # Model pricing tables by provider
+│
+├── coverage/           # Edge coverage analysis
+│   └── coverage.go     # Tool output extraction, reachability, termination
+│
+├── doctor/             # Health report card
+│   └── doctor.go       # Aggregates validator + coverage + cost into grade A–F
+│
+├── optimize/           # Model optimization suggestions
+│   ├── optimize.go     # Report generation
+│   ├── rules.go        # Optimization rules engine
+│   └── prompt.go       # Prompt complexity analysis
+│
+├── diff/               # Semantic workflow comparison
+│   └── diff.go         # Node/edge/cost delta between two workflows
+│
+├── feedback/           # Cost calibration from telemetry
+│   ├── feedback.go     # Predicted vs actual cost comparison
+│   └── telemetry.go    # CSV telemetry reader
+│
+├── lsp/                # Language Server Protocol server
+│   ├── server.go       # JSONRPC2 handler dispatch
+│   ├── diagnostics.go  # Real-time diagnostic publication
+│   ├── document.go     # In-memory document store
+│   ├── hover.go        # Hover tooltip generation
+│   ├── definition.go   # Go-to-definition
+│   ├── completion.go   # Autocomplete suggestions
+│   └── symbols.go      # Document symbol outline
+│
 ├── scaffold/           # Template scaffolding for `dippin new`
 │   └── scaffold.go     # Build(template, name) → *ir.Workflow
 │
 └── cmd/dippin/         # CLI entry point
     ├── main.go         # os.Args → Run()
-    └── cli.go          # All commands, flag parsing, output formatting
+    ├── cli.go          # Command dispatch and global flag handling
+    ├── cmd_parse.go    # parse command
+    ├── cmd_validate.go # validate command
+    ├── cmd_check.go    # check command
+    ├── cmd_fmt.go      # fmt command
+    ├── cmd_new.go      # new command
+    ├── cmd_export.go   # export-dot command
+    ├── cmd_migrate.go  # migrate + validate-migration commands
+    ├── cmd_simulate.go # simulate command
+    ├── cmd_cost.go     # cost command
+    ├── cmd_coverage.go # coverage command
+    ├── cmd_doctor.go   # doctor command
+    ├── cmd_optimize.go # optimize command
+    ├── cmd_diff.go     # diff command
+    ├── cmd_feedback.go # feedback command
+    └── cmd_lsp.go      # lsp command
 ```
 
 ### Dependency Graph
@@ -76,15 +149,42 @@ graph BT
     export["export"] --> ir
     migrate["migrate"] --> ir
     scaffold["scaffold"] --> ir
+    simulate["simulate"] --> ir
+    event["event"]
+    cost["cost"] --> ir
+    coverage["coverage"] --> ir
+    coverage --> simulate
+    doctor["doctor"] --> ir
+    doctor --> validator
+    doctor --> coverage
+    doctor --> cost
+    optimize["optimize"] --> ir
+    optimize --> cost
+    diff["diff"] --> ir
+    diff --> cost
+    feedback["feedback"] --> cost
+    lsp["lsp"] --> ir
+    lsp --> parser
+    lsp --> validator
     cmd["cmd/dippin"] --> parser
     cmd --> formatter
     cmd --> validator
     cmd --> export
     cmd --> migrate
     cmd --> scaffold
+    cmd --> simulate
+    cmd --> cost
+    cmd --> coverage
+    cmd --> doctor
+    cmd --> optimize
+    cmd --> diff
+    cmd --> feedback
+    cmd --> lsp
 ```
 
-The `ir` package is a leaf dependency — it imports only `time` from the standard library. Every other package imports `ir` but not each other (with the exception of `cmd/dippin` which imports all).
+The `ir` package is a leaf dependency — it imports only `time` from the standard library. Most packages import only `ir`. The analysis packages (`doctor`, `optimize`, `diff`, `feedback`) compose other analysis packages. The LSP server imports `parser` and `validator` for real-time analysis.
+
+Zero external dependencies for core packages. The `lsp` package uses `go.lsp.dev` libraries for the JSON-RPC 2.0 protocol.
 
 ---
 
@@ -176,15 +276,14 @@ Checks graph integrity — things that must be true for any valid workflow:
 
 ### Semantic Linting (`lint.go`)
 
-Checks semantic quality — patterns that are likely bugs:
+Checks semantic quality — patterns that are likely bugs. Decomposed into focused modules:
 
-- Conditional reachability analysis (DIP101, DIP102, DIP103)
-- Retry loop analysis (DIP104)
-- Path analysis (DIP105)
-- Variable usage tracking (DIP106, DIP107, DIP112)
-- Provider/model recognition (DIP108)
-- Import analysis (DIP109)
-- Content checks (DIP110, DIP111)
+- **Reachability** (`lint_reachability.go`): DIP101, DIP102, DIP105 — exhaustive condition detection shared between DIP101 and DIP102
+- **Conditions** (`lint_conditions.go`): DIP103, DIP120 — overlapping conditions and namespace enforcement
+- **Context flow** (`lint_context.go`): DIP106, DIP107, DIP112 — variable usage tracking
+- **Retry** (`lint_retry.go`): DIP104, DIP115 — unbounded retries and goal gate recovery
+- **Model** (`lint_model.go`): DIP108, DIP119 — provider/model recognition and reasoning effort
+- **Style** (`lint_style.go`): DIP109–DIP111, DIP113–DIP114, DIP116–DIP118 — content checks, policy/fidelity validation, stylesheet refs
 
 ### The Diagnostic Type
 
@@ -281,3 +380,57 @@ The CLI (`cmd/dippin/cli.go`) is a thin orchestration layer:
 **Testability**: The `Run` function accepts `args []string` and `io.Writer` parameters, making it fully testable without touching `os.Args` or `os.Stdout`. The test file (`main_test.go`) exercises all commands via this interface.
 
 **Auto-detection**: `loadWorkflow` checks file extension — `.dot` routes to `migrate.Migrate`, `.dip` routes to `parser.NewParser`.
+
+---
+
+## The Simulate Package
+
+The simulator (`simulate/`) is a reference graph executor that walks the workflow graph without calling LLMs or running commands, emitting JSONL events.
+
+**Key components**:
+- **Simulator** — BFS-style graph walker with context propagation
+- **Condition evaluator** — Parses and evaluates condition ASTs against simulated context
+- **Path enumerator** — Exhaustive path enumeration for `--all-paths` mode
+- **Defaults** — Per-node scenario injection (`--scenario NodeID.key=val`)
+
+The `event` package defines the canonical event types (`pipeline_start`, `node_enter`, `node_exit`, `edge_traverse`, `pipeline_end`).
+
+---
+
+## The Analysis Packages
+
+Five packages provide analysis over IR workflows. They compose each other:
+
+```mermaid
+graph BT
+    ir["ir.Workflow"]
+    cost["cost"] --> ir
+    coverage["coverage"] --> ir
+    doctor["doctor"] --> cost
+    doctor --> coverage
+    doctor --> validator["validator"]
+    optimize["optimize"] --> cost
+    diff["diff"] --> cost
+    feedback["feedback"] --> cost
+```
+
+- **cost** — Heuristic token counting, turn estimation, per-model pricing. Pure analysis, no side effects.
+- **coverage** — Tool output extraction via regex, edge condition matching, reachability/termination via BFS.
+- **doctor** — Aggregation layer. Computes a score from lint + coverage + cost, maps to grade A–F, generates suggestions.
+- **optimize** — Rule-based model substitution. Identifies simple prompts, retry-loop nodes, and bookkeeping tasks that can use cheaper models.
+- **diff** — Structural comparison between two workflows with field-level change tracking and cost delta.
+- **feedback** — Reads CSV telemetry, compares against predicted costs, flags outliers.
+
+See [analysis.md](analysis.md) for output formats and JSON schemas.
+
+---
+
+## The LSP Package
+
+The LSP server (`lsp/`) provides editor integration via the Language Server Protocol over stdio.
+
+**Architecture**: Each LSP method maps to a handler function. The server maintains an in-memory document store that re-parses on every `textDocument/didChange` event and publishes diagnostics immediately.
+
+**Capabilities**: diagnostics, hover, go-to-definition, autocomplete, document symbols.
+
+See [editor-setup.md](editor-setup.md) for editor configuration.

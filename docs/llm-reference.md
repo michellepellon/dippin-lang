@@ -69,7 +69,25 @@ when not <expr>
 | 2 | Edge references undeclared node | Every node in an edge must be declared as `agent`, `human`, `tool`, etc. |
 | 3 | `parallel` targets without matching `fan_in` sources | `parallel P -> A, B` requires `fan_in J <- A, B` with the same set. |
 | 4 | Bare variable names in conditions | Use `ctx.outcome`, not `outcome`. All variables need a namespace prefix. |
-| 5 | Agent node with empty prompt | Every `agent` node should have a `prompt:` field with content. |
+| 5 | Agent node with empty prompt | Every `agent` node should have a `prompt:` field with content (except start/exit lifecycle nodes). |
+| 6 | Missing tool timeout | Add `timeout: 60s` (or appropriate duration) to every `tool` node. |
+| 7 | Exhaustive conditions flagged | `ctx.outcome = success` + `ctx.outcome = fail` is exhaustive — DIP101/DIP102 are auto-suppressed. No need to add a fallback edge. |
+
+---
+
+## Exhaustive Conditions
+
+When outgoing edges from a node cover all possible values, DIP101 and DIP102 warnings are automatically suppressed. Known exhaustive sets:
+
+- `ctx.outcome`: `{success, fail}` or `{success, failure}`
+- `outcome`: `{success, fail}` or `{success, failure}`
+
+This means the common pattern below is valid with zero warnings:
+
+```
+Gate -> Fix when ctx.outcome = fail
+Gate -> Next when ctx.outcome = success
+```
 
 ---
 
@@ -134,3 +152,12 @@ dippin check my_workflow.dip
 ```
 
 Use `valid` to decide whether to retry generation. Use `diagnostics` to feed error details back to the LLM for correction. Use `suggested_actions` for actionable fixes when available.
+
+---
+
+## Diagnostic Code Summary
+
+30 diagnostic codes across two categories:
+
+- **DIP001–DIP009** (errors): start/exit missing, unknown refs, unreachable nodes, cycles, duplicates, parallel/fan_in mismatch
+- **DIP101–DIP120** (warnings): conditional reachability, missing defaults, overlapping conditions, unbounded retries, undefined variables, unknown models, empty prompts, missing timeouts, invalid policy/fidelity/reasoning_effort, stylesheet refs, namespace prefixes
