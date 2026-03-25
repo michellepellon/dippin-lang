@@ -579,6 +579,38 @@ $ dippin graph --compact pipeline.dip
 
 ---
 
+### test
+
+Run scenario tests defined in `.test.json` files against a workflow.
+
+```bash
+dippin test [--verbose] <file.dip>
+```
+
+**Flags**:
+
+| Flag | Description |
+|------|-------------|
+| `--verbose` | Show the execution path for each test case |
+
+**Input**: A `.dip` file. The runner auto-discovers the corresponding `.test.json` file (e.g., `pipeline.dip` → `pipeline.test.json`).
+
+**Test file format**: See [testing.md](testing.md) for the `.test.json` schema.
+
+**Output**:
+```bash
+$ dippin test pipeline.dip
+═══ Test Results ═════════════════════════════════════════════
+  PASS  happy path
+  PASS  error path
+─── Summary ───────────────────────────────────────────────────
+  2 tests: 2 passed, 0 failed
+```
+
+**Exit code**: 0 if all tests pass, 1 if any fail. JSON mode outputs the full `SuiteResult`.
+
+---
+
 ### lsp
 
 Start a Language Server Protocol server on stdio.

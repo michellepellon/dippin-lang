@@ -1,0 +1,24 @@
+{
+  "tests": [
+    {
+      "name": "happy path",
+      "scenario": {"outcome": "success"},
+      "expect": {
+        "status": "success",
+        "visited": ["Start", "Gate", "Pass", "Exit"],
+        "not_visited": ["Fix"],
+        "path_contains": ["Gate", "Pass"]
+      }
+    },
+    {
+      "name": "error path",
+      "scenario": {"outcome": "fail"},
+      "expect": {
+        "status": "success",
+        "visited": ["Start", "Gate", "Fix", "Exit"],
+        "not_visited": ["Pass"],
+        "path_contains": ["Gate", "Fix"]
+      }
+    }
+  ]
+}

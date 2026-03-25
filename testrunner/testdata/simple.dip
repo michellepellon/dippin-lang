@@ -1,0 +1,35 @@
+workflow Simple
+  goal: "Simple test workflow"
+  start: Start
+  exit: Exit
+
+  agent Start
+    label: Start
+
+  agent Exit
+    label: Exit
+
+  agent Gate
+    label: Gate
+    model: claude-sonnet-4-6
+    provider: anthropic
+    prompt: Route based on outcome.
+
+  agent Pass
+    label: Pass
+    model: claude-sonnet-4-6
+    provider: anthropic
+    prompt: Handle success.
+
+  agent Fix
+    label: Fix
+    model: claude-sonnet-4-6
+    provider: anthropic
+    prompt: Handle failure.
+
+  edges
+    Start -> Gate
+    Gate -> Pass  when ctx.outcome = success
+    Gate -> Fix  when ctx.outcome = fail
+    Pass -> Exit
+    Fix -> Exit

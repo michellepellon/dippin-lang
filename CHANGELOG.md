@@ -2,6 +2,13 @@
 
 All notable changes to dippin-lang are documented here. Versions follow [semver](https://semver.org/).
 
+## [v0.7.0] — 2026-03-25
+
+### Added
+- **`dippin test`** — scenario test runner for workflow assertions. Define `.test.json` files alongside `.dip` workflows with expected status, visited/not-visited nodes, and path ordering. Supports `--verbose` flag for path tracing and JSON output for CI integration.
+- **New package:** `testrunner/` — loads `.test.json` suites, runs each case through the simulator with injected scenario values, checks assertions against results.
+- **New doc:** `docs/testing.md` — documents the `.test.json` format and test runner usage.
+
 ## [v0.6.0] — 2026-03-25
 
 ### Added
