@@ -149,7 +149,7 @@ func TestLint(t *testing.T) {
 
 		// --- DIP102: Routing node without default edge ---
 		{
-			name: "DIP102: conditional outgoing but no default",
+			name: "DIP102: single conditional outgoing with no default",
 			workflow: &ir.Workflow{
 				Name:  "no_default",
 				Start: "A",
@@ -161,17 +161,14 @@ func TestLint(t *testing.T) {
 				},
 				Edges: []*ir.Edge{
 					{From: "A", To: "B", Condition: &ir.Condition{
-						Raw:    "ctx.x = 1",
-						Parsed: ir.CondCompare{Variable: "ctx.x", Op: "=", Value: "1"},
-					}},
-					{From: "A", To: "C", Condition: &ir.Condition{
-						Raw:    "ctx.x = 2",
-						Parsed: ir.CondCompare{Variable: "ctx.x", Op: "=", Value: "2"},
+						Raw: "ctx.x = 1",
 					}},
 					{From: "B", To: "C"},
 				},
 			},
-			wantCodes: []string{DIP102},
+			// Single conditional edge, no default — DIP102 fires.
+			// Also DIP101 on B (only reachable via conditional, not a partition).
+			wantCodes: []string{DIP101, DIP102},
 		},
 		{
 			name: "DIP102: mixed conditional + unconditional is fine",
@@ -349,6 +346,77 @@ func TestLint(t *testing.T) {
 			},
 			// "contains X" + "not contains X" is complementary — no DIP101.
 			wantNoDiag: true,
+		},
+		{
+			name: "DIP101: custom binary partition on tool_stdout (done/more_questions)",
+			workflow: &ir.Workflow{
+				Name:  "custom_partition",
+				Start: "Start",
+				Exit:  "Done",
+				Nodes: []*ir.Node{
+					{ID: "Start", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go"}},
+					{ID: "Check", Kind: ir.NodeTool, Config: ir.ToolConfig{Command: "echo done", Timeout: 30e9}},
+					{ID: "KeepGoing", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "more"}},
+					{ID: "Finalize", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "wrap up"}},
+					{ID: "Done", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done"}},
+				},
+				Edges: []*ir.Edge{
+					{From: "Start", To: "Check"},
+					{From: "Check", To: "KeepGoing", Condition: &ir.Condition{Raw: "ctx.tool_stdout = more_questions"}},
+					{From: "Check", To: "Finalize", Condition: &ir.Condition{Raw: "ctx.tool_stdout = done"}},
+					{From: "KeepGoing", To: "Check"},
+					{From: "Finalize", To: "Done"},
+				},
+			},
+			// All conditional edges test the same variable — complete partition.
+			wantNoDiag: true,
+		},
+		{
+			name: "DIP101: custom partition with 3 values (tasks_remain/in_progress/all_done)",
+			workflow: &ir.Workflow{
+				Name:  "ternary_partition",
+				Start: "Start",
+				Exit:  "Done",
+				Nodes: []*ir.Node{
+					{ID: "Start", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go"}},
+					{ID: "Check", Kind: ir.NodeTool, Config: ir.ToolConfig{Command: "echo status", Timeout: 30e9}},
+					{ID: "Work", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "work"}},
+					{ID: "Wait", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "wait"}},
+					{ID: "Finish", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "finish"}},
+					{ID: "Done", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done"}},
+				},
+				Edges: []*ir.Edge{
+					{From: "Start", To: "Check"},
+					{From: "Check", To: "Work", Condition: &ir.Condition{Raw: "ctx.tool_stdout = tasks_remain"}},
+					{From: "Check", To: "Wait", Condition: &ir.Condition{Raw: "ctx.tool_stdout = in_progress"}},
+					{From: "Check", To: "Finish", Condition: &ir.Condition{Raw: "ctx.tool_stdout = all_done"}},
+					{From: "Work", To: "Check"},
+					{From: "Wait", To: "Check"},
+					{From: "Finish", To: "Done"},
+				},
+			},
+			wantNoDiag: true,
+		},
+		{
+			name: "DIP101: single conditional edge is NOT a partition",
+			workflow: &ir.Workflow{
+				Name:  "single_cond",
+				Start: "Start",
+				Exit:  "Done",
+				Nodes: []*ir.Node{
+					{ID: "Start", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go"}},
+					{ID: "Check", Kind: ir.NodeTool, Config: ir.ToolConfig{Command: "echo ok", Timeout: 30e9}},
+					{ID: "Next", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "next"}},
+					{ID: "Done", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done"}},
+				},
+				Edges: []*ir.Edge{
+					{From: "Start", To: "Check"},
+					{From: "Check", To: "Next", Condition: &ir.Condition{Raw: "ctx.tool_stdout = ok"}},
+					{From: "Next", To: "Done"},
+				},
+			},
+			// Single conditional edge — not exhaustive, DIP101 should fire.
+			wantCodes: []string{DIP101},
 		},
 
 		// --- DIP104: Unbounded retry ---
@@ -909,6 +977,7 @@ func TestLintDIP101MessageContent(t *testing.T) {
 }
 
 func TestLintDIP102MessageContent(t *testing.T) {
+	// Single conditional edge — not a complete partition, so DIP102 fires.
 	w := &ir.Workflow{
 		Name:  "msg_check",
 		Start: "A",
@@ -920,12 +989,7 @@ func TestLintDIP102MessageContent(t *testing.T) {
 		},
 		Edges: []*ir.Edge{
 			{From: "A", To: "B", Condition: &ir.Condition{
-				Raw:    "ctx.x = 1",
-				Parsed: ir.CondCompare{Variable: "ctx.x", Op: "=", Value: "1"},
-			}},
-			{From: "A", To: "C", Condition: &ir.Condition{
-				Raw:    "ctx.x = 2",
-				Parsed: ir.CondCompare{Variable: "ctx.x", Op: "=", Value: "2"},
+				Raw: "ctx.x = 1",
 			}},
 			{From: "B", To: "C"},
 		},

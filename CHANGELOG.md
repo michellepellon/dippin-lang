@@ -2,6 +2,11 @@
 
 All notable changes to dippin-lang are documented here. Versions follow [semver](https://semver.org/).
 
+## [v0.4.2] — 2026-03-25
+
+### Fixed
+- **DIP101/DIP102 exhaustive detection** now recognizes any complete partition — if all conditional edges from a node test the same variable with equality (2+ values), the conditions are treated as exhaustive. No longer limited to hardcoded `{success, fail}` pairs. Handles `done/more_questions`, `tasks_remain/all_done`, and any custom value set.
+
 ## [v0.4.1] — 2026-03-25
 
 ### Fixed
@@ -84,6 +89,7 @@ All notable changes to dippin-lang are documented here. Versions follow [semver]
 - 15 example workflows including 5 stress tests
 - VS Code extension (syntax highlighting)
 
+[v0.4.2]: https://github.com/2389-research/dippin-lang/compare/v0.4.1...v0.4.2
 [v0.4.1]: https://github.com/2389-research/dippin-lang/compare/v0.4.0...v0.4.1
 [v0.4.0]: https://github.com/2389-research/dippin-lang/compare/v0.3.0...v0.4.0
 [v0.3.0]: https://github.com/2389-research/dippin-lang/compare/v0.2.0...v0.3.0

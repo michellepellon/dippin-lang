@@ -182,15 +182,61 @@ func buildOutgoingEdgeMap(w *ir.Workflow) map[string][]*ir.Edge {
 	return out
 }
 
-// edgesAreExhaustive returns true if a set of sibling edges covers all values
-// of a variable according to knownExhaustiveSets, or if the edges contain
-// a complementary pair (e.g., "contains X" + "not contains X").
+// edgesAreExhaustive returns true if a set of sibling edges forms an
+// exhaustive condition set. Three detection strategies (any match = exhaustive):
+//
+//  1. Known value sets — e.g., outcome = success + outcome = fail
+//  2. Complete partition — all conditional edges test the same variable
+//     with equality and there are 2+ values (author declares "these are
+//     the only cases")
+//  3. Complementary pair — e.g., "contains X" + "not contains X"
 func edgesAreExhaustive(edges []*ir.Edge) bool {
 	byVar := collectConditionValues(edges)
 	if matchesExhaustiveSet(byVar) {
 		return true
 	}
+	if isCompletePartition(edges, byVar) {
+		return true
+	}
 	return hasComplementaryPair(edges)
+}
+
+// isCompletePartition returns true if every conditional edge tests the same
+// variable with equality and there are 2+ distinct values. This means the
+// author has partitioned all routing on a single variable — the conditions
+// cover all intended cases by construction.
+func isCompletePartition(edges []*ir.Edge, byVar map[string]map[string]bool) bool {
+	if len(byVar) != 1 {
+		return false // conditions span multiple variables
+	}
+	conditionalCount := countConditionalEdges(edges)
+	if conditionalCount < 2 {
+		return false // need at least 2 branches to form a partition
+	}
+	equalityCount := countEqualityEdges(edges)
+	return equalityCount == conditionalCount
+}
+
+// countConditionalEdges returns the number of edges with a condition.
+func countConditionalEdges(edges []*ir.Edge) int {
+	n := 0
+	for _, e := range edges {
+		if e.Condition != nil {
+			n++
+		}
+	}
+	return n
+}
+
+// countEqualityEdges returns the number of edges with simple equality conditions.
+func countEqualityEdges(edges []*ir.Edge) int {
+	n := 0
+	for _, e := range edges {
+		if _, ok := extractEqualityCondition(e); ok {
+			n++
+		}
+	}
+	return n
 }
 
 // collectConditionValues groups equality condition values by variable name.
