@@ -93,7 +93,7 @@ if result.HasErrors() {
     }
 }
 
-// Semantic lint (DIP101–DIP122) — warnings
+// Semantic lint (DIP101–DIP125) — warnings
 lintResult := validator.Lint(workflow)
 for _, d := range lintResult.Diagnostics {
     fmt.Println(d.String())

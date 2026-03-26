@@ -2,6 +2,20 @@
 
 All notable changes to dippin-lang are documented here. Versions follow [semver](https://semver.org/).
 
+## [v0.10.0] — 2026-03-26
+
+### Added
+- **DIP123** lint rule: tool command shell syntax errors detected via `bash -n`.
+- **DIP124** lint rule: `${ctx.*}` references in tool commands that expand to empty at runtime.
+- **DIP125** lint rule (hint): tool command binary not found on PATH (environment-dependent).
+- **Brochure site** with 8 pages: home, CLI, Language Reference, Testing, Validation, Analysis, Architecture, Editor Setup. Hosted on GitHub Pages.
+- 34 diagnostic codes total (was 31).
+
+### Documentation
+- All references updated from 31→34 codes, DIP101–DIP122→DIP101–DIP125 across README, CLAUDE.md, docs/, and site/.
+- `docs/validation.md` — full entries for DIP123, DIP124, DIP125.
+- `dippin explain DIP123/DIP124/DIP125` — explanations with triggers and fix guidance.
+
 ## [v0.9.0] — 2026-03-25
 
 ### Fixed
@@ -37,7 +51,7 @@ All notable changes to dippin-lang are documented here. Versions follow [semver]
 - DIP121/DIP122 added to README warnings table; `explain`, `unused`, `graph`, `test` added to commands table.
 
 ### Fixed (cosmetic)
-- **README stale numbers** — diagnostic codes 30→31, DIP120→DIP122, examples 15→17, lint rules 21→22.
+- **README stale numbers** — diagnostic codes 30→34, DIP120→DIP125, examples 15→17, lint rules 21→25.
 - **`appendConnector` dead branch** — identical if/else branches collapsed.
 
 ## [v0.7.0] — 2026-03-25
@@ -57,7 +71,7 @@ All notable changes to dippin-lang are documented here. Versions follow [semver]
 ## [v0.5.0] — 2026-03-25
 
 ### Added
-- **`dippin explain <DIPxxx>`** — rich explanations for all 31 diagnostic codes. Shows trigger conditions, fix guidance, and example snippets. Supports text and JSON output.
+- **`dippin explain <DIPxxx>`** — rich explanations for all 34 diagnostic codes. Shows trigger conditions, fix guidance, and example snippets. Supports text and JSON output.
 - **`dippin unused <file>`** — detects dead-branch nodes (reachable from start but no path to exit) and estimates wasted cost per run. Reuses `coverage.Analyze()` sink detection + `cost.Analyze()` for cost enrichment.
 - **`dippin graph [--compact] <file>`** — terminal-rendered ASCII DAG visualization. Full mode renders box-drawing nodes with connectors; compact mode outputs single-line `[A] → [B] → [C]` format. JSON mode outputs layer structure.
 - **New packages:** `unused/`, `graph/`, `testrunner/`

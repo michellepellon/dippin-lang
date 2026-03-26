@@ -3,7 +3,7 @@
 Dippin provides 34 diagnostic checks split into two categories:
 
 - **Structural validation** (DIP001–DIP009): Errors that **must** be fixed. A workflow with any of these cannot execute.
-- **Semantic linting** (DIP101–DIP122): Warnings that flag likely bugs or questionable patterns. They don't block execution but should be reviewed.
+- **Semantic linting** (DIP101–DIP125): Warnings that flag likely bugs or questionable patterns. They don't block execution but should be reviewed.
 
 Run `dippin validate <file>` for structural checks only, or `dippin lint <file>` for both.
 
@@ -12,7 +12,7 @@ graph LR
     SRC[".dip file"] --> PARSE["Parser"]
     PARSE --> IR["IR"]
     IR --> VAL["Structural Validation<br>DIP001–DIP009<br>(errors)"]
-    IR --> LINT["Semantic Linting<br>DIP101–DIP122<br>(warnings)"]
+    IR --> LINT["Semantic Linting<br>DIP101–DIP125<br>(warnings)"]
     VAL --> DIAG["Diagnostics"]
     LINT --> DIAG
 ```
@@ -224,7 +224,7 @@ error[DIP009]: duplicate edge
 
 ---
 
-## Semantic Lint Warnings (DIP101–DIP122)
+## Semantic Lint Warnings (DIP101–DIP125)
 
 ### DIP101: Node Only Reachable via Conditional Edges
 
@@ -659,6 +659,59 @@ warning[DIP122]: edge RunTest → Pass: condition tests value "retry" but tool "
 
 ---
 
+### DIP123: Tool Command Shell Syntax Error
+
+**Severity**: Warning
+
+The tool command block has a shell syntax error detectable by `bash -n`.
+
+```
+warning[DIP123]: tool command has shell syntax error: unexpected EOF while looking for matching `"'
+  --> pipeline.dip:45:5
+```
+
+**What triggers it**: Running `bash -n` on the command block reports an error — unclosed quotes, bad redirects, missing `fi`/`done`, etc.
+
+**How to fix**: Fix the syntax error. Test your command in a terminal: `echo 'your command' | bash -n`
+
+---
+
+### DIP124: Tool Command References Runtime Variable
+
+**Severity**: Warning
+
+A tool command contains `${ctx.*}` interpolation that won't resolve at shell execution time.
+
+```
+warning[DIP124]: tool command references ${ctx.api_url} which expands to empty at runtime
+  --> pipeline.dip:50:5
+```
+
+**What triggers it**: The command block contains patterns like `${ctx.outcome}`, `${ctx.tool_stdout}`, etc. These are Dippin runtime variables — the shell sees them as undefined variables that expand to empty strings.
+
+**How to fix**: Pass context values through environment variables set by the pipeline runner, or use file-based IPC (write to a shared `.ai/` directory).
+
+---
+
+### DIP125: Tool Command Binary Not Found
+
+**Severity**: Hint
+
+The first non-preamble command in the tool block references a binary not found on the current PATH.
+
+```
+hint[DIP125]: tool command binary "npx" not found on PATH
+  --> pipeline.dip:55:5
+```
+
+**What triggers it**: The linter extracts the first real command (skipping `set -eu`, `cd`, `export`, `mkdir -p` preamble lines) and checks if the binary exists via `exec.LookPath`.
+
+**How to fix**: Install the missing binary, or use a full path. Note: this check runs on the developer's machine — the deployment environment may have different binaries available.
+
+**Caveat**: This is a hint (not a warning) because PATH is environment-dependent. A binary missing on your laptop may exist in the pipeline runner's container.
+
+---
+
 ## Running Validation
 
 ### Structural validation only
@@ -675,7 +728,7 @@ Runs DIP001–DIP009. Exit code 0 if all pass, 1 if any errors.
 dippin lint pipeline.dip
 ```
 
-Runs all DIP001–DIP009 errors and DIP101–DIP122 warnings. Exit code 1 only for errors; warnings alone exit 0.
+Runs all DIP001–DIP009 errors and DIP101–DIP125 warnings. Exit code 1 only for errors; warnings alone exit 0.
 
 ### JSON output for CI
 

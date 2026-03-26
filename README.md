@@ -119,7 +119,7 @@ dippin lint pipeline.dip
 |---------|-------------|
 | `dippin parse <file>` | Parse and output IR as JSON |
 | `dippin validate <file>` | Structural validation (DIP001–DIP009) |
-| `dippin lint <file>` | Validation + semantic warnings (DIP101–DIP122) |
+| `dippin lint <file>` | Validation + semantic warnings (DIP101–DIP125) |
 | `dippin check [--format json\|text] <file>` | Parse+validate+lint in one shot (JSON default, for LLM tooling) |
 | `dippin fmt [--check] [--write] <file>` | Format to canonical style |
 | `dippin new [--name N] [--write F] <template>` | Generate a starter .dip from a template |
@@ -352,7 +352,7 @@ error[DIP003]: unknown node reference "InterpretX" in edge
 | DIP008 | Duplicate node ID |
 | DIP009 | Duplicate edge |
 
-### Warnings (DIP101–DIP122)
+### Warnings (DIP101–DIP125)
 
 | Code | What it catches |
 |------|----------------|
@@ -378,6 +378,9 @@ error[DIP003]: unknown node reference "InterpretX" in edge
 | DIP120 | Condition variable missing namespace prefix |
 | DIP121 | Condition references variable not in source node writes |
 | DIP122 | Condition tests value not in source node outputs |
+| DIP123 | Tool command has shell syntax errors (`bash -n`) |
+| DIP124 | Tool command references runtime-only `${ctx.*}` variable |
+| DIP125 | Tool command binary not found on PATH |
 
 ## Simulation
 
@@ -463,7 +466,7 @@ graph LR
     Parser --> IR["IR (Workflow)"]
     Migrator --> IR
     IR --> Validator["Validator<br>(DIP001–009)"]
-    IR --> Linter["Linter<br>(DIP101–122)"]
+    IR --> Linter["Linter<br>(DIP101–125)"]
     IR --> Formatter["Formatter<br>(canonical .dip)"]
     IR --> DOT["DOT Exporter<br>(visualization)"]
     IR --> Sim["Simulator<br>(dry-run)"]
