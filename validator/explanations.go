@@ -243,5 +243,26 @@ func buildLintExplanations() map[string]Explanation {
 			Fix:     "Add the value to the tool's outputs, or check for typos.",
 			Example: "node T { role tool outputs [success, fail] }\nT -> B [ctx.outcome = retry]  // retry not declared",
 		},
+		DIP123: {
+			Code:    DIP123,
+			Summary: "tool command has shell syntax errors",
+			Trigger: "bash -n reports a syntax error in the tool command block (unclosed quotes, bad redirects, etc.).",
+			Fix:     "Fix the shell syntax error. Test the command with: echo '...' | bash -n",
+			Example: "tool T\n  command:\n    echo \"unclosed",
+		},
+		DIP124: {
+			Code:    DIP124,
+			Summary: "tool command references runtime-only ${ctx.*} variable",
+			Trigger: "A tool command contains ${ctx.*} interpolation. These are Dippin runtime variables that expand to empty in the shell.",
+			Fix:     "Pass context values via environment variables or file IPC instead of ${ctx.*} in commands.",
+			Example: "tool T\n  command:\n    curl ${ctx.api_url}",
+		},
+		DIP125: {
+			Code:    DIP125,
+			Summary: "tool command binary not found on PATH",
+			Trigger: "The first command in the tool block references a binary not on the current PATH.",
+			Fix:     "Install the missing binary or use a full path. This check is environment-dependent.",
+			Example: "tool T\n  command:\n    npx create-nx-workspace",
+		},
 	}
 }

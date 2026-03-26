@@ -43,6 +43,9 @@ func Lint(w *ir.Workflow) Result {
 	diags = append(diags, lintStylesheetRefs(w)...)
 	diags = append(diags, lintConditionUndefinedOutput(w)...)
 	diags = append(diags, lintConditionUndeclaredValue(w)...)
+	diags = append(diags, lintToolSyntax(w)...)
+	diags = append(diags, lintToolCtxVars(w)...)
+	diags = append(diags, lintToolBinary(w)...)
 
 	return Result{Diagnostics: diags}
 }

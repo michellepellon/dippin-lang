@@ -1,6 +1,6 @@
 package validator
 
-// Diagnostic codes for semantic quality warnings (DIP101–DIP122).
+// Diagnostic codes for semantic quality warnings (DIP101–DIP125).
 const (
 	DIP101 = "DIP101" // unreachable nodes after conditional branches
 	DIP102 = "DIP102" // routing node without default/unconditional edge
@@ -24,6 +24,9 @@ const (
 	DIP120 = "DIP120" // condition variable missing namespace prefix
 	DIP121 = "DIP121" // condition references variable not in source node writes
 	DIP122 = "DIP122" // condition tests value not in source tool outputs
+	DIP123 = "DIP123" // tool command has shell syntax errors
+	DIP124 = "DIP124" // tool command references runtime-only ${ctx.*} variable
+	DIP125 = "DIP125" // tool command binary not found on PATH
 )
 
 func init() {
@@ -50,4 +53,7 @@ func init() {
 	CodeDescription[DIP120] = "condition variable missing namespace prefix"
 	CodeDescription[DIP121] = "condition references variable not in source node writes"
 	CodeDescription[DIP122] = "condition tests value not in source tool outputs"
+	CodeDescription[DIP123] = "tool command has shell syntax errors"
+	CodeDescription[DIP124] = "tool command references runtime-only ${ctx.*} variable"
+	CodeDescription[DIP125] = "tool command binary not found on PATH"
 }
