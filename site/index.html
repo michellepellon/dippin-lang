@@ -199,10 +199,13 @@ section { padding: 7rem 0; }
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 2rem;
+  min-width: 0; /* prevent grid blowout */
 }
 
 .compare-panel {
   position: relative;
+  min-width: 0; /* allow shrinking below content size */
+  overflow: hidden;
 }
 
 .compare-label {
@@ -228,13 +231,17 @@ section { padding: 7rem 0; }
 .compare-code {
   background: var(--bg-code);
   border-radius: 0 8px 8px 8px;
-  padding: 1.5rem;
+  padding: 1.25rem;
   font-family: var(--mono);
-  font-size: 0.82rem;
+  font-size: 0.72rem;
   line-height: 1.7;
   overflow-x: auto;
   border: 1px solid rgba(255,255,255,0.04);
   color: var(--text-dim);
+}
+
+.compare-code pre {
+  min-width: 0;
 }
 
 .compare-code .kw { color: var(--accent); }
@@ -419,8 +426,12 @@ footer {
 }
 
 /* ── Responsive ── */
-@media (max-width: 900px) {
+@media (max-width: 1100px) {
   .compare-grid { grid-template-columns: 1fr; }
+  .compare-code { font-size: 0.78rem; }
+}
+
+@media (max-width: 900px) {
   .features-grid { grid-template-columns: 1fr 1fr; }
   .terminals { grid-template-columns: 1fr; }
 }
@@ -464,19 +475,24 @@ footer {
       <div class="compare-code"><pre><span class="kw">digraph</span> Pipeline {
   Planner [<span class="str">kind="agent"</span>
     <span class="str">llm_model="claude-opus-4-6"</span>
-    <span class="str">prompt="You are a senior architect.\nAnalyze the request and\nproduce an implementation plan."</span>];
+    <span class="str">prompt="You are a senior architect.\n
+    Analyze the request and\nproduce a plan."</span>];
   Coder [<span class="str">kind="agent"</span>
     <span class="str">llm_model="claude-sonnet-4-6"</span>
-    <span class="str">prompt="Implement the plan.\nUse best practices."</span>];
+    <span class="str">prompt="Implement the plan.\n
+    Use best practices."</span>];
   Review [<span class="str">kind="agent"</span>
     <span class="str">auto_status="true"</span>
-    <span class="str">prompt="Review the code.\nSet STATUS: success or fail."</span>];
+    <span class="str">prompt="Review the code.\n
+    Set STATUS: success or fail."</span>];
 
   Planner <span class="op">-></span> Coder;
   Coder <span class="op">-></span> Review;
-  Review <span class="op">-></span> Done [<span class="str">condition="context.outcome==success"</span>];
-  Review <span class="op">-></span> Coder [<span class="str">condition="context.outcome==fail"</span>
-    <span class="str">restart="true"</span>];
+  Review <span class="op">-></span> Done
+    [<span class="str">condition="context.outcome==success"</span>];
+  Review <span class="op">-></span> Coder
+    [<span class="str">condition="context.outcome==fail"</span>
+     <span class="str">restart="true"</span>];
 }</pre></div>
     </div>
 
