@@ -1,0 +1,16 @@
+workflow ToolNoConds
+  goal: "Tool node with unconditional edge"
+  start: RunTool
+  exit: Done
+
+  tool RunTool
+    timeout: 30s
+    command:
+      echo hello
+
+  agent Done
+    prompt:
+      Done.
+
+  edges
+    RunTool -> Done

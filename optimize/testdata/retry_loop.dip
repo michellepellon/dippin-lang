@@ -1,0 +1,21 @@
+workflow RetryLoop
+  goal: "Workflow with expensive model in retry loop"
+  start: Attempt
+  exit: Done
+
+  defaults
+    model: claude-opus-4-6
+    provider: anthropic
+
+  agent Attempt
+    prompt:
+      Try the operation carefully.
+
+  agent Done
+    prompt:
+      Finish up.
+
+  edges
+    Attempt -> Done when ctx.status == "success"
+    Attempt -> Attempt restart: true
+    Done -> Done

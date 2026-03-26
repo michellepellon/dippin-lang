@@ -1,0 +1,22 @@
+workflow OptimizeTarget
+  goal: "Workflow with an expensive model on a simple prompt"
+  start: Ask
+  exit: Done
+
+  human Ask
+    mode: freeform
+
+  agent Summarize
+    label: "Summarize"
+    model: claude-opus-4-6
+    provider: anthropic
+    prompt:
+      Summarize.
+
+  agent Done
+    prompt:
+      Done.
+
+  edges
+    Ask -> Summarize
+    Summarize -> Done

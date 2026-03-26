@@ -224,6 +224,335 @@ func TestExtractToolOutputs(t *testing.T) {
 	}
 }
 
+// --- appendConditionValues tests ---
+
+func TestAppendConditionValues_CondOr(t *testing.T) {
+	expr := ir.CondOr{
+		Left:  ir.CondCompare{Variable: "ctx.x", Op: "=", Value: "a"},
+		Right: ir.CondCompare{Variable: "ctx.x", Op: "=", Value: "b"},
+	}
+	got := appendConditionValues(nil, expr)
+	want := []string{"a", "b"}
+	if !slicesEqual(got, want) {
+		t.Errorf("appendConditionValues(CondOr) = %v, want %v", got, want)
+	}
+}
+
+func TestAppendConditionValues_CondNot(t *testing.T) {
+	expr := ir.CondNot{
+		Inner: ir.CondCompare{Variable: "ctx.x", Op: "=", Value: "bad"},
+	}
+	got := appendConditionValues(nil, expr)
+	want := []string{"bad"}
+	if !slicesEqual(got, want) {
+		t.Errorf("appendConditionValues(CondNot) = %v, want %v", got, want)
+	}
+}
+
+func TestAppendConditionValues_CondAnd(t *testing.T) {
+	expr := ir.CondAnd{
+		Left:  ir.CondCompare{Variable: "ctx.x", Op: "=", Value: "yes"},
+		Right: ir.CondCompare{Variable: "ctx.y", Op: "=", Value: "no"},
+	}
+	got := appendConditionValues(nil, expr)
+	want := []string{"yes", "no"}
+	if !slicesEqual(got, want) {
+		t.Errorf("appendConditionValues(CondAnd) = %v, want %v", got, want)
+	}
+}
+
+func TestAppendConditionValues_NilExpr(t *testing.T) {
+	got := appendConditionValues(nil, nil)
+	if len(got) != 0 {
+		t.Errorf("appendConditionValues(nil) = %v, want empty", got)
+	}
+}
+
+func TestAppendConditionValues_Nested(t *testing.T) {
+	// (a OR b) AND NOT(c)
+	expr := ir.CondAnd{
+		Left: ir.CondOr{
+			Left:  ir.CondCompare{Variable: "ctx.x", Op: "=", Value: "a"},
+			Right: ir.CondCompare{Variable: "ctx.x", Op: "=", Value: "b"},
+		},
+		Right: ir.CondNot{
+			Inner: ir.CondCompare{Variable: "ctx.y", Op: "=", Value: "c"},
+		},
+	}
+	got := appendConditionValues(nil, expr)
+	want := []string{"a", "b", "c"}
+	if !slicesEqual(got, want) {
+		t.Errorf("appendConditionValues(nested) = %v, want %v", got, want)
+	}
+}
+
+// --- addReverseNodeEdges tests ---
+
+func TestAddReverseNodeEdges_Parallel(t *testing.T) {
+	adj := make(map[string][]string)
+	n := &ir.Node{
+		ID:     "FanOut",
+		Kind:   ir.NodeParallel,
+		Config: ir.ParallelConfig{Targets: []string{"W1", "W2", "W3"}},
+	}
+	addReverseNodeEdges(adj, n)
+
+	// Each target should have a reverse edge to FanOut.
+	for _, target := range []string{"W1", "W2", "W3"} {
+		found := false
+		for _, src := range adj[target] {
+			if src == "FanOut" {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("expected reverse edge from %s to FanOut", target)
+		}
+	}
+}
+
+func TestAddReverseNodeEdges_FanIn(t *testing.T) {
+	adj := make(map[string][]string)
+	n := &ir.Node{
+		ID:     "Join",
+		Kind:   ir.NodeFanIn,
+		Config: ir.FanInConfig{Sources: []string{"W1", "W2"}},
+	}
+	addReverseNodeEdges(adj, n)
+
+	// Join should have reverse edges to its sources.
+	if !slicesEqual(adj["Join"], []string{"W1", "W2"}) {
+		t.Errorf("expected reverse edges [W1 W2] for Join, got %v", adj["Join"])
+	}
+}
+
+func TestAddReverseNodeEdges_AgentNode(t *testing.T) {
+	adj := make(map[string][]string)
+	n := &ir.Node{
+		ID:     "Agent1",
+		Kind:   ir.NodeAgent,
+		Config: ir.AgentConfig{Prompt: "test"},
+	}
+	addReverseNodeEdges(adj, n)
+
+	// Agent node should not add any reverse edges.
+	if len(adj) != 0 {
+		t.Errorf("expected no reverse edges for agent node, got %v", adj)
+	}
+}
+
+// --- addImplicitEdges tests ---
+
+func TestAddImplicitEdges_Parallel(t *testing.T) {
+	adj := make(map[string][]string)
+	w := &ir.Workflow{
+		Nodes: []*ir.Node{
+			{ID: "FanOut", Kind: ir.NodeParallel, Config: ir.ParallelConfig{
+				Targets: []string{"W1", "W2"},
+			}},
+		},
+	}
+	addImplicitEdges(adj, w)
+
+	if !slicesEqual(adj["FanOut"], []string{"W1", "W2"}) {
+		t.Errorf("expected implicit edges [W1 W2] from FanOut, got %v", adj["FanOut"])
+	}
+}
+
+func TestAddImplicitEdges_FanIn(t *testing.T) {
+	adj := make(map[string][]string)
+	w := &ir.Workflow{
+		Nodes: []*ir.Node{
+			{ID: "Join", Kind: ir.NodeFanIn, Config: ir.FanInConfig{
+				Sources: []string{"W1", "W2"},
+			}},
+		},
+	}
+	addImplicitEdges(adj, w)
+
+	// Each source should have an implicit edge to Join.
+	for _, src := range []string{"W1", "W2"} {
+		found := false
+		for _, dst := range adj[src] {
+			if dst == "Join" {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("expected implicit edge from %s to Join", src)
+		}
+	}
+}
+
+// --- Reachability with parallel/fan_in ---
+
+func TestReachabilityWithParallelFanIn(t *testing.T) {
+	w := &ir.Workflow{
+		Start: "start",
+		Exit:  "end",
+		Nodes: []*ir.Node{
+			{ID: "start", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go"}},
+			{ID: "fan_out", Kind: ir.NodeParallel, Config: ir.ParallelConfig{
+				Targets: []string{"w1", "w2"},
+			}},
+			{ID: "w1", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "w1"}},
+			{ID: "w2", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "w2"}},
+			{ID: "join", Kind: ir.NodeFanIn, Config: ir.FanInConfig{
+				Sources: []string{"w1", "w2"},
+			}},
+			{ID: "end", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done"}},
+		},
+		Edges: []*ir.Edge{
+			makeEdge("start", "fan_out"),
+			makeEdge("join", "end"),
+		},
+	}
+
+	r := Analyze(w)
+
+	// All nodes should be reachable due to implicit edges.
+	if r.Reachability.ReachableNodes != 6 {
+		t.Errorf("expected 6 reachable nodes, got %d (unreachable: %v)",
+			r.Reachability.ReachableNodes, r.Reachability.UnreachableNodes)
+	}
+
+	// All paths should terminate.
+	if !r.Termination.AllPathsTerminate {
+		t.Errorf("expected all paths to terminate, sink nodes: %v", r.Termination.SinkNodes)
+	}
+}
+
+// --- Termination with parallel ---
+
+func TestTerminationWithParallelSink(t *testing.T) {
+	w := &ir.Workflow{
+		Start: "start",
+		Exit:  "end",
+		Nodes: []*ir.Node{
+			{ID: "start", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go"}},
+			{ID: "fan_out", Kind: ir.NodeParallel, Config: ir.ParallelConfig{
+				Targets: []string{"w1", "w2"},
+			}},
+			{ID: "w1", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "w1"}},
+			{ID: "w2", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "w2"}},
+			// No fan_in — w1 and w2 are sinks.
+			{ID: "end", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done"}},
+		},
+		Edges: []*ir.Edge{
+			makeEdge("start", "fan_out"),
+			makeEdge("start", "end"),
+		},
+	}
+
+	r := Analyze(w)
+	if r.Termination.AllPathsTerminate {
+		t.Error("expected some sink nodes when fan-out targets have no path to exit")
+	}
+}
+
+// --- Tool node with declared outputs ---
+
+func TestDeclaredOutputsCoverage(t *testing.T) {
+	w := &ir.Workflow{
+		Start: "start",
+		Exit:  "end",
+		Nodes: []*ir.Node{
+			{ID: "start", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go"}},
+			{ID: "check", Kind: ir.NodeTool, Config: ir.ToolConfig{
+				Command: "custom-binary",
+				Outputs: []string{"pass", "fail", "error"},
+			}},
+			{ID: "end", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done"}},
+		},
+		Edges: []*ir.Edge{
+			makeEdge("start", "check"),
+			makeCondEdge("check", "end", "ctx.result", "pass"),
+			makeCondEdge("check", "end", "ctx.result", "fail"),
+		},
+	}
+
+	r := Analyze(w)
+	cov := r.Nodes["check"]
+	// determineStatus returns "unknown" when ExtractedOutputs is empty,
+	// even with DeclaredOutputs — status only considers extracted outputs.
+	if cov.Status != "unknown" {
+		t.Errorf("expected unknown (declared outputs not in extracted), got %s", cov.Status)
+	}
+	if len(cov.MissingEdges) != 1 || cov.MissingEdges[0] != "error" {
+		t.Errorf("expected missing [error], got %v", cov.MissingEdges)
+	}
+	// DeclaredOutputs should be used, not extracted.
+	if len(cov.ExtractedOutputs) != 0 {
+		t.Errorf("expected no extracted outputs when declared, got %v", cov.ExtractedOutputs)
+	}
+	if len(cov.DeclaredOutputs) != 3 {
+		t.Errorf("expected 3 declared outputs, got %v", cov.DeclaredOutputs)
+	}
+}
+
+// --- Condition edge with CondOr in edge for collectEdgeConditions ---
+
+func TestCollectEdgeConditions_OrCondition(t *testing.T) {
+	w := &ir.Workflow{
+		Start: "start",
+		Exit:  "end",
+		Nodes: []*ir.Node{
+			{ID: "start", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go"}},
+			{ID: "check", Kind: ir.NodeTool, Config: ir.ToolConfig{
+				Command: "printf 'a'\nprintf 'b'\nprintf 'c'",
+			}},
+			{ID: "end", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done"}},
+		},
+		Edges: []*ir.Edge{
+			makeEdge("start", "check"),
+			{From: "check", To: "end", Condition: &ir.Condition{
+				Raw: "ctx.result = a or ctx.result = b",
+				Parsed: ir.CondOr{
+					Left:  ir.CondCompare{Variable: "ctx.result", Op: "=", Value: "a"},
+					Right: ir.CondCompare{Variable: "ctx.result", Op: "=", Value: "b"},
+				},
+			}},
+		},
+	}
+
+	r := Analyze(w)
+	cov := r.Nodes["check"]
+	// OR extracts both "a" and "b" values.
+	if len(cov.EdgeConditions) != 2 {
+		t.Errorf("expected 2 edge conditions, got %v", cov.EdgeConditions)
+	}
+}
+
+// --- Condition edge with CondNot for collectEdgeConditions ---
+
+func TestCollectEdgeConditions_NotCondition(t *testing.T) {
+	w := &ir.Workflow{
+		Start: "start",
+		Exit:  "end",
+		Nodes: []*ir.Node{
+			{ID: "start", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go"}},
+			{ID: "check", Kind: ir.NodeTool, Config: ir.ToolConfig{
+				Command: "printf 'pass'\nprintf 'fail'",
+			}},
+			{ID: "end", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done"}},
+		},
+		Edges: []*ir.Edge{
+			makeEdge("start", "check"),
+			{From: "check", To: "end", Condition: &ir.Condition{
+				Raw:    "not ctx.result = fail",
+				Parsed: ir.CondNot{Inner: ir.CondCompare{Variable: "ctx.result", Op: "=", Value: "fail"}},
+			}},
+		},
+	}
+
+	r := Analyze(w)
+	cov := r.Nodes["check"]
+	// NOT extracts the inner value "fail".
+	if len(cov.EdgeConditions) != 1 || cov.EdgeConditions[0] != "fail" {
+		t.Errorf("expected edge conditions [fail], got %v", cov.EdgeConditions)
+	}
+}
+
 // slicesEqual compares two string slices for equality.
 func slicesEqual(a, b []string) bool {
 	if len(a) == 0 && len(b) == 0 {

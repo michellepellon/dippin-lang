@@ -1,0 +1,65 @@
+{
+  "tests": [
+    {
+      "name": "happy path — build passes, all reviews pass",
+      "scenario": {"outcome": "success"},
+      "expect": {
+        "status": "success",
+        "visited": [
+          "Start", "EnsureLedger", "FindNextSprint", "SetCurrentSprint",
+          "ReadSprint", "MarkInProgress", "ImplementSprint",
+          "ValidateBuild", "CommitSprintWork",
+          "ReviewClaude", "ReviewCodex", "ReviewGemini",
+          "CritiqueClaudeOnCodex", "CritiqueClaudeOnGemini",
+          "CritiqueCodexOnClaude", "CritiqueCodexOnGemini",
+          "CritiqueGeminiOnClaude", "CritiqueGeminiOnCodex",
+          "ReviewAnalysis", "CompleteSprint", "Exit"
+        ],
+        "not_visited": ["FailureSummary"],
+        "path_contains": ["Start", "ImplementSprint", "ValidateBuild", "CommitSprintWork", "ReviewAnalysis", "CompleteSprint", "Exit"]
+      }
+    },
+    {
+      "name": "build fails — restarts implementation loop",
+      "scenario": {"outcome": "fail"},
+      "expect": {
+        "visited": ["ValidateBuild", "ImplementSprint"]
+      }
+    },
+    {
+      "name": "review fails — exits with failure summary",
+      "scenario": {"ReviewAnalysis.outcome": "fail"},
+      "expect": {
+        "visited": ["ReviewAnalysis", "FailureSummary", "Exit"],
+        "not_visited": ["CompleteSprint"],
+        "path_contains": ["ReviewAnalysis", "FailureSummary", "Exit"]
+      }
+    },
+    {
+      "name": "all three review branches execute",
+      "scenario": {"outcome": "success"},
+      "expect": {
+        "visited": ["ReviewClaude", "ReviewCodex", "ReviewGemini"],
+        "path_contains": ["ReviewClaude", "ReviewCodex", "ReviewGemini", "ReviewsJoin"]
+      }
+    },
+    {
+      "name": "all six critique branches execute",
+      "scenario": {"outcome": "success"},
+      "expect": {
+        "visited": [
+          "CritiqueClaudeOnCodex", "CritiqueClaudeOnGemini",
+          "CritiqueCodexOnClaude", "CritiqueCodexOnGemini",
+          "CritiqueGeminiOnClaude", "CritiqueGeminiOnCodex"
+        ]
+      }
+    },
+    {
+      "name": "tool chain runs before implementation",
+      "scenario": {"outcome": "success"},
+      "expect": {
+        "path_contains": ["EnsureLedger", "FindNextSprint", "SetCurrentSprint", "ReadSprint", "MarkInProgress", "ImplementSprint"]
+      }
+    }
+  ]
+}

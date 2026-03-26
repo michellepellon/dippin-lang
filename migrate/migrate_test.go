@@ -1564,3 +1564,685 @@ func TestCheckParityEdgeExtra(t *testing.T) {
 		t.Error("expected edge_extra difference")
 	}
 }
+
+// ============================================================
+// Parity: structural config comparison tests
+// ============================================================
+
+func TestCheckParityHumanConfigMatch(t *testing.T) {
+	a := &ir.Workflow{
+		Name: "test", Start: "H", Exit: "D",
+		Nodes: []*ir.Node{
+			{ID: "H", Kind: ir.NodeHuman, Config: ir.HumanConfig{Mode: "choice"}},
+			{ID: "D", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Done."}},
+		},
+		Edges: []*ir.Edge{{From: "H", To: "D"}},
+	}
+	b := &ir.Workflow{
+		Name: "test", Start: "H", Exit: "D",
+		Nodes: []*ir.Node{
+			{ID: "H", Kind: ir.NodeHuman, Config: ir.HumanConfig{Mode: "choice"}},
+			{ID: "D", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Done."}},
+		},
+		Edges: []*ir.Edge{{From: "H", To: "D"}},
+	}
+	diffs := CheckParity(a, b)
+	if len(diffs) != 0 {
+		t.Errorf("expected 0 diffs, got %d: %v", len(diffs), diffs)
+	}
+}
+
+func TestCheckParityHumanConfigMismatch(t *testing.T) {
+	a := &ir.Workflow{
+		Name: "test", Start: "H", Exit: "D",
+		Nodes: []*ir.Node{
+			{ID: "H", Kind: ir.NodeHuman, Config: ir.HumanConfig{Mode: "choice"}},
+			{ID: "D", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Done."}},
+		},
+		Edges: []*ir.Edge{{From: "H", To: "D"}},
+	}
+	b := &ir.Workflow{
+		Name: "test", Start: "H", Exit: "D",
+		Nodes: []*ir.Node{
+			{ID: "H", Kind: ir.NodeHuman, Config: ir.HumanConfig{Mode: "freeform"}},
+			{ID: "D", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Done."}},
+		},
+		Edges: []*ir.Edge{{From: "H", To: "D"}},
+	}
+	diffs := CheckParity(a, b)
+	found := false
+	for _, d := range diffs {
+		if d.Kind == "config_mismatch" && strings.Contains(d.Message, "mode") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected config_mismatch for mode")
+	}
+}
+
+func TestCheckParityHumanConfigTypeMismatch(t *testing.T) {
+	a := &ir.Workflow{
+		Name: "test", Start: "H", Exit: "D",
+		Nodes: []*ir.Node{
+			{ID: "H", Kind: ir.NodeHuman, Config: ir.HumanConfig{Mode: "choice"}},
+			{ID: "D", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Done."}},
+		},
+		Edges: []*ir.Edge{{From: "H", To: "D"}},
+	}
+	b := &ir.Workflow{
+		Name: "test", Start: "H", Exit: "D",
+		Nodes: []*ir.Node{
+			{ID: "H", Kind: ir.NodeHuman, Config: ir.AgentConfig{Prompt: "wrong type"}},
+			{ID: "D", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Done."}},
+		},
+		Edges: []*ir.Edge{{From: "H", To: "D"}},
+	}
+	diffs := CheckParity(a, b)
+	found := false
+	for _, d := range diffs {
+		if d.Kind == "config_mismatch" && strings.Contains(d.Message, "type mismatch") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected config_mismatch for type mismatch")
+	}
+}
+
+func TestCheckParityParallelConfigMatch(t *testing.T) {
+	a := &ir.Workflow{
+		Name: "test", Start: "P", Exit: "D",
+		Nodes: []*ir.Node{
+			{ID: "P", Kind: ir.NodeParallel, Config: ir.ParallelConfig{Targets: []string{"A", "B"}}},
+			{ID: "D", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Done."}},
+		},
+		Edges: []*ir.Edge{{From: "P", To: "D"}},
+	}
+	b := &ir.Workflow{
+		Name: "test", Start: "P", Exit: "D",
+		Nodes: []*ir.Node{
+			{ID: "P", Kind: ir.NodeParallel, Config: ir.ParallelConfig{Targets: []string{"A", "B"}}},
+			{ID: "D", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Done."}},
+		},
+		Edges: []*ir.Edge{{From: "P", To: "D"}},
+	}
+	diffs := CheckParity(a, b)
+	if len(diffs) != 0 {
+		t.Errorf("expected 0 diffs, got %d: %v", len(diffs), diffs)
+	}
+}
+
+func TestCheckParityParallelConfigMismatch(t *testing.T) {
+	a := &ir.Workflow{
+		Name: "test", Start: "P", Exit: "D",
+		Nodes: []*ir.Node{
+			{ID: "P", Kind: ir.NodeParallel, Config: ir.ParallelConfig{Targets: []string{"A", "B"}}},
+			{ID: "D", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Done."}},
+		},
+		Edges: []*ir.Edge{{From: "P", To: "D"}},
+	}
+	b := &ir.Workflow{
+		Name: "test", Start: "P", Exit: "D",
+		Nodes: []*ir.Node{
+			{ID: "P", Kind: ir.NodeParallel, Config: ir.ParallelConfig{Targets: []string{"X", "Y"}}},
+			{ID: "D", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Done."}},
+		},
+		Edges: []*ir.Edge{{From: "P", To: "D"}},
+	}
+	diffs := CheckParity(a, b)
+	found := false
+	for _, d := range diffs {
+		if d.Kind == "config_mismatch" && strings.Contains(d.Message, "targets") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected config_mismatch for targets")
+	}
+}
+
+func TestCheckParityParallelConfigTypeMismatch(t *testing.T) {
+	a := &ir.Workflow{
+		Name: "test", Start: "P", Exit: "D",
+		Nodes: []*ir.Node{
+			{ID: "P", Kind: ir.NodeParallel, Config: ir.ParallelConfig{Targets: []string{"A"}}},
+			{ID: "D", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Done."}},
+		},
+		Edges: []*ir.Edge{{From: "P", To: "D"}},
+	}
+	b := &ir.Workflow{
+		Name: "test", Start: "P", Exit: "D",
+		Nodes: []*ir.Node{
+			{ID: "P", Kind: ir.NodeParallel, Config: ir.AgentConfig{Prompt: "wrong"}},
+			{ID: "D", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Done."}},
+		},
+		Edges: []*ir.Edge{{From: "P", To: "D"}},
+	}
+	diffs := CheckParity(a, b)
+	found := false
+	for _, d := range diffs {
+		if d.Kind == "config_mismatch" && strings.Contains(d.Message, "type mismatch") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected config_mismatch for type mismatch")
+	}
+}
+
+func TestCheckParityFanInConfigMatch(t *testing.T) {
+	a := &ir.Workflow{
+		Name: "test", Start: "J", Exit: "D",
+		Nodes: []*ir.Node{
+			{ID: "J", Kind: ir.NodeFanIn, Config: ir.FanInConfig{Sources: []string{"A", "B"}}},
+			{ID: "D", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Done."}},
+		},
+		Edges: []*ir.Edge{{From: "J", To: "D"}},
+	}
+	b := &ir.Workflow{
+		Name: "test", Start: "J", Exit: "D",
+		Nodes: []*ir.Node{
+			{ID: "J", Kind: ir.NodeFanIn, Config: ir.FanInConfig{Sources: []string{"A", "B"}}},
+			{ID: "D", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Done."}},
+		},
+		Edges: []*ir.Edge{{From: "J", To: "D"}},
+	}
+	diffs := CheckParity(a, b)
+	if len(diffs) != 0 {
+		t.Errorf("expected 0 diffs, got %d: %v", len(diffs), diffs)
+	}
+}
+
+func TestCheckParityFanInConfigMismatch(t *testing.T) {
+	a := &ir.Workflow{
+		Name: "test", Start: "J", Exit: "D",
+		Nodes: []*ir.Node{
+			{ID: "J", Kind: ir.NodeFanIn, Config: ir.FanInConfig{Sources: []string{"A", "B"}}},
+			{ID: "D", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Done."}},
+		},
+		Edges: []*ir.Edge{{From: "J", To: "D"}},
+	}
+	b := &ir.Workflow{
+		Name: "test", Start: "J", Exit: "D",
+		Nodes: []*ir.Node{
+			{ID: "J", Kind: ir.NodeFanIn, Config: ir.FanInConfig{Sources: []string{"X"}}},
+			{ID: "D", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Done."}},
+		},
+		Edges: []*ir.Edge{{From: "J", To: "D"}},
+	}
+	diffs := CheckParity(a, b)
+	found := false
+	for _, d := range diffs {
+		if d.Kind == "config_mismatch" && strings.Contains(d.Message, "sources") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected config_mismatch for sources")
+	}
+}
+
+func TestCheckParityFanInConfigTypeMismatch(t *testing.T) {
+	a := &ir.Workflow{
+		Name: "test", Start: "J", Exit: "D",
+		Nodes: []*ir.Node{
+			{ID: "J", Kind: ir.NodeFanIn, Config: ir.FanInConfig{Sources: []string{"A"}}},
+			{ID: "D", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Done."}},
+		},
+		Edges: []*ir.Edge{{From: "J", To: "D"}},
+	}
+	b := &ir.Workflow{
+		Name: "test", Start: "J", Exit: "D",
+		Nodes: []*ir.Node{
+			{ID: "J", Kind: ir.NodeFanIn, Config: ir.AgentConfig{Prompt: "wrong"}},
+			{ID: "D", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Done."}},
+		},
+		Edges: []*ir.Edge{{From: "J", To: "D"}},
+	}
+	diffs := CheckParity(a, b)
+	found := false
+	for _, d := range diffs {
+		if d.Kind == "config_mismatch" && strings.Contains(d.Message, "type mismatch") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected config_mismatch for type mismatch")
+	}
+}
+
+func TestCheckParitySubgraphConfigMatch(t *testing.T) {
+	a := &ir.Workflow{
+		Name: "test", Start: "S", Exit: "D",
+		Nodes: []*ir.Node{
+			{ID: "S", Kind: ir.NodeSubgraph, Config: ir.SubgraphConfig{Ref: "./sub.dip"}},
+			{ID: "D", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Done."}},
+		},
+		Edges: []*ir.Edge{{From: "S", To: "D"}},
+	}
+	b := &ir.Workflow{
+		Name: "test", Start: "S", Exit: "D",
+		Nodes: []*ir.Node{
+			{ID: "S", Kind: ir.NodeSubgraph, Config: ir.SubgraphConfig{Ref: "./sub.dip"}},
+			{ID: "D", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Done."}},
+		},
+		Edges: []*ir.Edge{{From: "S", To: "D"}},
+	}
+	diffs := CheckParity(a, b)
+	if len(diffs) != 0 {
+		t.Errorf("expected 0 diffs, got %d: %v", len(diffs), diffs)
+	}
+}
+
+func TestCheckParitySubgraphConfigMismatch(t *testing.T) {
+	a := &ir.Workflow{
+		Name: "test", Start: "S", Exit: "D",
+		Nodes: []*ir.Node{
+			{ID: "S", Kind: ir.NodeSubgraph, Config: ir.SubgraphConfig{Ref: "./sub.dip"}},
+			{ID: "D", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Done."}},
+		},
+		Edges: []*ir.Edge{{From: "S", To: "D"}},
+	}
+	b := &ir.Workflow{
+		Name: "test", Start: "S", Exit: "D",
+		Nodes: []*ir.Node{
+			{ID: "S", Kind: ir.NodeSubgraph, Config: ir.SubgraphConfig{Ref: "./other.dip"}},
+			{ID: "D", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Done."}},
+		},
+		Edges: []*ir.Edge{{From: "S", To: "D"}},
+	}
+	diffs := CheckParity(a, b)
+	found := false
+	for _, d := range diffs {
+		if d.Kind == "config_mismatch" && strings.Contains(d.Message, "ref") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected config_mismatch for ref")
+	}
+}
+
+func TestCheckParitySubgraphConfigTypeMismatch(t *testing.T) {
+	a := &ir.Workflow{
+		Name: "test", Start: "S", Exit: "D",
+		Nodes: []*ir.Node{
+			{ID: "S", Kind: ir.NodeSubgraph, Config: ir.SubgraphConfig{Ref: "./sub.dip"}},
+			{ID: "D", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Done."}},
+		},
+		Edges: []*ir.Edge{{From: "S", To: "D"}},
+	}
+	b := &ir.Workflow{
+		Name: "test", Start: "S", Exit: "D",
+		Nodes: []*ir.Node{
+			{ID: "S", Kind: ir.NodeSubgraph, Config: ir.AgentConfig{Prompt: "wrong"}},
+			{ID: "D", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Done."}},
+		},
+		Edges: []*ir.Edge{{From: "S", To: "D"}},
+	}
+	diffs := CheckParity(a, b)
+	found := false
+	for _, d := range diffs {
+		if d.Kind == "config_mismatch" && strings.Contains(d.Message, "type mismatch") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected config_mismatch for type mismatch")
+	}
+}
+
+// ============================================================
+// Parity: agent behavior and defaults coverage
+// ============================================================
+
+func TestCheckParityAgentBehaviorMismatch(t *testing.T) {
+	a := &ir.Workflow{
+		Name: "test", Start: "A", Exit: "A",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+				Prompt: "Do it.", GoalGate: true, AutoStatus: false,
+			}},
+		},
+	}
+	b := &ir.Workflow{
+		Name: "test", Start: "A", Exit: "A",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+				Prompt: "Do it.", GoalGate: false, AutoStatus: true,
+			}},
+		},
+	}
+	diffs := CheckParity(a, b)
+	foundGoalGate := false
+	foundAutoStatus := false
+	for _, d := range diffs {
+		if strings.Contains(d.Message, "goal_gate") {
+			foundGoalGate = true
+		}
+		if strings.Contains(d.Message, "auto_status") {
+			foundAutoStatus = true
+		}
+	}
+	if !foundGoalGate {
+		t.Error("expected config_mismatch for goal_gate")
+	}
+	if !foundAutoStatus {
+		t.Error("expected config_mismatch for auto_status")
+	}
+}
+
+func TestCheckParityAgentModelProviderMismatch(t *testing.T) {
+	a := &ir.Workflow{
+		Name: "test", Start: "A", Exit: "A",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+				Prompt: "Do it.", Model: "gpt-5.4", Provider: "openai",
+			}},
+		},
+	}
+	b := &ir.Workflow{
+		Name: "test", Start: "A", Exit: "A",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+				Prompt: "Do it.", Model: "claude-opus-4-6", Provider: "anthropic",
+			}},
+		},
+	}
+	diffs := CheckParity(a, b)
+	foundModel := false
+	foundProvider := false
+	for _, d := range diffs {
+		if strings.Contains(d.Message, "model") {
+			foundModel = true
+		}
+		if strings.Contains(d.Message, "provider") {
+			foundProvider = true
+		}
+	}
+	if !foundModel {
+		t.Error("expected config_mismatch for model")
+	}
+	if !foundProvider {
+		t.Error("expected config_mismatch for provider")
+	}
+}
+
+func TestCheckParityToolConfigTypeMismatch(t *testing.T) {
+	a := &ir.Workflow{
+		Name: "test", Start: "T", Exit: "T",
+		Nodes: []*ir.Node{
+			{ID: "T", Kind: ir.NodeTool, Config: ir.ToolConfig{Command: "echo hi"}},
+		},
+	}
+	b := &ir.Workflow{
+		Name: "test", Start: "T", Exit: "T",
+		Nodes: []*ir.Node{
+			{ID: "T", Kind: ir.NodeTool, Config: ir.AgentConfig{Prompt: "wrong"}},
+		},
+	}
+	diffs := CheckParity(a, b)
+	found := false
+	for _, d := range diffs {
+		if d.Kind == "config_mismatch" && strings.Contains(d.Message, "type mismatch") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected config_mismatch for type mismatch")
+	}
+}
+
+func TestCheckParityDefaultsFieldMismatch(t *testing.T) {
+	a := &ir.Workflow{
+		Name: "test", Start: "A", Exit: "A",
+		Defaults: ir.WorkflowDefaults{
+			Model: "gpt-5.4", Provider: "openai", Fidelity: "full",
+			MaxRetries: 3, MaxRestarts: 5,
+		},
+		Nodes: []*ir.Node{{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Do."}}},
+	}
+	b := &ir.Workflow{
+		Name: "test", Start: "A", Exit: "A",
+		Defaults: ir.WorkflowDefaults{
+			Model: "claude-opus-4-6", Provider: "anthropic", Fidelity: "summary",
+			MaxRetries: 1, MaxRestarts: 2,
+		},
+		Nodes: []*ir.Node{{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Do."}}},
+	}
+	diffs := CheckParity(a, b)
+	fields := map[string]bool{}
+	for _, d := range diffs {
+		if d.Kind == "defaults_mismatch" {
+			fields[d.PathA] = true
+		}
+	}
+	for _, f := range []string{"defaults.model", "defaults.provider", "defaults.fidelity", "defaults.max_retries", "defaults.max_restarts"} {
+		if !fields[f] {
+			t.Errorf("expected defaults_mismatch for %s", f)
+		}
+	}
+}
+
+// ============================================================
+// Migration: max_turns and cmd_timeout coverage
+// ============================================================
+
+func TestMigrateMaxTurns(t *testing.T) {
+	dot := `digraph G {
+		Start [shape=Mdiamond];
+		A [shape=box, prompt="Do it.", max_turns=5];
+		Exit [shape=Msquare];
+		Start -> A;
+		A -> Exit;
+	}`
+	w, err := Migrate(dot)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	n := w.Node("A")
+	if n == nil {
+		t.Fatal("node A not found")
+	}
+	cfg := n.Config.(ir.AgentConfig)
+	if cfg.MaxTurns != 5 {
+		t.Errorf("max_turns = %d, want 5", cfg.MaxTurns)
+	}
+}
+
+func TestMigrateMaxTurnsInvalid(t *testing.T) {
+	dot := `digraph G {
+		Start [shape=Mdiamond];
+		A [shape=box, prompt="Do it.", max_turns=abc];
+		Exit [shape=Msquare];
+		Start -> A;
+		A -> Exit;
+	}`
+	w, err := Migrate(dot)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	n := w.Node("A")
+	if n == nil {
+		t.Fatal("node A not found")
+	}
+	cfg := n.Config.(ir.AgentConfig)
+	if cfg.MaxTurns != 0 {
+		t.Errorf("max_turns = %d, want 0 for invalid input", cfg.MaxTurns)
+	}
+}
+
+func TestMigrateCmdTimeout(t *testing.T) {
+	dot := `digraph G {
+		Start [shape=Mdiamond];
+		A [shape=box, prompt="Do it.", cmd_timeout="30s"];
+		Exit [shape=Msquare];
+		Start -> A;
+		A -> Exit;
+	}`
+	w, err := Migrate(dot)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	n := w.Node("A")
+	if n == nil {
+		t.Fatal("node A not found")
+	}
+	cfg := n.Config.(ir.AgentConfig)
+	if cfg.CmdTimeout != 30*time.Second {
+		t.Errorf("cmd_timeout = %v, want 30s", cfg.CmdTimeout)
+	}
+}
+
+func TestMigrateCmdTimeoutInvalid(t *testing.T) {
+	dot := `digraph G {
+		Start [shape=Mdiamond];
+		A [shape=box, prompt="Do it.", cmd_timeout="notaduration"];
+		Exit [shape=Msquare];
+		Start -> A;
+		A -> Exit;
+	}`
+	w, err := Migrate(dot)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	n := w.Node("A")
+	if n == nil {
+		t.Fatal("node A not found")
+	}
+	cfg := n.Config.(ir.AgentConfig)
+	if cfg.CmdTimeout != 0 {
+		t.Errorf("cmd_timeout = %v, want 0 for invalid input", cfg.CmdTimeout)
+	}
+}
+
+func TestMigrateCacheToolsAndCompaction(t *testing.T) {
+	dot := `digraph G {
+		Start [shape=Mdiamond];
+		A [shape=box, prompt="Do it.", cache_tools=true, compaction="aggressive"];
+		Exit [shape=Msquare];
+		Start -> A;
+		A -> Exit;
+	}`
+	w, err := Migrate(dot)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	n := w.Node("A")
+	if n == nil {
+		t.Fatal("node A not found")
+	}
+	cfg := n.Config.(ir.AgentConfig)
+	if !cfg.CacheTools {
+		t.Error("expected cache_tools=true")
+	}
+	if cfg.Compaction != "aggressive" {
+		t.Errorf("compaction = %q, want %q", cfg.Compaction, "aggressive")
+	}
+}
+
+func TestMigrateSystemPrompt(t *testing.T) {
+	dot := `digraph G {
+		Start [shape=Mdiamond];
+		A [shape=box, prompt="Do it.", system_prompt="You are a helper."];
+		Exit [shape=Msquare];
+		Start -> A;
+		A -> Exit;
+	}`
+	w, err := Migrate(dot)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	n := w.Node("A")
+	if n == nil {
+		t.Fatal("node A not found")
+	}
+	cfg := n.Config.(ir.AgentConfig)
+	if cfg.SystemPrompt != "You are a helper." {
+		t.Errorf("system_prompt = %q, want %q", cfg.SystemPrompt, "You are a helper.")
+	}
+}
+
+func TestMigrateFanInExplicitSources(t *testing.T) {
+	dot := `digraph G {
+		Start [shape=Mdiamond];
+		J [shape=tripleoctagon, sources="A,B"];
+		A [shape=box];
+		B [shape=box];
+		Exit [shape=Msquare];
+		Start -> A;
+		Start -> B;
+		A -> J;
+		B -> J;
+		J -> Exit;
+	}`
+	w, err := Migrate(dot)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	n := w.Node("J")
+	if n == nil {
+		t.Fatal("node J not found")
+	}
+	cfg, ok := n.Config.(ir.FanInConfig)
+	if !ok {
+		t.Fatalf("config type = %T, want FanInConfig", n.Config)
+	}
+	if len(cfg.Sources) != 2 || cfg.Sources[0] != "A" || cfg.Sources[1] != "B" {
+		t.Errorf("sources = %v, want [A B]", cfg.Sources)
+	}
+}
+
+func TestMigrateGraphDefaultsModelProvider(t *testing.T) {
+	dot := `digraph G {
+		graph [model="claude-sonnet-4-6", provider="anthropic", max_retries=2];
+		Start [shape=Mdiamond];
+		Exit [shape=Msquare];
+		Start -> Exit;
+	}`
+	w, err := Migrate(dot)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if w.Defaults.Model != "claude-sonnet-4-6" {
+		t.Errorf("defaults.model = %q, want %q", w.Defaults.Model, "claude-sonnet-4-6")
+	}
+	if w.Defaults.Provider != "anthropic" {
+		t.Errorf("defaults.provider = %q, want %q", w.Defaults.Provider, "anthropic")
+	}
+	if w.Defaults.MaxRetries != 2 {
+		t.Errorf("defaults.max_retries = %d, want 2", w.Defaults.MaxRetries)
+	}
+}
+
+func TestMigrateConditionOr(t *testing.T) {
+	dot := `digraph G {
+		Start [shape=Mdiamond];
+		A [shape=box];
+		B [shape=box];
+		Exit [shape=Msquare];
+		Start -> A;
+		A -> B [condition="outcome=success || outcome=partial"];
+		B -> Exit;
+	}`
+	w, err := Migrate(dot)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	edges := w.EdgesFrom("A")
+	if len(edges) != 1 {
+		t.Fatalf("edges = %d, want 1", len(edges))
+	}
+	_, ok := edges[0].Condition.Parsed.(ir.CondOr)
+	if !ok {
+		t.Fatalf("expected CondOr, got %T", edges[0].Condition.Parsed)
+	}
+}
+
+func TestMigrateToSourceError(t *testing.T) {
+	_, err := MigrateToSource("not a valid dot graph")
+	if err == nil {
+		t.Error("expected error for invalid DOT input")
+	}
+}

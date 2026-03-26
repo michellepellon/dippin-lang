@@ -1,11 +1,13 @@
 package formatter
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/2389-research/dippin-lang/ir"
+	"github.com/2389-research/dippin-lang/parser"
 )
 
 // --- Fixtures ---
@@ -297,6 +299,75 @@ func TestFormatHumanAllFields(t *testing.T) {
 	assertContains(t, output, "reads: prev_output")
 	assertContains(t, output, "writes: human_response")
 	assertIdempotent(t, w)
+}
+
+func TestFormatHumanWithPrompt(t *testing.T) {
+	prompt := "Please review the proposed changes below.\n\nIf everything looks correct, approve to continue.\nOtherwise, reject and provide feedback."
+	w := &ir.Workflow{
+		Name:  "human_prompt",
+		Start: "Gate",
+		Exit:  "Gate",
+		Nodes: []*ir.Node{
+			{
+				ID:   "Gate",
+				Kind: ir.NodeHuman,
+				Config: ir.HumanConfig{
+					Mode:   "choice",
+					Prompt: prompt,
+				},
+			},
+		},
+	}
+
+	output := Format(w)
+	assertContains(t, output, "mode: choice")
+	assertContains(t, output, "prompt:")
+	assertContains(t, output, "Please review the proposed changes below.")
+	assertContains(t, output, "If everything looks correct, approve to continue.")
+	assertIdempotent(t, w)
+}
+
+func TestFormatHumanPromptRoundtrip(t *testing.T) {
+	input := `workflow HumanPromptRT
+  start: Gate
+  exit: Done
+
+  human Gate
+    mode: choice
+    prompt:
+      Review the changes below.
+
+      Approve or reject.
+
+  agent Done
+    prompt: "Ship it."
+
+  edges
+    Gate -> Done
+`
+	w1, err := parser.NewParser(input, "test.dip").Parse()
+	if err != nil {
+		t.Fatalf("first parse failed: %v", err)
+	}
+
+	formatted := Format(w1)
+	w2, err := parser.NewParser(formatted, "test.dip").Parse()
+	if err != nil {
+		t.Fatalf("second parse failed: %v\nformatted:\n%s", err, formatted)
+	}
+
+	reformatted := Format(w2)
+	if formatted != reformatted {
+		t.Errorf("formatter not idempotent\nfirst:\n%s\nsecond:\n%s", formatted, reformatted)
+	}
+
+	cfg := w2.Nodes[0].Config.(ir.HumanConfig)
+	if cfg.Prompt == "" {
+		t.Fatal("prompt is empty after round-trip")
+	}
+	if cfg.Mode != "choice" {
+		t.Errorf("mode = %q, want choice", cfg.Mode)
+	}
 }
 
 func TestFormatToolMultilineCommand(t *testing.T) {
@@ -1112,4 +1183,284 @@ func TestFormatBaseDelay_Zero_Omitted(t *testing.T) {
 	}
 	output := Format(w)
 	assertNotContains(t, output, "base_delay")
+}
+
+// --- Phase 2: New coverage tests ---
+
+func TestFormatParallelBlock(t *testing.T) {
+	tests := []struct {
+		name   string
+		node   *ir.Node
+		checks []string
+	}{
+		{
+			name: "branches with all fields",
+			node: &ir.Node{
+				ID:   "Split",
+				Kind: ir.NodeParallel,
+				Config: ir.ParallelConfig{
+					Branches: []ir.BranchConfig{
+						{Target: "A", Model: "gpt-5.4", Provider: "openai", Fidelity: "full"},
+						{Target: "B", Model: "claude-opus-4-6", Provider: "anthropic", Fidelity: "summary:high"},
+					},
+				},
+			},
+			checks: []string{
+				"  parallel Split",
+				"    branch: A",
+				"      model: gpt-5.4",
+				"      provider: openai",
+				"      fidelity: full",
+				"    branch: B",
+				"      model: claude-opus-4-6",
+				"      provider: anthropic",
+				"      fidelity: summary:high",
+			},
+		},
+		{
+			name: "branches with model only",
+			node: &ir.Node{
+				ID:   "Fan",
+				Kind: ir.NodeParallel,
+				Config: ir.ParallelConfig{
+					Branches: []ir.BranchConfig{
+						{Target: "worker_a", Model: "o1"},
+						{Target: "worker_b", Model: "claude-3"},
+					},
+				},
+			},
+			checks: []string{
+				"  parallel Fan",
+				"    branch: worker_a",
+				"      model: o1",
+				"    branch: worker_b",
+				"      model: claude-3",
+			},
+		},
+		{
+			name: "branch with no config fields",
+			node: &ir.Node{
+				ID:   "P",
+				Kind: ir.NodeParallel,
+				Config: ir.ParallelConfig{
+					Branches: []ir.BranchConfig{
+						{Target: "X"},
+						{Target: "Y"},
+					},
+				},
+			},
+			checks: []string{
+				"  parallel P",
+				"    branch: X",
+				"    branch: Y",
+			},
+		},
+		{
+			name: "single branch",
+			node: &ir.Node{
+				ID:   "S",
+				Kind: ir.NodeParallel,
+				Config: ir.ParallelConfig{
+					Branches: []ir.BranchConfig{
+						{Target: "Only", Model: "gpt-5.4"},
+					},
+				},
+			},
+			checks: []string{
+				"  parallel S",
+				"    branch: Only",
+				"      model: gpt-5.4",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := &ir.Workflow{
+				Name:  "par_test",
+				Start: tt.node.ID,
+				Exit:  tt.node.ID,
+				Nodes: []*ir.Node{tt.node},
+			}
+			output := Format(w)
+			for _, check := range tt.checks {
+				assertContains(t, output, check)
+			}
+			assertIdempotent(t, w)
+		})
+	}
+}
+
+func TestFormatStylesheet(t *testing.T) {
+	tests := []struct {
+		name   string
+		rules  []ir.StylesheetRule
+		checks []string
+	}{
+		{
+			name: "all selector types sorted by specificity",
+			rules: []ir.StylesheetRule{
+				{Selector: ir.StyleSelector{Kind: "id", Value: "Done"}, Properties: map[string]string{"max_retries": "5"}},
+				{Selector: ir.StyleSelector{Kind: "universal"}, Properties: map[string]string{"temperature": "0.7"}},
+				{Selector: ir.StyleSelector{Kind: "class", Value: "coder"}, Properties: map[string]string{"model": "o1"}},
+				{Selector: ir.StyleSelector{Kind: "kind", Value: "agent"}, Properties: map[string]string{"fidelity": "full"}},
+			},
+			checks: []string{
+				"  stylesheet:",
+				"    *",
+				"      temperature: 0.7",
+				"    agent",
+				"      fidelity: full",
+				"    .coder",
+				"      model: o1",
+				"    #Done",
+				"      max_retries: 5",
+			},
+		},
+		{
+			name: "same-specificity alphabetical sort",
+			rules: []ir.StylesheetRule{
+				{Selector: ir.StyleSelector{Kind: "class", Value: "reviewer"}, Properties: map[string]string{"model": "gpt-5.4"}},
+				{Selector: ir.StyleSelector{Kind: "class", Value: "coder"}, Properties: map[string]string{"model": "o1"}},
+			},
+			checks: []string{
+				"    .coder",
+				"    .reviewer",
+			},
+		},
+		{
+			name: "single universal rule",
+			rules: []ir.StylesheetRule{
+				{Selector: ir.StyleSelector{Kind: "universal"}, Properties: map[string]string{"temperature": "0.5"}},
+			},
+			checks: []string{
+				"  stylesheet:",
+				"    *",
+				"      temperature: 0.5",
+			},
+		},
+		{
+			name: "multiple properties sorted alphabetically",
+			rules: []ir.StylesheetRule{
+				{Selector: ir.StyleSelector{Kind: "universal"}, Properties: map[string]string{
+					"temperature":      "0.7",
+					"model":            "gpt-5.4",
+					"reasoning_effort": "medium",
+				}},
+			},
+			checks: []string{
+				"      model: gpt-5.4",
+				"      reasoning_effort: medium",
+				"      temperature: 0.7",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := &ir.Workflow{
+				Name:       "style_test",
+				Start:      "A",
+				Exit:       "A",
+				Stylesheet: tt.rules,
+				Nodes: []*ir.Node{
+					{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go."}},
+				},
+			}
+			output := Format(w)
+			for _, check := range tt.checks {
+				assertContains(t, output, check)
+			}
+			assertIdempotent(t, w)
+		})
+	}
+}
+
+func TestFormatFloat(t *testing.T) {
+	tests := []struct {
+		input float64
+		want  string
+	}{
+		{0.8, "0.8"},
+		{1.0, "1.0"},
+		{0.75, "0.75"},
+		{0.0, "0.0"},
+		{100.0, "100.0"},
+	}
+	for _, tt := range tests {
+		got := formatFloat(tt.input)
+		if got != tt.want {
+			t.Errorf("formatFloat(%v) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestFormatAgentCompactionThreshold(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "compaction_test",
+		Start: "A",
+		Exit:  "A",
+		Nodes: []*ir.Node{
+			{
+				ID:   "A",
+				Kind: ir.NodeAgent,
+				Config: ir.AgentConfig{
+					Prompt:              "Go.",
+					CompactionThreshold: 0.8,
+				},
+			},
+		},
+	}
+	output := Format(w)
+	assertContains(t, output, "compaction_threshold: 0.8")
+	assertIdempotent(t, w)
+}
+
+func TestFormatEdgeConditionRawOnly(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "raw_cond",
+		Start: "A",
+		Exit:  "B",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go."}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done."}},
+		},
+		Edges: []*ir.Edge{
+			{From: "A", To: "B", Condition: &ir.Condition{
+				Raw:    "ctx.outcome = success",
+				Parsed: nil, // Parsed not populated
+			}},
+		},
+	}
+	output := Format(w)
+	assertContains(t, output, "A -> B  when ctx.outcome = success")
+	assertIdempotent(t, w)
+}
+
+func TestFormatRoundTrip(t *testing.T) {
+	// Parse all_features.dip, format, parse again, format again, assert identical.
+	data, err := os.ReadFile("../parser/testdata/all_features.dip")
+	if err != nil {
+		t.Fatalf("read all_features.dip: %v", err)
+	}
+
+	p1 := parser.NewParser(string(data), "all_features.dip")
+	w1, err := p1.Parse()
+	if err != nil {
+		t.Fatalf("first parse: %v", err)
+	}
+
+	formatted1 := Format(w1)
+
+	p2 := parser.NewParser(formatted1, "formatted.dip")
+	w2, err := p2.Parse()
+	if err != nil {
+		t.Fatalf("second parse: %v", err)
+	}
+
+	formatted2 := Format(w2)
+
+	if formatted1 != formatted2 {
+		t.Errorf("round-trip not stable:\n--- first ---\n%s\n--- second ---\n%s", formatted1, formatted2)
+	}
 }

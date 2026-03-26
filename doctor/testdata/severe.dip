@@ -1,0 +1,32 @@
+workflow Severe
+  goal: "A workflow with many issues"
+  start: Start
+  exit: Done
+
+  agent Start
+    prompt:
+
+  agent Middle
+    prompt:
+      Do something.
+
+  agent Orphan1
+    prompt:
+      Never reached.
+
+  agent Orphan2
+    prompt:
+      Also never reached.
+
+  agent DeadEnd
+    prompt:
+      Goes nowhere.
+
+  agent Done
+    prompt:
+      Finish.
+
+  edges
+    Start -> Middle
+    Start -> DeadEnd
+    Middle -> Done

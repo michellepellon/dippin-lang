@@ -234,6 +234,8 @@ func (p *Parser) applyHumanField(cfg *ir.HumanConfig, key, val string, loc ir.So
 		cfg.Mode = val
 	case "default":
 		cfg.Default = val
+	case "prompt":
+		cfg.Prompt = val
 	}
 }
 

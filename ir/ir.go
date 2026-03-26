@@ -101,6 +101,7 @@ func (AgentConfig) nodeConfig() {}
 type HumanConfig struct {
 	Mode    string // "choice" | "freeform"
 	Default string // Default choice
+	Prompt  string // Instructions shown to the human
 }
 
 func (HumanConfig) nodeConfig() {}

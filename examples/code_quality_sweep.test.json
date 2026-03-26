@@ -1,0 +1,59 @@
+{
+  "tests": [
+    {
+      "name": "quality gate passes — all branches traversed",
+      "scenario": {"outcome": "success"},
+      "expect": {
+        "status": "success",
+        "visited": [
+          "ScanCodebase",
+          "AnalyzeAnthropic", "AnalyzeGemini", "AnalyzeOpenAI",
+          "Synthesize",
+          "FixBugs", "WriteDocs", "WriteTests",
+          "QualityGate", "Done"
+        ],
+        "path_contains": ["ScanCodebase", "Synthesize", "QualityGate", "Done"]
+      }
+    },
+    {
+      "name": "quality gate fails — restarts from Synthesize",
+      "scenario": {"outcome": "fail"},
+      "expect": {
+        "visited": ["QualityGate", "Synthesize"],
+        "path_contains": ["QualityGate", "Synthesize"]
+      }
+    },
+    {
+      "name": "all three analysis providers run",
+      "scenario": {"outcome": "success"},
+      "expect": {
+        "path_contains": ["AnalyzeAnthropic", "AnalyzeGemini", "AnalyzeOpenAI", "AnalysisJoin"]
+      }
+    },
+    {
+      "name": "all three work streams run",
+      "scenario": {"outcome": "success"},
+      "expect": {
+        "path_contains": ["FixBugs", "WriteDocs", "WriteTests", "WorkJoin"]
+      }
+    },
+    {
+      "name": "no outcome — unconditional fallback to Done",
+      "scenario": {},
+      "expect": {
+        "status": "success",
+        "visited": ["QualityGate", "Done"]
+      }
+    },
+    {
+      "name": "branch filter — only Gemini analysis",
+      "scenario": {"outcome": "success"},
+      "branch": ["AnalyzeGemini"],
+      "expect": {
+        "status": "success",
+        "visited": ["AnalyzeGemini"],
+        "not_visited": ["AnalyzeAnthropic", "AnalyzeOpenAI"]
+      }
+    }
+  ]
+}

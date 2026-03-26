@@ -1,0 +1,25 @@
+workflow UnusedNodes
+  goal: "Test workflow with an unused sink node"
+  start: Ask
+  exit: Done
+
+  human Ask
+    mode: freeform
+
+  agent Process
+    prompt:
+      Process the request.
+
+  agent DeadEnd
+    label: "Dead End"
+    prompt:
+      This node has no edge to exit.
+
+  agent Done
+    prompt:
+      Finish up.
+
+  edges
+    Ask -> Process
+    Ask -> DeadEnd
+    Process -> Done

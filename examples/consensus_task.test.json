@@ -1,0 +1,54 @@
+{
+  "tests": [
+    {
+      "name": "consensus reached on first pass",
+      "scenario": {"outcome": "success"},
+      "expect": {
+        "status": "success",
+        "visited": ["ReviewConsensus", "Exit"],
+        "not_visited": ["Postmortem"],
+        "path_contains": ["Start", "RefineDoD", "Implement", "ReviewConsensus", "Exit"]
+      }
+    },
+    {
+      "name": "retry triggers postmortem and one restart",
+      "scenario": {"outcome": "retry", "internal.loop_restart_count": "0"},
+      "expect": {
+        "status": "success",
+        "visited": ["ReviewConsensus", "Postmortem", "PlanGemini"]
+      }
+    },
+    {
+      "name": "retry after restart limit exits",
+      "scenario": {"outcome": "retry", "internal.loop_restart_count": "1"},
+      "expect": {
+        "status": "success",
+        "visited": ["Postmortem", "Exit"],
+        "path_contains": ["ReviewConsensus", "Postmortem", "Exit"]
+      }
+    },
+    {
+      "name": "unknown outcome falls through to unconditional exit",
+      "scenario": {"outcome": "unknown_value"},
+      "expect": {
+        "status": "success",
+        "visited": ["ReviewConsensus", "Exit"],
+        "not_visited": ["Postmortem"]
+      }
+    },
+    {
+      "name": "full pipeline order is preserved",
+      "scenario": {"outcome": "success"},
+      "expect": {
+        "path_contains": [
+          "Start", "RefineDoD",
+          "DefineDoDGemini", "DefineDoDGPT", "DefineDoDOpus", "ConsolidateDoD",
+          "PlanGemini", "PlanGPT", "PlanOpus", "DebateConsolidate",
+          "Implement", "VerifyOutputs",
+          "ReviewGemini", "ReviewGPT", "ReviewOpus", "ReviewConsensus",
+          "Exit"
+        ]
+      }
+    }
+  ]
+}

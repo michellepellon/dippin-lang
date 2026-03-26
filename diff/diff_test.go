@@ -118,3 +118,190 @@ func TestCompare_FieldChanges(t *testing.T) {
 		}
 	}
 }
+
+func TestCompare_NodeModifiedConfigChanges(t *testing.T) {
+	old := &ir.Workflow{
+		Name: "test", Start: "A", Exit: "B",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+				Prompt: "Original prompt.", Model: "gpt-5.4", Provider: "openai",
+				MaxTurns: 3, ReasoningEffort: "low", Fidelity: "summary",
+			}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Done."}},
+		},
+		Edges: []*ir.Edge{{From: "A", To: "B"}},
+	}
+	new := &ir.Workflow{
+		Name: "test", Start: "A", Exit: "B",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+				Prompt: "Changed prompt.", Model: "claude-opus-4-6", Provider: "anthropic",
+				MaxTurns: 10, ReasoningEffort: "high", Fidelity: "full",
+			}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Done."}},
+		},
+		Edges: []*ir.Edge{{From: "A", To: "B"}},
+	}
+
+	report := diff.Compare(old, new, cost.DefaultPricing())
+
+	if len(report.NodesModified) != 1 {
+		t.Fatalf("expected 1 modified node, got %d", len(report.NodesModified))
+	}
+	nd := report.NodesModified[0]
+	if nd.NodeID != "A" {
+		t.Errorf("expected modified node A, got %s", nd.NodeID)
+	}
+
+	fieldNames := map[string]bool{}
+	for _, c := range nd.Changes {
+		fieldNames[c.Field] = true
+	}
+	for _, f := range []string{"model", "provider", "prompt", "max_turns", "reasoning_effort", "fidelity"} {
+		if !fieldNames[f] {
+			t.Errorf("expected field change for %q", f)
+		}
+	}
+}
+
+func TestCompare_LabelChange(t *testing.T) {
+	old := &ir.Workflow{
+		Name: "test", Start: "A", Exit: "A",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Label: "Old Label", Config: ir.AgentConfig{Prompt: "Do."}},
+		},
+	}
+	new := &ir.Workflow{
+		Name: "test", Start: "A", Exit: "A",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Label: "New Label", Config: ir.AgentConfig{Prompt: "Do."}},
+		},
+	}
+
+	report := diff.Compare(old, new, cost.DefaultPricing())
+	if len(report.NodesModified) != 1 {
+		t.Fatalf("expected 1 modified node, got %d", len(report.NodesModified))
+	}
+	found := false
+	for _, c := range report.NodesModified[0].Changes {
+		if c.Field == "label" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected label change")
+	}
+}
+
+func TestCompare_KindChange(t *testing.T) {
+	old := &ir.Workflow{
+		Name: "test", Start: "A", Exit: "A",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Do."}},
+		},
+	}
+	new := &ir.Workflow{
+		Name: "test", Start: "A", Exit: "A",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeHuman, Config: ir.HumanConfig{Mode: "freeform"}},
+		},
+	}
+
+	report := diff.Compare(old, new, cost.DefaultPricing())
+	if len(report.NodesModified) != 1 {
+		t.Fatalf("expected 1 modified node, got %d", len(report.NodesModified))
+	}
+	found := false
+	for _, c := range report.NodesModified[0].Changes {
+		if c.Field == "kind" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected kind change")
+	}
+}
+
+func TestCompare_EdgeWithConditions(t *testing.T) {
+	old := &ir.Workflow{
+		Name: "test", Start: "A", Exit: "B",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Do."}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Done."}},
+		},
+		Edges: []*ir.Edge{
+			{From: "A", To: "B", Condition: &ir.Condition{Raw: "ctx.outcome = success"}},
+		},
+	}
+	new := &ir.Workflow{
+		Name: "test", Start: "A", Exit: "B",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Do."}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Done."}},
+		},
+		Edges: []*ir.Edge{
+			{From: "A", To: "B", Condition: &ir.Condition{Raw: "ctx.outcome = fail"}},
+		},
+	}
+
+	report := diff.Compare(old, new, cost.DefaultPricing())
+	// Old edge removed, new edge added (different condition = different key).
+	if len(report.EdgesAdded) != 1 {
+		t.Errorf("expected 1 edge added, got %d", len(report.EdgesAdded))
+	}
+	if len(report.EdgesRemoved) != 1 {
+		t.Errorf("expected 1 edge removed, got %d", len(report.EdgesRemoved))
+	}
+}
+
+func TestCompare_NonAgentConfigNotCompared(t *testing.T) {
+	old := &ir.Workflow{
+		Name: "test", Start: "T", Exit: "T",
+		Nodes: []*ir.Node{
+			{ID: "T", Kind: ir.NodeTool, Config: ir.ToolConfig{Command: "echo hi"}},
+		},
+	}
+	new := &ir.Workflow{
+		Name: "test", Start: "T", Exit: "T",
+		Nodes: []*ir.Node{
+			{ID: "T", Kind: ir.NodeTool, Config: ir.ToolConfig{Command: "echo bye"}},
+		},
+	}
+
+	report := diff.Compare(old, new, cost.DefaultPricing())
+	// compareConfigFields only handles AgentConfig, so ToolConfig diffs are not reported.
+	if len(report.NodesModified) != 0 {
+		t.Errorf("expected 0 modified nodes for tool config change, got %d", len(report.NodesModified))
+	}
+}
+
+func TestCompare_MultipleModifiedNodesSorted(t *testing.T) {
+	old := &ir.Workflow{
+		Name: "test", Start: "A", Exit: "C",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "A1", Model: "m1"}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "B1", Model: "m1"}},
+			{ID: "C", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "C1"}},
+		},
+		Edges: []*ir.Edge{{From: "A", To: "B"}, {From: "B", To: "C"}},
+	}
+	new := &ir.Workflow{
+		Name: "test", Start: "A", Exit: "C",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "A1", Model: "m2"}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "B1", Model: "m2"}},
+			{ID: "C", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "C1"}},
+		},
+		Edges: []*ir.Edge{{From: "A", To: "B"}, {From: "B", To: "C"}},
+	}
+
+	report := diff.Compare(old, new, cost.DefaultPricing())
+	if len(report.NodesModified) != 2 {
+		t.Fatalf("expected 2 modified nodes, got %d", len(report.NodesModified))
+	}
+	// Should be sorted by NodeID.
+	if report.NodesModified[0].NodeID != "A" || report.NodesModified[1].NodeID != "B" {
+		t.Errorf("expected sorted [A, B], got [%s, %s]",
+			report.NodesModified[0].NodeID, report.NodesModified[1].NodeID)
+	}
+}

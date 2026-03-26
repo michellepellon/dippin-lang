@@ -1,0 +1,26 @@
+workflow ComplexCheap
+  goal: "Workflow with complex prompt on cheap model"
+  start: Analyze
+  exit: Done
+
+  defaults
+    provider: anthropic
+
+  agent Analyze
+    model: claude-haiku-4-5
+    prompt:
+      Step 1: Analyze the input data carefully and evaluate each field.
+      Step 2: Compare the results against the baseline metrics.
+      Then reason about the trade-offs between accuracy and performance.
+      Finally, produce a structured JSON schema with the evaluation.
+      Consider code architecture decisions and refactor suggestions.
+      Implement the recommended changes and debug any issues found.
+      Architect the solution to handle edge cases properly.
+
+  agent Done
+    model: claude-haiku-4-5
+    prompt:
+      Done.
+
+  edges
+    Analyze -> Done

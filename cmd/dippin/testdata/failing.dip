@@ -1,0 +1,14 @@
+workflow Failing
+  goal: "Workflow paired with failing test"
+  start: Ask
+  exit: Done
+
+  human Ask
+    mode: freeform
+
+  agent Done
+    prompt:
+      Complete the task.
+
+  edges
+    Ask -> Done

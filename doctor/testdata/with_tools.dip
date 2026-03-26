@@ -1,0 +1,16 @@
+workflow WithTools
+  goal: "Test tool node coverage"
+  start: RunTest
+  exit: Done
+
+  tool RunTest
+    timeout: 30s
+    command:
+      echo test
+
+  agent Done
+    prompt:
+      Done.
+
+  edges
+    RunTest -> Done

@@ -381,6 +381,142 @@ func TestFieldCompletions(t *testing.T) {
 	}
 }
 
+func TestConvertDiagnostic(t *testing.T) {
+	d := validator.Diagnostic{
+		Code:     "DIP001",
+		Message:  "test error",
+		Severity: validator.SeverityError,
+		Location: ir.SourceLocation{Line: 3, Column: 4, EndLine: 3, EndColumn: 10},
+	}
+	got := convertDiagnostic(d)
+	if got.Code != "DIP001" {
+		t.Errorf("Code = %v, want DIP001", got.Code)
+	}
+	if got.Message != "test error" {
+		t.Errorf("Message = %q, want %q", got.Message, "test error")
+	}
+	if got.Source != "dippin" {
+		t.Errorf("Source = %q, want %q", got.Source, "dippin")
+	}
+	if got.Severity != protocol.DiagnosticSeverityError {
+		t.Errorf("Severity = %v, want Error", got.Severity)
+	}
+	// Line is 1-indexed in source, 0-indexed in LSP
+	if got.Range.Start.Line != 2 {
+		t.Errorf("Range.Start.Line = %d, want 2", got.Range.Start.Line)
+	}
+	if got.Range.Start.Character != 4 {
+		t.Errorf("Range.Start.Character = %d, want 4", got.Range.Start.Character)
+	}
+}
+
+func TestConvertDiagnostic_Warning(t *testing.T) {
+	d := validator.Diagnostic{
+		Code:     "DIP101",
+		Message:  "test warning",
+		Severity: validator.SeverityWarning,
+		Location: ir.SourceLocation{Line: 1, Column: 0, EndLine: 1, EndColumn: 5},
+	}
+	got := convertDiagnostic(d)
+	if got.Severity != protocol.DiagnosticSeverityWarning {
+		t.Errorf("Severity = %v, want Warning", got.Severity)
+	}
+}
+
+func TestNodeLocation(t *testing.T) {
+	n := &ir.Node{
+		ID:   "MyNode",
+		Kind: ir.NodeAgent,
+		Source: ir.SourceLocation{
+			Line:   5,
+			Column: 2,
+		},
+	}
+	loc := nodeLocation("file:///test.dip", n)
+	if loc.URI != "file:///test.dip" {
+		t.Errorf("URI = %q, want file:///test.dip", loc.URI)
+	}
+	// Line is 1-indexed in source, 0-indexed in LSP
+	if loc.Range.Start.Line != 4 {
+		t.Errorf("Range.Start.Line = %d, want 4", loc.Range.Start.Line)
+	}
+	if loc.Range.Start.Character != 2 {
+		t.Errorf("Range.Start.Character = %d, want 2", loc.Range.Start.Character)
+	}
+	if loc.Range.End.Line != 4 {
+		t.Errorf("Range.End.Line = %d, want 4", loc.Range.End.Line)
+	}
+}
+
+func TestNodeLocation_ZeroLine(t *testing.T) {
+	n := &ir.Node{
+		ID:     "Zero",
+		Kind:   ir.NodeAgent,
+		Source: ir.SourceLocation{Line: 0, Column: 0},
+	}
+	loc := nodeLocation("file:///test.dip", n)
+	if loc.Range.Start.Line != 0 {
+		t.Errorf("Range.Start.Line = %d, want 0", loc.Range.Start.Line)
+	}
+}
+
+func TestZeroRange(t *testing.T) {
+	r := zeroRange()
+	if r.Start.Line != 0 || r.Start.Character != 0 {
+		t.Errorf("Start = (%d,%d), want (0,0)", r.Start.Line, r.Start.Character)
+	}
+	if r.End.Line != 0 || r.End.Character != 0 {
+		t.Errorf("End = (%d,%d), want (0,0)", r.End.Line, r.End.Character)
+	}
+}
+
+func TestEdgeRange(t *testing.T) {
+	e := &ir.Edge{
+		From: "A",
+		To:   "B",
+		Source: ir.SourceLocation{
+			Line:   10,
+			Column: 4,
+		},
+	}
+	r := edgeRange(e)
+	// Line 10 (1-indexed) -> 9 (0-indexed)
+	if r.Start.Line != 9 {
+		t.Errorf("Start.Line = %d, want 9", r.Start.Line)
+	}
+	if r.Start.Character != 4 {
+		t.Errorf("Start.Character = %d, want 4", r.Start.Character)
+	}
+}
+
+func TestEdgeRange_ZeroLine(t *testing.T) {
+	e := &ir.Edge{
+		From:   "A",
+		To:     "B",
+		Source: ir.SourceLocation{Line: 0, Column: 0},
+	}
+	r := edgeRange(e)
+	if r.Start.Line != 0 {
+		t.Errorf("Start.Line = %d, want 0", r.Start.Line)
+	}
+}
+
+func TestEdgeSymbol_WithLabel(t *testing.T) {
+	e := &ir.Edge{
+		From:   "A",
+		To:     "B",
+		Label:  "retry",
+		Source: ir.SourceLocation{Line: 5, Column: 2},
+	}
+	sym := edgeSymbol(e)
+	if sym.Name != "A -> B (retry)" {
+		t.Errorf("Name = %q, want %q", sym.Name, "A -> B (retry)")
+	}
+	if sym.Kind != protocol.SymbolKindEvent {
+		t.Errorf("Kind = %v, want Event", sym.Kind)
+	}
+}
+
 func TestIsNoOp(t *testing.T) {
 	if !isNoOp("initialized") {
 		t.Error("expected initialized to be no-op")

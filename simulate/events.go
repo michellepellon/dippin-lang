@@ -32,6 +32,7 @@ func populateEnterFields(evt *event.NodeEnter, node *ir.Node, w *ir.Workflow) {
 		evt.Command = cfg.Command
 	case ir.HumanConfig:
 		evt.Mode = cfg.Mode
+		evt.Prompt = cfg.Prompt
 	case ir.SubgraphConfig:
 		evt.Label = fmt.Sprintf("subgraph:%s", cfg.Ref)
 	}

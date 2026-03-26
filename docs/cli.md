@@ -122,7 +122,7 @@ dippin lint <file>
 
 **Input**: `.dip` or `.dot` file
 
-**Checks**: All 32 diagnostic rules. Errors (DIP001–DIP009) cause exit code 1. Warnings (DIP101–DIP122) are reported but don't affect the exit code.
+**Checks**: All 31 diagnostic rules. Errors (DIP001–DIP009) cause exit code 1. Warnings (DIP101–DIP122) are reported but don't affect the exit code.
 
 **Output**: All diagnostics (errors and warnings) to stderr.
 

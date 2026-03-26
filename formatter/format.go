@@ -362,6 +362,9 @@ func writeHumanFields(wr *writer, n *ir.Node, cfg ir.HumanConfig) {
 		wr.line("default: %s", quoteValue(cfg.Default))
 	}
 	writeIOFields(wr, n)
+	if cfg.Prompt != "" {
+		wr.multilineBlock("prompt", cfg.Prompt)
+	}
 }
 
 func writeToolFields(wr *writer, n *ir.Node, cfg ir.ToolConfig) {

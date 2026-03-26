@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -734,4 +735,283 @@ func TestParseSubgraphParams(t *testing.T) {
 	if cfg.Params["strict"] != "true" {
 		t.Errorf("params[strict] = %q, want true", cfg.Params["strict"])
 	}
+}
+
+func TestParseEdgeAttributes(t *testing.T) {
+	input := readTestdata(t, "edge_attributes.dip")
+	p := NewParser(input, "edge_attributes.dip")
+	w, err := p.Parse()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(w.Edges) != 3 {
+		t.Fatalf("edges = %d, want 3", len(w.Edges))
+	}
+
+	// Edge 0: A -> B with when, label, weight
+	e0 := w.Edges[0]
+	if e0.From != "A" || e0.To != "B" {
+		t.Errorf("edge[0] = %s -> %s, want A -> B", e0.From, e0.To)
+	}
+	if e0.Condition == nil || !strings.Contains(e0.Condition.Raw, "ctx.status") {
+		t.Errorf("edge[0] condition = %v, want ctx.status condition", e0.Condition)
+	}
+	if e0.Label != "approved" {
+		t.Errorf("edge[0] label = %q, want %q", e0.Label, "approved")
+	}
+	if e0.Weight != 5 {
+		t.Errorf("edge[0] weight = %d, want 5", e0.Weight)
+	}
+
+	// Edge 1: B -> C with restart
+	e1 := w.Edges[1]
+	if !e1.Restart {
+		t.Error("edge[1] restart = false, want true")
+	}
+
+	// Edge 2: C -> D with label only
+	e2 := w.Edges[2]
+	if e2.Label != "final" {
+		t.Errorf("edge[2] label = %q, want %q", e2.Label, "final")
+	}
+}
+
+func TestParseRetryFields(t *testing.T) {
+	input := readTestdata(t, "retry_fields.dip")
+	p := NewParser(input, "retry_fields.dip")
+	w, err := p.Parse()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(w.Nodes) != 1 {
+		t.Fatalf("nodes = %d, want 1", len(w.Nodes))
+	}
+	n := w.Nodes[0]
+	if n.Retry.Policy != "aggressive" {
+		t.Errorf("retry_policy = %q, want aggressive", n.Retry.Policy)
+	}
+	if n.Retry.MaxRetries != 5 {
+		t.Errorf("max_retries = %d, want 5", n.Retry.MaxRetries)
+	}
+	if n.Retry.BaseDelay.String() != "2s" {
+		t.Errorf("base_delay = %v, want 2s", n.Retry.BaseDelay)
+	}
+	if n.Retry.RetryTarget != "A" {
+		t.Errorf("retry_target = %q, want A", n.Retry.RetryTarget)
+	}
+	if n.Retry.FallbackTarget != "A" {
+		t.Errorf("fallback_target = %q, want A", n.Retry.FallbackTarget)
+	}
+}
+
+func TestParseParallelBranchFields(t *testing.T) {
+	input := readTestdata(t, "parallel_branches.dip")
+	p := NewParser(input, "parallel_branches.dip")
+	w, err := p.Parse()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var pNode *ir.Node
+	for _, n := range w.Nodes {
+		if n.Kind == ir.NodeParallel {
+			pNode = n
+			break
+		}
+	}
+	if pNode == nil {
+		t.Fatal("parallel node not found")
+	}
+
+	cfg := pNode.Config.(ir.ParallelConfig)
+	if len(cfg.Branches) != 2 {
+		t.Fatalf("branches = %d, want 2", len(cfg.Branches))
+	}
+
+	b0 := cfg.Branches[0]
+	if b0.Target != "fast" {
+		t.Errorf("branch[0].target = %q, want fast", b0.Target)
+	}
+	if b0.Model != "claude-haiku-4-5" {
+		t.Errorf("branch[0].model = %q, want claude-haiku-4-5", b0.Model)
+	}
+	if b0.Provider != "anthropic" {
+		t.Errorf("branch[0].provider = %q, want anthropic", b0.Provider)
+	}
+	if b0.Fidelity != "summary" {
+		t.Errorf("branch[0].fidelity = %q, want summary", b0.Fidelity)
+	}
+
+	b1 := cfg.Branches[1]
+	if b1.Target != "accurate" {
+		t.Errorf("branch[1].target = %q, want accurate", b1.Target)
+	}
+	if b1.Fidelity != "full" {
+		t.Errorf("branch[1].fidelity = %q, want full", b1.Fidelity)
+	}
+}
+
+func TestParseDefaultsComplex(t *testing.T) {
+	input := readTestdata(t, "defaults_complex.dip")
+	p := NewParser(input, "defaults_complex.dip")
+	w, err := p.Parse()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	d := w.Defaults
+	if d.MaxRetries != 3 {
+		t.Errorf("max_retries = %d, want 3", d.MaxRetries)
+	}
+	if d.MaxRestarts != 10 {
+		t.Errorf("max_restarts = %d, want 10", d.MaxRestarts)
+	}
+	if !d.CacheTools {
+		t.Error("cache_tools = false, want true")
+	}
+	if d.RetryPolicy != "standard" {
+		t.Errorf("retry_policy = %q, want standard", d.RetryPolicy)
+	}
+	if d.RestartTarget != "A" {
+		t.Errorf("restart_target = %q, want A", d.RestartTarget)
+	}
+}
+
+func TestParseHumanAndAgentFields(t *testing.T) {
+	input := readTestdata(t, "human_node.dip")
+	p := NewParser(input, "human_node.dip")
+	w, err := p.Parse()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Find human node
+	var humanNode, agentNode *ir.Node
+	for _, n := range w.Nodes {
+		if n.Kind == ir.NodeHuman {
+			humanNode = n
+		}
+		if n.Kind == ir.NodeAgent {
+			agentNode = n
+		}
+	}
+	if humanNode == nil {
+		t.Fatal("human node not found")
+	}
+	hcfg := humanNode.Config.(ir.HumanConfig)
+	if hcfg.Mode != "choice" {
+		t.Errorf("human mode = %q, want choice", hcfg.Mode)
+	}
+	if hcfg.Default != "approve" {
+		t.Errorf("human default = %q, want approve", hcfg.Default)
+	}
+
+	if agentNode == nil {
+		t.Fatal("agent node not found")
+	}
+	acfg := agentNode.Config.(ir.AgentConfig)
+	if acfg.SystemPrompt != "You are helpful." {
+		t.Errorf("system_prompt = %q, want 'You are helpful.'", acfg.SystemPrompt)
+	}
+	if acfg.Model != "claude-sonnet-4-6" {
+		t.Errorf("model = %q, want claude-sonnet-4-6", acfg.Model)
+	}
+	if acfg.Provider != "anthropic" {
+		t.Errorf("provider = %q, want anthropic", acfg.Provider)
+	}
+	if !acfg.GoalGate {
+		t.Error("goal_gate = false, want true")
+	}
+	if !acfg.AutoStatus {
+		t.Error("auto_status = false, want true")
+	}
+	if acfg.ReasoningEffort != "high" {
+		t.Errorf("reasoning_effort = %q, want high", acfg.ReasoningEffort)
+	}
+	if acfg.MaxTurns != 10 {
+		t.Errorf("max_turns = %d, want 10", acfg.MaxTurns)
+	}
+	if agentNode.Label != "Main Agent" {
+		t.Errorf("label = %q, want 'Main Agent'", agentNode.Label)
+	}
+	if len(agentNode.Classes) != 2 {
+		t.Errorf("classes = %d, want 2", len(agentNode.Classes))
+	}
+	if len(agentNode.IO.Reads) != 2 {
+		t.Errorf("reads = %d, want 2", len(agentNode.IO.Reads))
+	}
+	if len(agentNode.IO.Writes) != 2 {
+		t.Errorf("writes = %d, want 2", len(agentNode.IO.Writes))
+	}
+}
+
+func TestParseHumanPrompt(t *testing.T) {
+	input := readTestdata(t, "human_prompt.dip")
+	p := NewParser(input, "human_prompt.dip")
+	w, err := p.Parse()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var humanNode *ir.Node
+	for _, n := range w.Nodes {
+		if n.Kind == ir.NodeHuman {
+			humanNode = n
+			break
+		}
+	}
+	if humanNode == nil {
+		t.Fatal("human node not found")
+	}
+
+	cfg := humanNode.Config.(ir.HumanConfig)
+	if cfg.Mode != "choice" {
+		t.Errorf("mode = %q, want choice", cfg.Mode)
+	}
+	if cfg.Default != "approve" {
+		t.Errorf("default = %q, want approve", cfg.Default)
+	}
+	if cfg.Prompt == "" {
+		t.Fatal("prompt is empty, want multiline content")
+	}
+	for _, want := range []string{
+		"Please review the proposed changes below.",
+		"If everything looks correct, approve to continue.",
+		"## Changes",
+		"${ctx.diff_summary}",
+	} {
+		if !strings.Contains(cfg.Prompt, want) {
+			t.Errorf("prompt missing %q\ngot:\n%s", want, cfg.Prompt)
+		}
+	}
+	// Verify blank lines are preserved
+	if strings.Count(cfg.Prompt, "\n\n") < 1 {
+		t.Errorf("expected blank lines in prompt, got: %q", cfg.Prompt)
+	}
+}
+
+func TestTokenKindString(t *testing.T) {
+	tok := Token{
+		Type:     TokenIdentifier,
+		Value:    "hello",
+		Location: ir.SourceLocation{Line: 1, Column: 5},
+	}
+	s := tok.String()
+	if !strings.Contains(s, "hello") {
+		t.Errorf("Token.String() = %q, expected it to contain 'hello'", s)
+	}
+	if !strings.Contains(s, "1:5") {
+		t.Errorf("Token.String() = %q, expected it to contain '1:5'", s)
+	}
+}
+
+func readTestdata(t *testing.T, name string) string {
+	t.Helper()
+	data, err := os.ReadFile("testdata/" + name)
+	if err != nil {
+		t.Fatalf("failed to read testdata/%s: %v", name, err)
+	}
+	return string(data)
 }

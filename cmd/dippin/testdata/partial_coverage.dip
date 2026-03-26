@@ -1,0 +1,26 @@
+workflow PartialCoverage
+  goal: "Test partial edge coverage"
+  start: RunTool
+  exit: Done
+
+  tool RunTool
+    timeout: 30s
+    command:
+      #!/bin/sh
+      if test_passes; then
+        printf 'success'
+      else
+        printf 'fail'
+      fi
+
+  agent PathA
+    prompt:
+      Path A.
+
+  agent Done
+    prompt:
+      Done.
+
+  edges
+    RunTool -> PathA  when ctx.outcome = success
+    PathA -> Done

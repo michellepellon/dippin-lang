@@ -1,0 +1,26 @@
+workflow FullCoverage
+  goal: "Test full edge coverage with all statuses"
+  start: Ask
+  exit: Done
+
+  human Ask
+    mode: freeform
+
+  tool RunTool
+    timeout: 30s
+    command:
+      #!/bin/sh
+      if test_passes; then
+        printf 'success'
+      else
+        printf 'fail'
+      fi
+
+  agent Done
+    prompt:
+      Done.
+
+  edges
+    Ask -> RunTool
+    RunTool -> Done  when ctx.outcome = success
+    RunTool -> Done  when ctx.outcome = fail

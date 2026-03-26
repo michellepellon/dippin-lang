@@ -1,0 +1,23 @@
+workflow Unhealthy
+  goal: "Trigger doctor suggestions"
+  start: Ask
+  exit: Done
+
+  agent Ask
+    prompt:
+
+  tool Run
+    command:
+      echo hello
+
+  agent Orphan
+    prompt:
+      Unreachable node.
+
+  agent Done
+    prompt:
+      Finish up.
+
+  edges
+    Ask -> Run
+    Run -> Done

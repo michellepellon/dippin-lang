@@ -1,0 +1,24 @@
+workflow OutlierTest
+  goal: "Workflow with nodes that produce outliers in feedback"
+  start: Analyze
+  exit: Done
+
+  defaults
+    model: claude-sonnet-4-6
+    provider: anthropic
+
+  agent Analyze
+    prompt:
+      Analyze the input data and produce a summary.
+
+  agent Review
+    prompt:
+      Review the analysis for correctness.
+
+  agent Done
+    prompt:
+      Finalize the output.
+
+  edges
+    Analyze -> Review
+    Review -> Done

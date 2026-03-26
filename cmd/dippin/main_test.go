@@ -1297,6 +1297,30 @@ func TestCmdCoverage_JSON(t *testing.T) {
 	}
 }
 
+func TestCmdCoverage_PartialCoverage(t *testing.T) {
+	stdout, stderr, code := runCLI(t, "coverage", testdata("partial_coverage.dip"))
+
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d; stderr: %s", code, stderr)
+	}
+	if !strings.Contains(stdout, "Coverage Analysis") {
+		t.Errorf("expected 'Coverage Analysis' in stdout, got: %s", stdout)
+	}
+	if !strings.Contains(stdout, "Edge Coverage") {
+		t.Errorf("expected 'Edge Coverage' section, got: %s", stdout)
+	}
+	// Tool node with extracted outputs should show partial coverage.
+	if !strings.Contains(stdout, "RunTool") {
+		t.Errorf("expected 'RunTool' node in coverage output, got: %s", stdout)
+	}
+	if !strings.Contains(stdout, "partial") {
+		t.Errorf("expected 'partial' status, got: %s", stdout)
+	}
+	if !strings.Contains(stdout, "missing: fail") {
+		t.Errorf("expected 'missing: fail' in output, got: %s", stdout)
+	}
+}
+
 // --- Doctor Command ---
 
 func TestCmdDoctor_Valid(t *testing.T) {
@@ -1618,5 +1642,433 @@ func TestCmdTest_MissingTestFile(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "error") && !strings.Contains(stderr, "no such file") {
 		t.Errorf("expected error about missing test file on stderr, got: %s", stderr)
+	}
+}
+
+// --- Simulate DOT Format ---
+
+func TestCmdSimulate_DOTFormat(t *testing.T) {
+	simulate.ResetRunCounter()
+	stdout, stderr, code := runCLI(t, "--format", "dot", "simulate", testdata("valid_minimal.dip"))
+
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d; stderr: %s", code, stderr)
+	}
+	if !strings.Contains(stdout, "digraph") {
+		t.Errorf("expected 'digraph' in DOT output, got: %s", stdout)
+	}
+	if !strings.Contains(stdout, "Ask") {
+		t.Errorf("expected 'Ask' node in DOT output, got: %s", stdout)
+	}
+}
+
+// --- Diff Command ---
+
+func TestCmdDiff_AddedAndRemovedNodes(t *testing.T) {
+	stdout, stderr, code := runCLI(t, "diff", testdata("valid_minimal.dip"), testdata("valid_alternate.dip"))
+
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d; stderr: %s", code, stderr)
+	}
+	// Added nodes.
+	if !strings.Contains(stdout, "+ Begin") {
+		t.Errorf("expected '+ Begin' in diff output, got: %s", stdout)
+	}
+	if !strings.Contains(stdout, "+ Middle") {
+		t.Errorf("expected '+ Middle' in diff output, got: %s", stdout)
+	}
+	// Removed nodes.
+	if !strings.Contains(stdout, "- Ask") {
+		t.Errorf("expected '- Ask' in diff output, got: %s", stdout)
+	}
+	// Added edges.
+	if !strings.Contains(stdout, "+ Begin -> Middle") {
+		t.Errorf("expected '+ Begin -> Middle' in edge diff, got: %s", stdout)
+	}
+	// Removed edges.
+	if !strings.Contains(stdout, "- Ask -> Done") {
+		t.Errorf("expected '- Ask -> Done' in edge diff, got: %s", stdout)
+	}
+}
+
+func TestCmdDiff_ModifiedNodes(t *testing.T) {
+	stdout, stderr, code := runCLI(t, "diff", testdata("valid_minimal.dip"), testdata("valid_minimal_v2.dip"))
+
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d; stderr: %s", code, stderr)
+	}
+	// Modified node.
+	if !strings.Contains(stdout, "~ Done") {
+		t.Errorf("expected '~ Done' in diff output, got: %s", stdout)
+	}
+	// Field change details.
+	if !strings.Contains(stdout, "model:") {
+		t.Errorf("expected model field change in diff output, got: %s", stdout)
+	}
+}
+
+func TestCmdDiff_JSONFormat(t *testing.T) {
+	stdout, stderr, code := runCLI(t, "--format", "json", "diff", testdata("valid_minimal.dip"), testdata("valid_alternate.dip"))
+
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d; stderr: %s", code, stderr)
+	}
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &result); err != nil {
+		t.Fatalf("expected JSON output, got: %s", stdout)
+	}
+}
+
+// --- Cost Command ---
+
+func TestCmdCost_TextFormat_MultiProvider(t *testing.T) {
+	stdout, stderr, code := runCLI(t, "cost", testdata("multi_provider.dip"))
+
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d; stderr: %s", code, stderr)
+	}
+	if !strings.Contains(stdout, "Cost Estimate") {
+		t.Errorf("expected 'Cost Estimate' header, got: %s", stdout)
+	}
+	if !strings.Contains(stdout, "By Provider") {
+		t.Errorf("expected 'By Provider' section, got: %s", stdout)
+	}
+	if !strings.Contains(stdout, "anthropic") {
+		t.Errorf("expected 'anthropic' provider, got: %s", stdout)
+	}
+	if !strings.Contains(stdout, "openai") {
+		t.Errorf("expected 'openai' provider, got: %s", stdout)
+	}
+}
+
+// --- Optimize Command ---
+
+func TestCmdOptimize_TextFormat_WithSuggestions(t *testing.T) {
+	stdout, stderr, code := runCLI(t, "optimize", testdata("optimize_target.dip"))
+
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d; stderr: %s", code, stderr)
+	}
+	if !strings.Contains(stdout, "Optimization Report") {
+		t.Errorf("expected 'Optimization Report' header, got: %s", stdout)
+	}
+	if !strings.Contains(stdout, "Suggestions") {
+		t.Errorf("expected 'Suggestions' section, got: %s", stdout)
+	}
+	if !strings.Contains(stdout, "Summarize") {
+		t.Errorf("expected 'Summarize' node in suggestions, got: %s", stdout)
+	}
+	if !strings.Contains(stdout, "saves") {
+		t.Errorf("expected 'saves' in suggestion output, got: %s", stdout)
+	}
+}
+
+func TestCmdOptimize_JSONFormat(t *testing.T) {
+	stdout, stderr, code := runCLI(t, "--format", "json", "optimize", testdata("optimize_target.dip"))
+
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d; stderr: %s", code, stderr)
+	}
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &result); err != nil {
+		t.Fatalf("expected JSON output, got: %s", stdout)
+	}
+	suggestions, ok := result["suggestions"].([]interface{})
+	if !ok || len(suggestions) == 0 {
+		t.Errorf("expected non-empty suggestions array in JSON, got: %v", result["suggestions"])
+	}
+}
+
+// --- Unused Command ---
+
+func TestCmdUnused_TextFormat_WithUnusedNodes(t *testing.T) {
+	stdout, stderr, code := runCLI(t, "unused", testdata("unused_nodes.dip"))
+
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d; stderr: %s", code, stderr)
+	}
+	if !strings.Contains(stdout, "Unused Nodes") {
+		t.Errorf("expected 'Unused Nodes' header, got: %s", stdout)
+	}
+	if !strings.Contains(stdout, "DeadEnd") {
+		t.Errorf("expected 'DeadEnd' node in output, got: %s", stdout)
+	}
+	if !strings.Contains(stdout, "Dead End") {
+		t.Errorf("expected 'Dead End' label in output, got: %s", stdout)
+	}
+	if !strings.Contains(stdout, "1 unused node") {
+		t.Errorf("expected '1 unused node' in summary, got: %s", stdout)
+	}
+}
+
+func TestCmdUnused_JSONFormat(t *testing.T) {
+	stdout, stderr, code := runCLI(t, "--format", "json", "unused", testdata("unused_nodes.dip"))
+
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d; stderr: %s", code, stderr)
+	}
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &result); err != nil {
+		t.Fatalf("expected JSON output, got: %s", stdout)
+	}
+	nodes, ok := result["unused_nodes"].([]interface{})
+	if !ok || len(nodes) == 0 {
+		t.Errorf("expected non-empty unused_nodes array, got: %v", result["unused_nodes"])
+	}
+}
+
+// --- scenarioFlags.String() (cmd_simulate.go:152) ---
+
+func TestScenarioFlags_StringWithValues(t *testing.T) {
+	sf := &scenarioFlags{}
+	if err := sf.Set("outcome=success"); err != nil {
+		t.Fatalf("Set failed: %v", err)
+	}
+	got := sf.String()
+	if !strings.Contains(got, "outcome=success") {
+		t.Errorf("expected 'outcome=success' in String(), got: %q", got)
+	}
+}
+
+func TestScenarioFlags_StringNil(t *testing.T) {
+	sf := &scenarioFlags{}
+	if got := sf.String(); got != "" {
+		t.Errorf("expected empty string for nil values, got: %q", got)
+	}
+}
+
+func TestScenarioFlags_SetInvalid(t *testing.T) {
+	sf := &scenarioFlags{}
+	if err := sf.Set("noequals"); err == nil {
+		t.Error("expected error for invalid format without '='")
+	}
+}
+
+// --- renderError JSON branch (cli.go:237) ---
+
+func TestRenderError_JSONFormat(t *testing.T) {
+	// Use --format json with a syntax error file to trigger renderError JSON path.
+	_, stderr, code := runCLI(t, "--format", "json", "fmt", testdata("syntax_error.dip"))
+
+	if code != ExitError {
+		t.Fatalf("expected exit 1, got %d", code)
+	}
+	// JSON output should contain DIP000.
+	var diags []map[string]interface{}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stderr)), &diags); err != nil {
+		t.Fatalf("stderr is not valid JSON: %v\nstderr: %s", err, stderr)
+	}
+	if len(diags) == 0 {
+		t.Fatal("expected at least one diagnostic")
+	}
+	if diags[0]["code"] != "DIP000" {
+		t.Errorf("expected code=DIP000, got %v", diags[0]["code"])
+	}
+}
+
+// --- parseAndFormat error path (cmd_fmt.go:52) ---
+
+func TestCmdFmt_SyntaxError(t *testing.T) {
+	_, stderr, code := runCLI(t, "fmt", testdata("syntax_error.dip"))
+
+	if code != ExitError {
+		t.Fatalf("expected exit 1, got %d", code)
+	}
+	if !strings.Contains(stderr, "error") {
+		t.Errorf("expected error on stderr, got: %s", stderr)
+	}
+}
+
+// --- statusIcon coverage (cmd_coverage.go:92) ---
+
+func TestCmdCoverage_FullCoverage(t *testing.T) {
+	// full_coverage.dip has tool node with extracted outputs matching all edge conditions.
+	stdout, stderr, code := runCLI(t, "coverage", testdata("full_coverage.dip"))
+
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d; stderr: %s", code, stderr)
+	}
+	if !strings.Contains(stdout, "Coverage Analysis") {
+		t.Errorf("expected 'Coverage Analysis' in stdout, got: %s", stdout)
+	}
+	// The tool node RunTool should have "covered" status (extracted success+fail = edges).
+	if !strings.Contains(stdout, "covered") {
+		t.Errorf("expected 'covered' status in output, got: %s", stdout)
+	}
+}
+
+func TestCmdCoverage_NoConds(t *testing.T) {
+	// tool_no_conditions.dip has a tool node with an unconditional edge.
+	stdout, stderr, code := runCLI(t, "coverage", testdata("tool_no_conditions.dip"))
+
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d; stderr: %s", code, stderr)
+	}
+	if !strings.Contains(stdout, "no_conditions") {
+		t.Errorf("expected 'no_conditions' status in output, got: %s", stdout)
+	}
+}
+
+// --- renderDoctorSuggestions (cmd_doctor.go:79) ---
+
+func TestCmdDoctor_WithSuggestions(t *testing.T) {
+	// unhealthy.dip has lint warnings + unreachable node -> generates suggestions.
+	stdout, stderr, code := runCLI(t, "doctor", testdata("unhealthy.dip"))
+
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d; stderr: %s", code, stderr)
+	}
+	if !strings.Contains(stdout, "Suggestions") {
+		t.Errorf("expected 'Suggestions' section in output, got: %s", stdout)
+	}
+}
+
+// --- renderFeedbackOutliers (cmd_feedback.go:72) ---
+
+func TestCmdFeedback_WithOutliers(t *testing.T) {
+	// outlier_telemetry.jsonl has a node with 0.500 actual_cost that should
+	// differ significantly from predicted cost, triggering outlier detection.
+	stdout, stderr, code := runCLI(t, "feedback",
+		testdata("outlier_workflow.dip"), testdata("outlier_telemetry.jsonl"))
+
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d; stderr: %s", code, stderr)
+	}
+	if !strings.Contains(stdout, "Outliers") || !strings.Contains(stdout, "Calibration") {
+		t.Errorf("expected 'Outliers' and 'Calibration' in stdout, got: %s", stdout)
+	}
+}
+
+// --- renderParityDiffs + loadDOTWorkflow + loadDIPWorkflow error paths (cmd_migrate.go) ---
+
+func TestCmdValidateMigration_JSONFormat_Mismatch(t *testing.T) {
+	// Mismatch in JSON mode -> triggers renderParityDiffs JSON branch.
+	_, stderr, code := runCLI(t, "--format", "json", "validate-migration",
+		testdata("sample.dot"), testdata("valid_minimal.dip"))
+
+	if code != ExitError {
+		t.Fatalf("expected exit 1, got %d", code)
+	}
+	// JSON output should be a JSON array of differences.
+	var diffs []map[string]interface{}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stderr)), &diffs); err != nil {
+		t.Fatalf("stderr is not valid JSON: %v\nstderr: %s", err, stderr)
+	}
+	if len(diffs) == 0 {
+		t.Error("expected at least one diff")
+	}
+}
+
+func TestCmdValidateMigration_BadDOTFile(t *testing.T) {
+	_, stderr, code := runCLI(t, "validate-migration",
+		"testdata/nosuch.dot", testdata("valid_minimal.dip"))
+
+	if code != ExitError {
+		t.Fatalf("expected exit 1, got %d", code)
+	}
+	if !strings.Contains(stderr, "error") {
+		t.Errorf("expected error on stderr, got: %s", stderr)
+	}
+}
+
+func TestCmdValidateMigration_BadDIPFile(t *testing.T) {
+	_, stderr, code := runCLI(t, "validate-migration",
+		testdata("sample.dot"), "testdata/nosuch.dip")
+
+	if code != ExitError {
+		t.Fatalf("expected exit 1, got %d", code)
+	}
+	if !strings.Contains(stderr, "error") {
+		t.Errorf("expected error on stderr, got: %s", stderr)
+	}
+}
+
+func TestCmdValidateMigration_SyntaxErrorDIP(t *testing.T) {
+	_, stderr, code := runCLI(t, "validate-migration",
+		testdata("sample.dot"), testdata("syntax_error.dip"))
+
+	if code != ExitError {
+		t.Fatalf("expected exit 1, got %d", code)
+	}
+	if !strings.Contains(stderr, "error") {
+		t.Errorf("expected error on stderr, got: %s", stderr)
+	}
+}
+
+// --- renderCaseResult failure path (cmd_test_runner.go:68) ---
+
+func TestCmdTest_FailingTests(t *testing.T) {
+	simulate.ResetRunCounter()
+	stdout, _, code := runCLI(t, "test", testdata("failing.dip"))
+
+	if code != ExitError {
+		t.Fatalf("expected exit 1 for failing tests, got %d", code)
+	}
+	if !strings.Contains(stdout, "FAIL") {
+		t.Errorf("expected 'FAIL' in test output, got: %s", stdout)
+	}
+	if !strings.Contains(stdout, "expect wrong node") {
+		t.Errorf("expected test name in output, got: %s", stdout)
+	}
+}
+
+func TestCmdTest_Verbose(t *testing.T) {
+	simulate.ResetRunCounter()
+	stdout, stderr, code := runCLI(t, "test", "--verbose", testdata("valid_minimal.dip"))
+
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d; stderr: %s", code, stderr)
+	}
+	if !strings.Contains(stdout, "path:") {
+		t.Errorf("expected 'path:' in verbose output, got: %s", stdout)
+	}
+}
+
+func TestCmdTest_JSONFormat(t *testing.T) {
+	simulate.ResetRunCounter()
+	stdout, stderr, code := runCLI(t, "--format", "json", "test", testdata("valid_minimal.dip"))
+
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d; stderr: %s", code, stderr)
+	}
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &result); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\nstdout: %s", err, stdout)
+	}
+}
+
+// --- Simulate with populated scenario (additional String() coverage) ---
+
+func TestCmdSimulate_MultipleScenarios(t *testing.T) {
+	tmpDir := t.TempDir()
+	dipFile := filepath.Join(tmpDir, "multi.dip")
+	content := `workflow Multi
+  goal: "Test multiple scenarios"
+  start: Check
+  exit: Done
+
+  agent Check
+    auto_status: true
+    prompt:
+      Check.
+
+  agent Done
+    prompt:
+      Done.
+
+  edges
+    Check -> Done
+`
+	if err := os.WriteFile(dipFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	simulate.ResetRunCounter()
+	_, _, code := runCLI(t, "simulate",
+		"--scenario", "x=1",
+		"--scenario", "y=2",
+		dipFile)
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d", code)
 	}
 }

@@ -1,6 +1,6 @@
 # Validation and Linting Reference
 
-Dippin provides 32 diagnostic checks split into two categories:
+Dippin provides 31 diagnostic checks split into two categories:
 
 - **Structural validation** (DIP001–DIP009): Errors that **must** be fixed. A workflow with any of these cannot execute.
 - **Semantic linting** (DIP101–DIP122): Warnings that flag likely bugs or questionable patterns. They don't block execution but should be reviewed.
@@ -12,7 +12,7 @@ graph LR
     SRC[".dip file"] --> PARSE["Parser"]
     PARSE --> IR["IR"]
     IR --> VAL["Structural Validation<br>DIP001–DIP009<br>(errors)"]
-    IR --> LINT["Semantic Linting<br>DIP101–DIP120<br>(warnings)"]
+    IR --> LINT["Semantic Linting<br>DIP101–DIP122<br>(warnings)"]
     VAL --> DIAG["Diagnostics"]
     LINT --> DIAG
 ```

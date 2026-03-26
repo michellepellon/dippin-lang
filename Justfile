@@ -79,15 +79,17 @@ complexity:
 check: build vet fmt-check test-race complexity validate-examples
     @echo "All checks passed."
 
-# Generate test coverage report
+# Generate test coverage report (excludes untestable files: main.go, cmd_lsp.go)
 cover:
     go test ./... -coverprofile=cover.out
-    go tool cover -func=cover.out
+    grep -v -E '(cmd/dippin/main\.go|cmd/dippin/cmd_lsp\.go)' cover.out > cover_filtered.out || true
+    go tool cover -func=cover_filtered.out
 
 # Open coverage in browser
 cover-html:
     go test ./... -coverprofile=cover.out
-    go tool cover -html=cover.out
+    grep -v -E '(cmd/dippin/main\.go|cmd/dippin/cmd_lsp\.go)' cover.out > cover_filtered.out || true
+    go tool cover -html=cover_filtered.out
 
 # Install the pre-commit hook
 setup-hooks:
@@ -102,5 +104,5 @@ release tag msg:
 
 # Clean build artifacts
 clean:
-    rm -f dippin cover.out cover_check.out
+    rm -f dippin cover.out cover_filtered.out cover_check.out
     @echo "Cleaned."

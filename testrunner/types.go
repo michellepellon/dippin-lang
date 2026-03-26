@@ -9,15 +9,17 @@ type TestSuite struct {
 type TestCase struct {
 	Name     string            `json:"name"`
 	Scenario map[string]string `json:"scenario"`
+	Branch   []string          `json:"branch,omitempty"`
 	Expect   Expectation       `json:"expect"`
 }
 
 // Expectation defines what to assert about a simulation result.
 type Expectation struct {
-	Status       string   `json:"status,omitempty"`
-	Visited      []string `json:"visited,omitempty"`
-	NotVisited   []string `json:"not_visited,omitempty"`
-	PathContains []string `json:"path_contains,omitempty"`
+	Status           string            `json:"status,omitempty"`
+	Visited          []string          `json:"visited,omitempty"`
+	NotVisited       []string          `json:"not_visited,omitempty"`
+	PathContains     []string          `json:"path_contains,omitempty"`
+	ImmediatelyAfter map[string]string `json:"immediately_after,omitempty"`
 }
 
 // SuiteResult aggregates the results of running all test cases in a suite.

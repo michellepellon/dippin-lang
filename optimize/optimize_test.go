@@ -94,3 +94,43 @@ func TestAnalyze_SuggestionFields(t *testing.T) {
 		}
 	}
 }
+
+func TestAnalyze_HighIterationRetry(t *testing.T) {
+	w := loadFixture(t, "testdata/retry_loop.dip")
+	report := optimize.Analyze(w, cost.DefaultPricing())
+
+	foundRetry := false
+	for _, s := range report.Suggestions {
+		if s.Rule == "high-iteration-retry" {
+			foundRetry = true
+			if s.SuggestModel == "" {
+				t.Error("expected suggested cheaper model for retry loop")
+			}
+		}
+	}
+	if !foundRetry {
+		t.Error("expected high-iteration-retry suggestion for node in restart loop")
+	}
+}
+
+func TestAnalyze_ComplexPromptCheapModel(t *testing.T) {
+	w := loadFixture(t, "testdata/complex_cheap.dip")
+	report := optimize.Analyze(w, cost.DefaultPricing())
+
+	foundComplex := false
+	for _, s := range report.Suggestions {
+		if s.Rule == "complex-prompt-cheap-model" {
+			foundComplex = true
+			if s.SuggestModel == "" {
+				t.Error("expected suggested stronger model for complex prompt")
+			}
+			// Upgrade suggestions should not have savings
+			if s.Savings.Expected != 0 {
+				t.Errorf("expected zero savings for upgrade suggestion, got %f", s.Savings.Expected)
+			}
+		}
+	}
+	if !foundComplex {
+		t.Error("expected complex-prompt-cheap-model suggestion")
+	}
+}

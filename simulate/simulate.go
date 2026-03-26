@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"sync/atomic"
 
 	"github.com/2389-research/dippin-lang/event"
@@ -40,6 +41,12 @@ type Options struct {
 	// When exceeded, the simulator forces the loop-exit edge (the first
 	// conditional edge that doesn't match). 0 means unlimited (use maxSteps only).
 	MaxNodeVisits int
+
+	// Branch selects specific parallel branch targets to simulate.
+	// When set, only branch targets present in this map are walked.
+	// When empty, all branches are walked (default behavior).
+	// Example: {"WorkerA": true} walks only the WorkerA branch.
+	Branch map[string]bool
 
 	// Stdin is used for interactive human prompts. Ignored if Interactive is false.
 	Stdin io.Reader
@@ -184,7 +191,11 @@ func (s *simulator) stepNode(current string) (string, *Result, error) {
 }
 
 // advanceToNext resolves the next node, returning a dead_end result if none.
+// For parallel nodes, all branches are walked before continuing to the join.
 func (s *simulator) advanceToNext(node *ir.Node) (string, *Result, error) {
+	if cfg, ok := node.Config.(ir.ParallelConfig); ok {
+		return s.walkParallelBranches(cfg)
+	}
 	next, err := s.resolveNext(node)
 	if err != nil {
 		return "", nil, err
@@ -246,11 +257,12 @@ func (s *simulator) visitNode(node *ir.Node) error {
 // resolveNext determines which node to visit after the current one.
 // Resolution order:
 //  1. If there is exactly one unconditional edge, take it.
-//  2. If MaxNodeVisits is set and this node has been visited too many times,
+//  2. For human nodes with labeled edges, check preferred_label in context.
+//  3. If MaxNodeVisits is set and this node has been visited too many times,
 //     force the loop-exit edge (first non-matching conditional or unconditional).
-//  3. Try all conditional edges in declaration order; take the first match.
-//  4. Fall back to the first unconditional edge (default path).
-//  5. If no conditions match and no unconditional edge exists, fall back to
+//  4. Try all conditional edges in declaration order; take the first match.
+//  5. Fall back to the first unconditional edge (default path).
+//  6. If no conditions match and no unconditional edge exists, fall back to
 //     the first conditional edge (happy-path / no-scenario default).
 func (s *simulator) resolveNext(node *ir.Node) (string, error) {
 	edges := s.workflow.EdgesFrom(node.ID)
@@ -264,7 +276,41 @@ func (s *simulator) resolveNext(node *ir.Node) (string, error) {
 		return edges[0].To, nil
 	}
 
+	// For human nodes with labeled edges, try preferred_label routing.
+	if e := s.resolveByLabel(node, edges); e != nil {
+		return e.To, nil
+	}
+
 	return s.resolveConditionalNext(node.ID, edges)
+}
+
+// resolveByLabel checks if the context has a preferred_label and matches it
+// against edge labels. Only applies to human nodes with labeled edges.
+// Returns nil if no match or not applicable.
+func (s *simulator) resolveByLabel(node *ir.Node, edges []*ir.Edge) *ir.Edge {
+	if _, ok := node.Config.(ir.HumanConfig); !ok {
+		return nil
+	}
+	label := s.ctx["preferred_label"]
+	if label == "" {
+		return nil
+	}
+	// Clear preferred_label so it doesn't leak to downstream human nodes.
+	delete(s.ctx, "preferred_label")
+	return s.matchEdgeLabel(edges, label)
+}
+
+// matchEdgeLabel finds the first edge whose label contains the target string
+// (case-insensitive). This allows "yes" to match "[Y] Yes".
+func (s *simulator) matchEdgeLabel(edges []*ir.Edge, target string) *ir.Edge {
+	lower := strings.ToLower(target)
+	for _, e := range edges {
+		if strings.Contains(strings.ToLower(e.Label), lower) {
+			s.emitEdgeTraverse(e)
+			return e
+		}
+	}
+	return nil
 }
 
 // resolveConditionalNext handles edge resolution for nodes with multiple

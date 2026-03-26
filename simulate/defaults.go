@@ -25,30 +25,41 @@ func (s *simulator) applyNodeDefaults(node *ir.Node) {
 // applyNodeScenario applies per-node scenario values matching "NodeID.key".
 // For example, --scenario "Planner.outcome=fail" sets ctx["outcome"]="fail"
 // only when processing the Planner node.
+// An empty value ("") explicitly clears the key, preventing auto-defaults
+// from filling it. This lets unconditional fallback edges fire.
 func (s *simulator) applyNodeScenario(nodeID string) {
 	prefix := nodeID + "."
 	for k, v := range s.opts.Scenario {
 		if strings.HasPrefix(k, prefix) {
 			key := strings.TrimPrefix(k, prefix)
-			s.updateContext(key, v)
+			if v == "" {
+				delete(s.ctx, key)
+			} else {
+				s.updateContext(key, v)
+			}
 		}
 	}
 }
 
 // setContextDefaultForNode sets a context key only if it wasn't injected
 // via the --scenario flag (global or per-node). Scenario values always
-// take precedence over node defaults.
+// take precedence over node defaults. An empty scenario value explicitly
+// suppresses the default (see applyNodeScenario).
 func (s *simulator) setContextDefaultForNode(key, value, nodeID string) {
-	// Global scenario for this key — never override.
-	if _, ok := s.opts.Scenario[key]; ok {
-		return
-	}
-	// Per-node scenario for this specific node.key — already applied
-	// by applyNodeScenario, don't overwrite.
-	if _, ok := s.opts.Scenario[nodeID+"."+key]; ok {
+	if s.scenarioHasKey(key, nodeID) {
 		return
 	}
 	s.updateContext(key, value)
+}
+
+// scenarioHasKey returns true if the scenario provides a value for this key
+// (globally or per-node), meaning the auto-default should not be applied.
+func (s *simulator) scenarioHasKey(key, nodeID string) bool {
+	if _, ok := s.opts.Scenario[key]; ok {
+		return true
+	}
+	_, ok := s.opts.Scenario[nodeID+"."+key]
+	return ok
 }
 
 // operatorFuncs maps condition operators to their evaluation functions.

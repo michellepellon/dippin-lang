@@ -1,6 +1,7 @@
 package cost
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/2389-research/dippin-lang/ir"
@@ -244,6 +245,213 @@ func TestUnknownModelZeroCost(t *testing.T) {
 	}
 	if len(r.Assumptions) == 0 {
 		t.Error("expected assumptions about unknown model")
+	}
+}
+
+func TestBuildLoopRangeWithMaxRestarts(t *testing.T) {
+	// When MaxRestarts is set on the workflow, buildLoopRange should be used.
+	w := &ir.Workflow{
+		Start: "a1",
+		Exit:  "done",
+		Defaults: ir.WorkflowDefaults{
+			Provider:    "anthropic",
+			MaxRestarts: 8,
+		},
+		Nodes: []*ir.Node{
+			{
+				ID:   "a1",
+				Kind: ir.NodeAgent,
+				Config: ir.AgentConfig{
+					Prompt: "Do work",
+					Model:  "claude-sonnet-4-6",
+				},
+			},
+			{
+				ID:     "done",
+				Kind:   ir.NodeTool,
+				Config: ir.ToolConfig{Command: "echo done"},
+			},
+		},
+		Edges: []*ir.Edge{
+			{From: "done", To: "a1", Restart: true},
+		},
+	}
+
+	r := Analyze(w, testPricing())
+	nc := r.Nodes["a1"]
+	// With MaxRestarts=8, expected = max(8/2, 2) = 4, max = 8.
+	// Cost should be multiplied accordingly.
+	if nc.Cost.Max <= 0 {
+		t.Errorf("expected positive cost with loop multiplier, got %f", nc.Cost.Max)
+	}
+}
+
+func TestBuildLoopRangeSmallMaxRestarts(t *testing.T) {
+	// When MaxRestarts is small (e.g., 2), expected should clamp to 2.
+	w := &ir.Workflow{
+		Start: "a1",
+		Exit:  "done",
+		Defaults: ir.WorkflowDefaults{
+			Provider:    "anthropic",
+			MaxRestarts: 2,
+		},
+		Nodes: []*ir.Node{
+			{
+				ID:   "a1",
+				Kind: ir.NodeAgent,
+				Config: ir.AgentConfig{
+					Prompt: "Do work",
+					Model:  "claude-sonnet-4-6",
+				},
+			},
+			{
+				ID:     "done",
+				Kind:   ir.NodeTool,
+				Config: ir.ToolConfig{Command: "echo done"},
+			},
+		},
+		Edges: []*ir.Edge{
+			{From: "done", To: "a1", Restart: true},
+		},
+	}
+
+	r := Analyze(w, testPricing())
+	nc := r.Nodes["a1"]
+	if nc.Cost.Max <= 0 {
+		t.Errorf("expected positive cost, got %f", nc.Cost.Max)
+	}
+}
+
+func TestGetModelProviderNonAgentNode(t *testing.T) {
+	// getModelProvider for a non-agent node falls back to workflow defaults.
+	w := &ir.Workflow{
+		Start: "h1",
+		Exit:  "h1",
+		Defaults: ir.WorkflowDefaults{
+			Model:    "claude-sonnet-4-6",
+			Provider: "anthropic",
+		},
+		Nodes: []*ir.Node{
+			{
+				ID:     "h1",
+				Kind:   ir.NodeHuman,
+				Config: ir.HumanConfig{Mode: "freeform"},
+			},
+		},
+	}
+
+	r := Analyze(w, testPricing())
+	nc := r.Nodes["h1"]
+	// Human nodes are non-agent, so cost should be zero.
+	if nc.Cost.Min != 0 || nc.Cost.Expected != 0 || nc.Cost.Max != 0 {
+		t.Errorf("human node should have $0 cost, got %+v", nc.Cost)
+	}
+}
+
+func TestEstimateTurnsHighMaxTurns(t *testing.T) {
+	// When maxTurns is high enough that expected = maxTurns/3 >= 3.
+	w := &ir.Workflow{
+		Start: "a1",
+		Exit:  "a1",
+		Defaults: ir.WorkflowDefaults{
+			Provider: "anthropic",
+		},
+		Nodes: []*ir.Node{
+			{
+				ID:   "a1",
+				Kind: ir.NodeAgent,
+				Config: ir.AgentConfig{
+					Prompt:   "Do complex work",
+					Model:    "claude-sonnet-4-6",
+					MaxTurns: 30,
+				},
+			},
+		},
+	}
+
+	r := Analyze(w, testPricing())
+	nc := r.Nodes["a1"]
+	// With MaxTurns=30, expected = 30/3 = 10, which is >= 3.
+	if nc.Cost.Max <= nc.Cost.Expected {
+		t.Errorf("max should be > expected: max=%f expected=%f", nc.Cost.Max, nc.Cost.Expected)
+	}
+}
+
+func TestSortTopCostsTruncation(t *testing.T) {
+	// More than 5 agent nodes should truncate TopCosts to 5.
+	nodes := make([]*ir.Node, 7)
+	for i := range nodes {
+		nodes[i] = &ir.Node{
+			ID:   fmt.Sprintf("a%d", i),
+			Kind: ir.NodeAgent,
+			Config: ir.AgentConfig{
+				Prompt: fmt.Sprintf("Task %d with some text to vary cost", i),
+				Model:  "claude-sonnet-4-6",
+			},
+		}
+	}
+
+	w := &ir.Workflow{
+		Start: "a0",
+		Exit:  "a6",
+		Defaults: ir.WorkflowDefaults{
+			Provider: "anthropic",
+		},
+		Nodes: nodes,
+	}
+
+	r := Analyze(w, testPricing())
+	if len(r.TopCosts) != 5 {
+		t.Errorf("expected 5 top costs, got %d", len(r.TopCosts))
+	}
+}
+
+func TestGetModelProviderFallbackToDefaults(t *testing.T) {
+	// Direct test of getModelProvider when node has non-agent config.
+	w := &ir.Workflow{
+		Defaults: ir.WorkflowDefaults{
+			Model:    "default-model",
+			Provider: "default-provider",
+		},
+	}
+	n := &ir.Node{
+		ID:     "h1",
+		Kind:   ir.NodeHuman,
+		Config: ir.HumanConfig{Mode: "freeform"},
+	}
+	model, provider := getModelProvider(n, w)
+	if model != "default-model" {
+		t.Errorf("model = %q, want default-model", model)
+	}
+	if provider != "default-provider" {
+		t.Errorf("provider = %q, want default-provider", provider)
+	}
+}
+
+func TestEstimateTurnsZeroMaxTurns(t *testing.T) {
+	// When MaxTurns is 0, defaults to 10, then expected = 10/3 = 3.
+	ac := ir.AgentConfig{Prompt: "test", MaxTurns: 0}
+	turns := estimateTurns(ac)
+	if turns.Max != 10 {
+		t.Errorf("max = %d, want 10", turns.Max)
+	}
+	if turns.Expected != 3 {
+		t.Errorf("expected = %d, want 3", turns.Expected)
+	}
+	if turns.Min != 3 {
+		t.Errorf("min = %d, want 3", turns.Min)
+	}
+}
+
+func TestEstimateTurnsLowMaxTurns(t *testing.T) {
+	// When MaxTurns is 6, expected = 6/3 = 2, which is < 3, so clamped to 3.
+	ac := ir.AgentConfig{Prompt: "test", MaxTurns: 6}
+	turns := estimateTurns(ac)
+	if turns.Max != 6 {
+		t.Errorf("max = %d, want 6", turns.Max)
+	}
+	if turns.Expected != 3 {
+		t.Errorf("expected = %d, want 3 (clamped)", turns.Expected)
 	}
 }
 

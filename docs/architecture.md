@@ -22,6 +22,8 @@ graph TD
     IR --> COST["Cost / Coverage<br><code>cost</code> + <code>coverage</code> pkgs"]
     IR --> DOC["Doctor / Optimize<br><code>doctor</code> + <code>optimize</code> pkgs"]
     IR --> DIFF["Diff<br><code>diff</code> pkg"]
+    IR --> UNUSED["Unused / Graph<br><code>unused</code> + <code>graph</code> pkgs"]
+    IR --> TEST["Test Runner<br><code>testrunner</code> pkg"]
     IR --> LSP["LSP Server<br><code>lsp</code> pkg"]
     IR --> ENG["Engine<br>(external)"]
 ```
@@ -51,7 +53,7 @@ dippin-lang/
 │
 ├── validator/          # Graph validation + semantic linting
 │   ├── codes.go        # Error code constants (DIP001–DIP009)
-│   ├── lint_codes.go   # Warning code constants (DIP101–DIP120)
+│   ├── lint_codes.go   # Warning code constants (DIP101–DIP122)
 │   ├── diagnostic.go   # Diagnostic type, Result, Severity
 │   ├── validate.go     # 9 structural checks
 │   ├── lint.go         # Lint orchestration
@@ -104,7 +106,19 @@ dippin-lang/
 │
 ├── feedback/           # Cost calibration from telemetry
 │   ├── feedback.go     # Predicted vs actual cost comparison
-│   └── telemetry.go    # CSV telemetry reader
+│   └── telemetry.go    # JSONL telemetry reader
+│
+├── unused/             # Dead-branch detection
+│   └── unused.go       # Sink-node analysis + wasted cost estimation
+│
+├── graph/              # ASCII DAG rendering
+│   ├── graph.go        # Topological layering (Kahn's algorithm)
+│   └── render.go       # Box-drawing + compact one-liner output
+│
+├── testrunner/         # Scenario test runner
+│   ├── types.go        # TestSuite, TestCase, Expectation structs
+│   ├── load.go         # .test.json file loader
+│   └── runner.go       # Run cases through simulator, check assertions
 │
 ├── lsp/                # Language Server Protocol server
 │   ├── server.go       # JSONRPC2 handler dispatch
@@ -135,6 +149,10 @@ dippin-lang/
     ├── cmd_optimize.go # optimize command
     ├── cmd_diff.go     # diff command
     ├── cmd_feedback.go # feedback command
+    ├── cmd_explain.go  # explain command
+    ├── cmd_unused.go   # unused command
+    ├── cmd_graph.go    # graph command
+    ├── cmd_test_runner.go # test command
     └── cmd_lsp.go      # lsp command
 ```
 
@@ -163,6 +181,12 @@ graph BT
     diff["diff"] --> ir
     diff --> cost
     feedback["feedback"] --> cost
+    unused["unused"] --> ir
+    unused --> coverage
+    unused --> cost
+    graph["graph"] --> ir
+    testrunner["testrunner"] --> ir
+    testrunner --> simulate
     lsp["lsp"] --> ir
     lsp --> parser
     lsp --> validator
@@ -180,6 +204,9 @@ graph BT
     cmd --> diff
     cmd --> feedback
     cmd --> lsp
+    cmd --> unused
+    cmd --> graph
+    cmd --> testrunner
 ```
 
 The `ir` package is a leaf dependency — it imports only `time` from the standard library. Most packages import only `ir`. The analysis packages (`doctor`, `optimize`, `diff`, `feedback`) compose other analysis packages. The LSP server imports `parser` and `validator` for real-time analysis.

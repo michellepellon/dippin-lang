@@ -1,0 +1,19 @@
+workflow Alternate
+  goal: "Alternate workflow for diff tests"
+  start: Begin
+  exit: Finish
+
+  human Begin
+    mode: freeform
+
+  agent Middle
+    prompt:
+      Process the input.
+
+  agent Finish
+    prompt:
+      Complete the task.
+
+  edges
+    Begin -> Middle
+    Middle -> Finish

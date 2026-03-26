@@ -30,7 +30,7 @@ graph LR
 | Shell scripts | `tool_command="#!/bin/sh\nset -eu\nif..."` | Real multiline, real syntax |
 | Model config | Untyped `llm_model="..."` attribute | Typed `model:` field with validation |
 | Branching | `condition="context.x!=y && context.a==b"` | `when ctx.x != "y" and ctx.a == "b"` |
-| Validation | Silent — typos in attrs are ignored | 32 diagnostic codes (DIP001–DIP009, DIP101–DIP122) |
+| Validation | Silent — typos in attrs are ignored | 31 diagnostic codes (DIP001–DIP009, DIP101–DIP122) |
 | Node types | Shape overloading (`box`=agent, `hexagon`=human) | Explicit `agent`, `tool`, `human` keywords |
 | Composition | No import/include system | `subgraph` with ref (v2) |
 
@@ -469,6 +469,8 @@ graph LR
     IR --> Sim["Simulator<br>(dry-run)"]
     IR --> Cost["Cost / Coverage<br>/ Doctor / Optimize"]
     IR --> Diff["Diff"]
+    IR --> Unused["Unused / Graph"]
+    IR --> Test["Test Runner"]
     IR --> LSP["LSP Server"]
 ```
 
@@ -490,6 +492,9 @@ Everything flows through `ir.Workflow` — the canonical intermediate representa
 | `optimize/` | Rule-based model substitution suggestions for cost savings |
 | `diff/` | Semantic workflow comparison with field-level change tracking |
 | `feedback/` | Predicted vs actual cost calibration from telemetry data |
+| `unused/` | Dead-branch detection and wasted cost estimation |
+| `graph/` | Terminal ASCII DAG rendering (full box-drawing and compact one-liner) |
+| `testrunner/` | Scenario test runner loading `.test.json` suites against the simulator |
 | `lsp/` | Language Server Protocol server (hover, go-to-def, completion, diagnostics) |
 | `scaffold/` | Template generation for `dippin new` |
 | `cmd/dippin/` | CLI wiring |

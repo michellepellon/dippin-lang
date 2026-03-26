@@ -2,6 +2,24 @@
 
 All notable changes to dippin-lang are documented here. Versions follow [semver](https://semver.org/).
 
+## [v0.9.0] — 2026-03-25
+
+### Fixed
+- **`preferred_label` now works on human gates** — scenario key `preferred_label` (or per-node `Gate.preferred_label`) matches against edge labels (case-insensitive substring). Previously silently ignored on freeform gates.
+- **`prompt:` blocks now parse on human nodes** — `HumanConfig` gained a `Prompt` field. Multiline prompt blocks work the same as on agent nodes. Formatter round-trips correctly.
+- **Tool auto-defaults no longer mask fallback edges** — empty-string scenario values (`"Node.tool_stdout": ""`) now suppress the auto-seeded `success` default, allowing unconditional fallback edges to fire.
+
+### Added
+- **`immediately_after` test assertion** — assert adjacency in the execution path: `"immediately_after": {"NodeX": "NodeY"}` checks that NodeY is the very next node after NodeX.
+- **`branch` field for targeted parallel testing** — `"branch": ["WorkerA"]` limits which parallel fan-out branches are simulated. Without it, all branches are walked (new default).
+- **Simulator walks all parallel branches** — parallel fan-out now visits all targets, not just the first. Matches real runtime behavior.
+- **Example test suites** — `.test.json` files for `vulnerability_analyzer`, `consensus_task`, `code_quality_sweep`, and `sprint_exec` (20 tests across 4 workflows).
+- **Test coverage at 95.7%** — up from 85.6%. Six packages at 100%.
+- `just cover` now excludes untestable files (`main.go`, `cmd_lsp.go`) from coverage reports.
+
+### Documentation
+- `docs/testing.md` — added Caveats section (`not_visited` fragility with loop-breaking), Clearing Defaults section (empty-string technique), `immediately_after` field documentation.
+
 ## [v0.8.0] — 2026-03-25
 
 ### Fixed
@@ -19,7 +37,7 @@ All notable changes to dippin-lang are documented here. Versions follow [semver]
 - DIP121/DIP122 added to README warnings table; `explain`, `unused`, `graph`, `test` added to commands table.
 
 ### Fixed (cosmetic)
-- **README stale numbers** — diagnostic codes 30→32, DIP120→DIP122, examples 15→17, lint rules 21→22.
+- **README stale numbers** — diagnostic codes 30→31, DIP120→DIP122, examples 15→17, lint rules 21→22.
 - **`appendConnector` dead branch** — identical if/else branches collapsed.
 
 ## [v0.7.0] — 2026-03-25
@@ -39,7 +57,7 @@ All notable changes to dippin-lang are documented here. Versions follow [semver]
 ## [v0.5.0] — 2026-03-25
 
 ### Added
-- **`dippin explain <DIPxxx>`** — rich explanations for all 32 diagnostic codes. Shows trigger conditions, fix guidance, and example snippets. Supports text and JSON output.
+- **`dippin explain <DIPxxx>`** — rich explanations for all 31 diagnostic codes. Shows trigger conditions, fix guidance, and example snippets. Supports text and JSON output.
 - **`dippin unused <file>`** — detects dead-branch nodes (reachable from start but no path to exit) and estimates wasted cost per run. Reuses `coverage.Analyze()` sink detection + `cost.Analyze()` for cost enrichment.
 - **`dippin graph [--compact] <file>`** — terminal-rendered ASCII DAG visualization. Full mode renders box-drawing nodes with connectors; compact mode outputs single-line `[A] → [B] → [C]` format. JSON mode outputs layer structure.
 - **New packages:** `unused/`, `graph/`, `testrunner/`

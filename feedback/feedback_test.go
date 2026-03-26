@@ -92,3 +92,102 @@ func TestAnalyze_MissingTelemetryFile(t *testing.T) {
 		t.Error("expected error for missing telemetry file")
 	}
 }
+
+func TestAnalyze_Outliers(t *testing.T) {
+	w := loadFixture(t, "testdata/sample_workflow.dip")
+	predicted := cost.Analyze(w, cost.DefaultPricing())
+
+	report, err := feedback.Analyze(predicted, "testdata/outlier_telemetry.jsonl")
+	if err != nil {
+		t.Fatalf("Analyze failed: %v", err)
+	}
+
+	if len(report.Outliers) == 0 {
+		t.Error("expected outliers for skewed telemetry data")
+	}
+
+	// Check that outlier messages are populated
+	for _, o := range report.Outliers {
+		if o.NodeID == "" {
+			t.Error("outlier NodeID should not be empty")
+		}
+		if o.Message == "" {
+			t.Error("outlier Message should not be empty")
+		}
+		if o.Ratio == 0 {
+			t.Error("outlier Ratio should not be zero")
+		}
+	}
+
+	// Verify we get both types of outliers (over-predicted and under-predicted)
+	var hasHighRatio, hasLowRatio bool
+	for _, o := range report.Outliers {
+		if o.Ratio > 2.0 {
+			hasHighRatio = true
+		}
+		if o.Ratio < 0.5 {
+			hasLowRatio = true
+		}
+	}
+	if !hasHighRatio && !hasLowRatio {
+		t.Error("expected at least one outlier with ratio > 2.0 or < 0.5")
+	}
+}
+
+func TestAnalyze_OutlierAccuracy(t *testing.T) {
+	w := loadFixture(t, "testdata/sample_workflow.dip")
+	predicted := cost.Analyze(w, cost.DefaultPricing())
+
+	report, err := feedback.Analyze(predicted, "testdata/outlier_telemetry.jsonl")
+	if err != nil {
+		t.Fatalf("Analyze failed: %v", err)
+	}
+
+	// With skewed data, accuracy should still be valid (0-100)
+	if report.Accuracy < 0 || report.Accuracy > 100 {
+		t.Errorf("accuracy should be 0-100%%, got %f", report.Accuracy)
+	}
+}
+
+func TestAnalyze_EdgeCases(t *testing.T) {
+	w := loadFixture(t, "testdata/sample_workflow.dip")
+	predicted := cost.Analyze(w, cost.DefaultPricing())
+
+	// Telemetry with zero-cost node, empty node name, and unknown node
+	report, err := feedback.Analyze(predicted, "testdata/edge_case_telemetry.jsonl")
+	if err != nil {
+		t.Fatalf("Analyze failed: %v", err)
+	}
+
+	// Should still produce valid results
+	if report.Accuracy < 0 || report.Accuracy > 100 {
+		t.Errorf("accuracy should be 0-100%%, got %f", report.Accuracy)
+	}
+
+	// Zero-actual-cost node should produce ratio=0, not a panic
+	for _, nc := range report.Nodes {
+		if nc.ActualCost == 0 && nc.Ratio != 0 {
+			t.Errorf("node %s: zero actual cost should produce ratio=0, got %f", nc.NodeID, nc.Ratio)
+		}
+	}
+}
+
+func TestAnalyze_EmptyComparisons(t *testing.T) {
+	// Workflow with nodes that have no matching telemetry
+	w := loadFixture(t, "testdata/sample_workflow.dip")
+	// Modify workflow to use different node names
+	for _, n := range w.Nodes {
+		n.ID = "NoMatch_" + n.ID
+	}
+	predicted := cost.Analyze(w, cost.DefaultPricing())
+
+	report, err := feedback.Analyze(predicted, "testdata/sample_telemetry.jsonl")
+	if err != nil {
+		t.Fatalf("Analyze failed: %v", err)
+	}
+
+	// No matching nodes means empty comparisons and 0 accuracy
+	if report.Accuracy != 0 {
+		t.Errorf("accuracy should be 0 for no matching nodes, got %f", report.Accuracy)
+	}
+}

@@ -633,6 +633,143 @@ func TestExportDOTAllEdgeAttributes(t *testing.T) {
 	assertContains(t, out, `weight="5"`)
 }
 
+func TestExportDOTExecutionPathOrder(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "test",
+		Start: "A",
+		Exit:  "C",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Label: "Start Agent", Config: ir.AgentConfig{Prompt: "go."}},
+			{ID: "B", Kind: ir.NodeAgent, Label: "Middle", Config: ir.AgentConfig{Prompt: "work."}},
+			{ID: "C", Kind: ir.NodeAgent, Label: "End", Config: ir.AgentConfig{Prompt: "done."}},
+		},
+		Edges: []*ir.Edge{
+			{From: "A", To: "B"},
+			{From: "B", To: "C"},
+		},
+	}
+	out := ExportDOT(w, ExportOptions{
+		ExecutionPath: []string{"A", "B", "A", "C"},
+	})
+	// A visited twice: steps 1 and 3.
+	assertContains(t, out, `[1,3] Start Agent`)
+	assertContains(t, out, `[2] Middle`)
+	assertContains(t, out, `[4] End`)
+	assertContains(t, out, `fillcolor="#e0f0ff"`)
+	assertContains(t, out, `style="bold,filled"`)
+}
+
+func TestExportDOTEmptyExecutionPath(t *testing.T) {
+	w := minimalWorkflow()
+	out := ExportDOT(w, ExportOptions{ExecutionPath: []string{}})
+	// No execution order annotations.
+	assertNotContains(t, out, "bold,filled")
+}
+
+func TestNodeShapeUnknownKind(t *testing.T) {
+	// An unknown NodeKind should default to "box".
+	w := &ir.Workflow{
+		Name:  "test",
+		Start: "S",
+		Exit:  "E",
+		Nodes: []*ir.Node{
+			{ID: "S", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go."}},
+			{ID: "N", Kind: ir.NodeKind("unknown_kind"), Config: ir.AgentConfig{Prompt: "x."}},
+			{ID: "E", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done."}},
+		},
+	}
+	out := ExportDOT(w, ExportOptions{})
+	// N should get the default "box" shape.
+	assertContains(t, out, `N [label="N", shape="box"];`)
+}
+
+func TestExportDOTEdgeConditionRawFallback(t *testing.T) {
+	// When Parsed is nil, Raw should be used as the condition string.
+	w := &ir.Workflow{
+		Name:  "test",
+		Start: "A",
+		Exit:  "B",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go."}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done."}},
+		},
+		Edges: []*ir.Edge{
+			{
+				From: "A",
+				To:   "B",
+				Condition: &ir.Condition{
+					Raw:    "ctx.outcome = success",
+					Parsed: nil,
+				},
+			},
+		},
+	}
+	out := ExportDOT(w, ExportOptions{})
+	assertContains(t, out, `condition="outcome = success"`)
+}
+
+func TestFormatDurationSubSecond(t *testing.T) {
+	// Sub-second durations should fall through to Go's default formatting.
+	w := &ir.Workflow{
+		Name:  "test",
+		Start: "T",
+		Exit:  "T",
+		Nodes: []*ir.Node{
+			{
+				ID: "T", Kind: ir.NodeTool,
+				Config: ir.ToolConfig{
+					Command: "echo fast",
+					Timeout: 500 * time.Millisecond,
+				},
+			},
+		},
+	}
+	out := ExportDOT(w, ExportOptions{IncludePrompts: true})
+	assertContains(t, out, `timeout="500ms"`)
+}
+
+func TestFormatDurationHoursMinutesSeconds(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "test",
+		Start: "T",
+		Exit:  "T",
+		Nodes: []*ir.Node{
+			{
+				ID: "T", Kind: ir.NodeTool,
+				Config: ir.ToolConfig{
+					Command: "echo slow",
+					Timeout: 1*time.Hour + 30*time.Minute + 15*time.Second,
+				},
+			},
+		},
+	}
+	out := ExportDOT(w, ExportOptions{IncludePrompts: true})
+	assertContains(t, out, `timeout="1h30m15s"`)
+}
+
+func TestExportDOTEdgeEmptyCondition(t *testing.T) {
+	// An edge with a Condition but empty Raw and nil Parsed should not
+	// produce a condition attribute.
+	w := &ir.Workflow{
+		Name:  "test",
+		Start: "A",
+		Exit:  "B",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go."}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done."}},
+		},
+		Edges: []*ir.Edge{
+			{
+				From:      "A",
+				To:        "B",
+				Condition: &ir.Condition{Raw: "", Parsed: nil},
+			},
+		},
+	}
+	out := ExportDOT(w, ExportOptions{})
+	assertNotContains(t, out, "condition=")
+}
+
 func TestExportDOTIdempotent(t *testing.T) {
 	workflows := []*ir.Workflow{
 		minimalWorkflow(),

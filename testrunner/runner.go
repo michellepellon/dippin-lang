@@ -35,6 +35,7 @@ func RunCase(w *ir.Workflow, tc TestCase) CaseResult {
 	result, err := simulate.Run(w, simulate.Options{
 		Scenario:      tc.Scenario,
 		MaxNodeVisits: defaultMaxNodeVisits,
+		Branch:        toBoolMap(tc.Branch),
 	})
 	if err != nil {
 		cr.Errors = append(cr.Errors, fmt.Sprintf("simulation error: %v", err))
@@ -54,6 +55,7 @@ func checkExpectations(result *simulate.Result, expect Expectation) []string {
 	errs = append(errs, checkVisited(result, expect)...)
 	errs = append(errs, checkNotVisited(result, expect)...)
 	errs = append(errs, checkPathContains(result, expect)...)
+	errs = append(errs, checkImmediatelyAfter(result, expect)...)
 	return errs
 }
 
@@ -113,6 +115,36 @@ func checkPathContains(result *simulate.Result, expect Expectation) []string {
 	return errs
 }
 
+// checkImmediatelyAfter verifies that for each (from, to) pair,
+// the node immediately following from in the path is to.
+func checkImmediatelyAfter(result *simulate.Result, expect Expectation) []string {
+	if len(expect.ImmediatelyAfter) == 0 {
+		return nil
+	}
+	var errs []string
+	for from, to := range expect.ImmediatelyAfter {
+		if err := checkAdjacent(result.Path, from, to); err != "" {
+			errs = append(errs, err)
+		}
+	}
+	return errs
+}
+
+// checkAdjacent returns an error string if from is not immediately followed by to in path.
+func checkAdjacent(path []string, from, to string) string {
+	idx := findInPath(path, from, 0)
+	if idx < 0 {
+		return fmt.Sprintf("immediately_after: node %q not found in path", from)
+	}
+	if idx == len(path)-1 {
+		return fmt.Sprintf("immediately_after: node %q is the last element in path, no next node", from)
+	}
+	if path[idx+1] != to {
+		return fmt.Sprintf("immediately_after: expected %q after %q, got %q", to, from, path[idx+1])
+	}
+	return ""
+}
+
 // findInPath returns the index of target in path starting from offset, or -1.
 func findInPath(path []string, target string, offset int) int {
 	for i := offset; i < len(path); i++ {
@@ -121,6 +153,17 @@ func findInPath(path []string, target string, offset int) int {
 		}
 	}
 	return -1
+}
+
+func toBoolMap(items []string) map[string]bool {
+	if len(items) == 0 {
+		return nil
+	}
+	m := make(map[string]bool, len(items))
+	for _, item := range items {
+		m[item] = true
+	}
+	return m
 }
 
 func toSet(items []string) map[string]bool {
