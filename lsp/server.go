@@ -3,6 +3,7 @@ package lsp
 import (
 	"context"
 	"encoding/json"
+	"sync"
 
 	"go.lsp.dev/jsonrpc2"
 	"go.lsp.dev/protocol"
@@ -10,6 +11,7 @@ import (
 
 // Server is the Dippin LSP server.
 type Server struct {
+	mu    sync.RWMutex
 	conn  jsonrpc2.Conn
 	store *documentStore
 }
@@ -122,5 +124,14 @@ func (s *Server) handleDidClose(ctx context.Context, reply jsonrpc2.Replier, req
 
 // SetConn sets the connection for sending notifications.
 func (s *Server) SetConn(conn jsonrpc2.Conn) {
+	s.mu.Lock()
 	s.conn = conn
+	s.mu.Unlock()
+}
+
+// getConn returns the connection, safe for concurrent access.
+func (s *Server) getConn() jsonrpc2.Conn {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.conn
 }

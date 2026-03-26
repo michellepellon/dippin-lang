@@ -10,7 +10,8 @@ import (
 
 // publishDiagnostics runs lint and publishes diagnostics to the client.
 func (s *Server) publishDiagnostics(ctx context.Context, doc *document) {
-	if s.conn == nil {
+	conn := s.getConn()
+	if conn == nil {
 		return
 	}
 
@@ -20,7 +21,7 @@ func (s *Server) publishDiagnostics(ctx context.Context, doc *document) {
 		Version:     uint32(doc.Version),
 		Diagnostics: diags,
 	}
-	_ = s.conn.Notify(ctx, "textDocument/publishDiagnostics", params)
+	_ = conn.Notify(ctx, "textDocument/publishDiagnostics", params)
 }
 
 // collectDiagnostics gathers all diagnostics for a document.

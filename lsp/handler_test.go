@@ -44,8 +44,12 @@ func (m *mockConn) Call(context.Context, string, interface{}, interface{}) (json
 
 func (m *mockConn) Go(context.Context, jsonrpc2.Handler) {}
 func (m *mockConn) Close() error                         { return nil }
-func (m *mockConn) Done() <-chan struct{}                { return nil }
-func (m *mockConn) Err() error                           { return nil }
+func (m *mockConn) Done() <-chan struct{} {
+	ch := make(chan struct{})
+	close(ch)
+	return ch
+}
+func (m *mockConn) Err() error { return nil }
 
 // mustCall builds a jsonrpc2.Request (Call) for the given method and params.
 func mustCall(t *testing.T, method string, params interface{}) jsonrpc2.Request {

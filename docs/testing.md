@@ -2,6 +2,17 @@
 
 The `dippin test` command runs scenario-based assertions against workflow files. Test cases inject context values into the simulator and verify the execution path.
 
+```mermaid
+flowchart LR
+    A[".test.json"] --> B["Load & Parse"]
+    B --> C["Inject Scenario"]
+    C --> D["Simulate Workflow"]
+    D --> E["Check Assertions"]
+    E --> F{"Pass?"}
+    F -->|Yes| G["PASS"]
+    F -->|No| H["FAIL + errors"]
+```
+
 ---
 
 ## Test File Format

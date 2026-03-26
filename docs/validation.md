@@ -617,7 +617,7 @@ warning[DIP120]: condition variable "outcome" should use a namespace prefix (e.g
 
 **What triggers it**: An edge condition uses a bare variable name like `outcome` instead of `ctx.outcome`.
 
-**How to fix**: Add the appropriate namespace prefix (`ctx.`, `graph.`, `state.`).
+**How to fix**: Add the appropriate namespace prefix (`ctx.`, `graph.`, `params.`).
 
 ---
 

@@ -353,7 +353,7 @@ func (s *simulator) forceLoopExit(nodeID string, edges []*ir.Edge) (string, erro
 // is NOT satisfied — typically the loop-exit edge.
 func (s *simulator) firstNonMatchingCond(edges []*ir.Edge) *ir.Edge {
 	for _, e := range edges {
-		if e.Condition != nil && !s.evalCondition(e.Condition.Parsed) {
+		if e.Condition != nil && e.Condition.Parsed != nil && !s.evalCondition(e.Condition.Parsed) {
 			s.emitEdgeTraverse(e)
 			return e
 		}
@@ -382,7 +382,7 @@ func (s *simulator) findMatchingEdge(edges []*ir.Edge) *ir.Edge {
 // firstMatchingConditional returns the first conditional edge whose condition is satisfied.
 func (s *simulator) firstMatchingConditional(edges []*ir.Edge) *ir.Edge {
 	for _, e := range edges {
-		if e.Condition != nil && s.evalCondition(e.Condition.Parsed) {
+		if e.Condition != nil && e.Condition.Parsed != nil && s.evalCondition(e.Condition.Parsed) {
 			s.emitEdgeTraverse(e)
 			return e
 		}

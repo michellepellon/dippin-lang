@@ -55,7 +55,9 @@ var outputPatterns = []*regexp.Regexp{
 
 // Analyze runs coverage analysis on a workflow and returns a report.
 func Analyze(w *ir.Workflow) *Report {
-	// Ensure edge conditions are parsed into AST form.
+	// Parse edge conditions into AST form. Errors are non-fatal —
+	// unparseable conditions stay with Parsed=nil and are skipped
+	// by appendConditionValues (the default case returns out unchanged).
 	_ = simulate.EnsureConditionsParsed(w)
 
 	r := &Report{
