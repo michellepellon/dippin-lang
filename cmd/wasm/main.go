@@ -40,6 +40,9 @@ func jsLint(_ js.Value, args []js.Value) interface{} {
 	valRes := validator.Validate(w)
 	lintRes := validator.Lint(w)
 	all := append(valRes.Diagnostics, lintRes.Diagnostics...)
+	if all == nil {
+		all = []validator.Diagnostic{}
+	}
 	return toJSON(all)
 }
 
