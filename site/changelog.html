@@ -90,6 +90,20 @@
   <div class="doc-body">
     <div class="version-card">
       <div class="version-header">
+        <span class="version-tag">v0.13.2</span>
+        <span class="version-date">2026-03-27</span>
+      </div>
+      <h4>Changed</h4>
+      <ul>
+        <li><strong>Single-source nav</strong>: <code>site/_layout/nav.html</code> is the one source of truth. <code>scripts/sync-nav.sh</code> propagates it to all 16 pages with correct prefixes and active states. Pre-commit hook runs it automatically. No more editing nav in 16 files.</li>
+        <li><code>scripts/gen-changelog-html.sh</code> emits a placeholder nav that <code>sync-nav.sh</code> fills.</li>
+        <li><code>just sync-nav</code> recipe added.</li>
+      </ul>
+      <a class="gh-link" href="https://github.com/2389-research/dippin-lang/releases/tag/v0.13.2">View on GitHub &rarr;</a>
+    </div>
+
+    <div class="version-card">
+      <div class="version-header">
         <span class="version-tag">v0.13.1</span>
         <span class="version-date">2026-03-27</span>
       </div>

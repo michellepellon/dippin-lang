@@ -2,6 +2,13 @@
 
 All notable changes to dippin-lang are documented here. Versions follow [semver](https://semver.org/).
 
+## [v0.13.2] — 2026-03-27
+
+### Changed
+- **Single-source nav**: `site/_layout/nav.html` is the one source of truth. `scripts/sync-nav.sh` propagates it to all 16 pages with correct prefixes and active states. Pre-commit hook runs it automatically. No more editing nav in 16 files.
+- `scripts/gen-changelog-html.sh` emits a placeholder nav that `sync-nav.sh` fills.
+- `just sync-nav` recipe added.
+
 ## [v0.13.1] — 2026-03-27
 
 ### Fixed
