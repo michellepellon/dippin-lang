@@ -2,6 +2,16 @@
 
 All notable changes to dippin-lang are documented here. Versions follow [semver](https://semver.org/).
 
+## [v0.12.0] — 2026-03-27
+
+### Added
+- **Blog section** with 25 planned post cards and topic filtering (Guides, Tutorials, Deep Dives, Reference).
+- **5 blog posts** published: Getting Started, Scenario Testing, Migrating from DOT, CI Integration, Editor Setup. Edited for voice, clarity, and inline links.
+- **Homepage "From the Blog"** section featuring 3 latest posts below the fold.
+- **SEO meta tags** on all 12 site pages: Open Graph, Twitter Cards, descriptions, canonical URLs. Pages render rich previews when shared.
+- **Blog ideas doc** (`docs/blog-ideas.md`) with 25 post synopses, coverage plans, and approach notes.
+- Blog nav link added to all site pages.
+
 ## [v0.11.2] — 2026-03-27
 
 ### Fixed
