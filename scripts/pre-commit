@@ -54,4 +54,11 @@ if git diff --cached --name-only | grep -q '^CHANGELOG.md$'; then
   git add site/changelog.html
 fi
 
+# Sync nav if layout partial or any site HTML changed.
+if git diff --cached --name-only | grep -qE '^site/_layout/|^site/.*\.html$'; then
+  echo "=== pre-commit: sync nav ==="
+  ./scripts/sync-nav.sh
+  git add site/*.html site/blog/*.html 2>/dev/null || true
+fi
+
 echo "=== pre-commit: all checks passed ==="

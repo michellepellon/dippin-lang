@@ -102,6 +102,10 @@ release tag msg:
     git tag -a {{tag}} -m "{{msg}}"
     git push origin {{tag}}
 
+# Sync nav across all site pages from site/_layout/nav.html
+sync-nav:
+    ./scripts/sync-nav.sh
+
 # Regenerate site/changelog.html from CHANGELOG.md
 changelog:
     ./scripts/gen-changelog-html.sh
