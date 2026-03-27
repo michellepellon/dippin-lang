@@ -6,11 +6,11 @@ default:
 
 # Build the dippin binary
 build:
-    go build -o dippin ./cmd/dippin/
+    go build -ldflags "-X main.version=dev -X main.commit=$(git rev-parse --short HEAD) -X main.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o dippin ./cmd/dippin/
 
-# Install dippin globally to $GOBIN
+# Install dippin globally to $GOBIN (injects version info)
 install:
-    go install ./cmd/dippin/
+    go install -ldflags "-X main.version=dev -X main.commit=$(git rev-parse --short HEAD) -X main.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" ./cmd/dippin/
 
 # Run all tests
 test:
