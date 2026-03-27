@@ -2,6 +2,14 @@
 
 All notable changes to dippin-lang are documented here. Versions follow [semver](https://semver.org/).
 
+## [v0.11.1] — 2026-03-27
+
+### Fixed
+- **Playground**: WASM files (`dippin.wasm`, `wasm_exec.js`) now deployed to gh-pages so the playground actually loads.
+- **Playground**: auto-runs lint on WASM load instead of showing a confusing "Ready" message while the Lint button appears active.
+- **Site**: syntax highlighting (`highlight.js`) for all code blocks — Dippin, shell, terminal, and diagnostic output.
+- **Site**: changelog page added at `changelog.html` with full version history.
+
 ## [v0.11.0] — 2026-03-27
 
 ### Added
