@@ -2,6 +2,20 @@
 
 All notable changes to dippin-lang are documented here. Versions follow [semver](https://semver.org/).
 
+## [v0.13.0] — 2026-03-27
+
+### Changed
+- **Two-tier navigation** across all site pages. Top row: Docs, Playground, Blog, GitHub. Bottom row: CLI, Language, Testing, Validation, Analysis, Architecture, Editors, Changelog. Mobile collapses to hamburger with divider-separated groups.
+
+### Fixed
+- Mobile nav menu no longer renders as unstyled text on desktop (missing `display: none`).
+- Blog index only shows the 5 published posts — removed 20 dead links to unwritten articles.
+- Playground content no longer overlaps the nav bar (padding adjusted for two-tier height).
+- Playground now has the floating dots background matching all other pages.
+- Homepage "See all 25 posts" corrected to "All posts".
+- Section spacing tightened (6rem → 4.5rem padding).
+- Tracker team field report response written (`.tracker/field-report-response-2026-03-27.md`).
+
 ## [v0.12.0] — 2026-03-27
 
 ### Added
