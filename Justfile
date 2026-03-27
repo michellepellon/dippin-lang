@@ -102,6 +102,11 @@ release tag msg:
     git tag -a {{tag}} -m "{{msg}}"
     git push origin {{tag}}
 
+# Regenerate site/changelog.html from CHANGELOG.md
+changelog:
+    ./scripts/gen-changelog-html.sh
+    @echo "Generated site/changelog.html"
+
 # Build WASM binary for the browser playground
 wasm:
     GOOS=js GOARCH=wasm go build -o site/dippin.wasm ./cmd/wasm/
