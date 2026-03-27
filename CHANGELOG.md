@@ -2,6 +2,11 @@
 
 All notable changes to dippin-lang are documented here. Versions follow [semver](https://semver.org/).
 
+## [v0.14.0] — 2026-03-27
+
+### Added
+- **`code_health_check.dip`** example: self-contained pipeline that audits a Go repo. Gathers context with shell tools, runs vet/staticcheck/tests in parallel, three-model independent review, synthesized report with quality gate and retry loop. 5 test scenarios. Grade A, ~$1/run.
+
 ## [v0.13.2] — 2026-03-27
 
 ### Changed

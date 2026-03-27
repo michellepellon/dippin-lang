@@ -1,0 +1,56 @@
+{
+  "tests": [
+    {
+      "name": "happy path — report passes quality gate",
+      "scenario": {
+        "outcome": "success"
+      },
+      "expect": {
+        "status": "success",
+        "visited": ["GatherContext", "RunVet", "RunStaticcheck", "RunTests", "Synthesize", "QualityGate", "WriteReport", "Done"],
+        "path_contains": ["GatherContext", "Synthesize", "QualityGate", "WriteReport", "Done"]
+      }
+    },
+    {
+      "name": "quality gate rejects — synthesizer retries",
+      "scenario": {
+        "QualityGate.outcome": "fail"
+      },
+      "expect": {
+        "status": "success",
+        "visited": ["QualityGate", "Synthesize"],
+        "immediately_after": {"QualityGate": "Synthesize"}
+      }
+    },
+    {
+      "name": "all three reviewers run",
+      "scenario": {
+        "outcome": "success"
+      },
+      "expect": {
+        "visited": ["ReviewAnthropic", "ReviewOpenAI", "ReviewGemini"]
+      }
+    },
+    {
+      "name": "all three analysis tools run",
+      "scenario": {
+        "outcome": "success"
+      },
+      "expect": {
+        "visited": ["RunVet", "RunStaticcheck", "RunTests"]
+      }
+    },
+    {
+      "name": "tests fail — pipeline still continues to review",
+      "scenario": {
+        "RunTests.tool_stdout": "fail",
+        "outcome": "success"
+      },
+      "expect": {
+        "status": "success",
+        "visited": ["RunTests", "Synthesize"],
+        "path_contains": ["RunTests", "Synthesize"]
+      }
+    }
+  ]
+}

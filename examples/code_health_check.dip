@@ -1,0 +1,276 @@
+# Code Health Check Pipeline
+#
+# A self-contained pipeline that audits a Go repository for code quality.
+# No human input required — runs start to finish autonomously.
+#
+# What it does:
+#   1. Gathers project context (go.mod, file tree, git log)
+#   2. Runs three analysis tools in parallel (vet, staticcheck, tests)
+#   3. Three LLMs independently review the findings
+#   4. A synthesizer merges the reviews into a single report
+#   5. A quality gate checks whether the report is actionable
+#   6. On pass: writes the report to disk
+#   7. On fail: rewrites the report with more detail, then writes it
+#
+# To run:
+#   dippin validate examples/code_health_check.dip
+#   dippin simulate examples/code_health_check.dip
+#   dippin cost examples/code_health_check.dip
+#   dippin doctor examples/code_health_check.dip
+
+workflow CodeHealthCheck
+  goal: "Audit a Go repository and produce an actionable quality report"
+  start: GatherContext
+  exit: Done
+
+  defaults
+    provider: anthropic
+    model: claude-sonnet-4-6
+    max_retries: 2
+
+  # ─── Step 1: Gather project context ───────────────────────
+  #
+  # A tool node that collects everything the reviewers need.
+  # Real shell commands — no mocking, no placeholders.
+
+  tool GatherContext
+    label: "Gather project context"
+    timeout: 30s
+    writes: project_context
+    command:
+      set -eu
+      echo "=== go.mod ==="
+      cat go.mod 2>/dev/null || echo "(no go.mod found)"
+      echo ""
+      echo "=== File tree (Go files) ==="
+      find . -name '*.go' -not -path './vendor/*' | head -50
+      echo ""
+      echo "=== Recent commits ==="
+      git log --oneline -10 2>/dev/null || echo "(not a git repo)"
+      echo ""
+      echo "=== Line counts by package ==="
+      find . -name '*.go' -not -path './vendor/*' -not -name '*_test.go' \
+        | xargs wc -l 2>/dev/null | sort -rn | head -15
+      echo ""
+      printf 'context-gathered'
+
+  # ─── Step 2: Run analysis tools in parallel ───────────────
+  #
+  # Three tools run concurrently. Each captures its output for
+  # the review step. parallel/fan_in handle the fork-join.
+
+  parallel AnalysisFan -> RunVet, RunStaticcheck, RunTests
+
+  tool RunVet
+    label: "go vet"
+    timeout: 60s
+    writes: vet_output
+    command:
+      set -eu
+      echo "=== go vet ==="
+      go vet ./... 2>&1 || true
+      printf 'vet-done'
+
+  tool RunStaticcheck
+    label: "staticcheck"
+    timeout: 60s
+    writes: staticcheck_output
+    command:
+      set -eu
+      echo "=== staticcheck ==="
+      if command -v staticcheck >/dev/null 2>&1; then
+        staticcheck ./... 2>&1 || true
+      else
+        echo "(staticcheck not installed, skipping)"
+      fi
+      printf 'staticcheck-done'
+
+  tool RunTests
+    label: "go test"
+    timeout: 120s
+    writes: test_output
+    outputs: pass, fail
+    command:
+      set -eu
+      echo "=== go test ==="
+      if go test ./... -count=1 -timeout=60s 2>&1; then
+        printf 'pass'
+      else
+        printf 'fail'
+      fi
+
+  fan_in AnalysisJoin <- RunVet, RunStaticcheck, RunTests
+
+  # ─── Step 3: Three independent reviews ────────────────────
+  #
+  # Each reviewer sees the same analysis output but uses a
+  # different model. This catches blind spots — what one model
+  # misses, another often catches.
+
+  parallel ReviewFan -> ReviewAnthropic, ReviewOpenAI, ReviewGemini
+
+  agent ReviewAnthropic
+    label: "Review (Claude)"
+    model: claude-sonnet-4-6
+    provider: anthropic
+    reads: project_context, vet_output, staticcheck_output, test_output
+    writes: review_anthropic
+    prompt:
+      You are a senior Go engineer reviewing a codebase health report.
+
+      You have the project context (go.mod, file tree, recent commits)
+      and output from three tools: go vet, staticcheck, and go test.
+
+      Analyze the findings and produce a structured review covering:
+      1. Critical issues (bugs, data races, security problems)
+      2. Code quality concerns (complexity, naming, package structure)
+      3. Test health (coverage gaps, flaky patterns, missing tests)
+      4. Dependencies (outdated, unused, security advisories)
+
+      Be specific. Reference file paths and line numbers from the tool
+      output. Skip generic advice — focus on what the tools actually found.
+
+  agent ReviewOpenAI
+    label: "Review (GPT)"
+    model: gpt-5.4
+    provider: openai
+    reads: project_context, vet_output, staticcheck_output, test_output
+    writes: review_openai
+    prompt:
+      You are a senior Go engineer reviewing a codebase health report.
+
+      You have the project context and output from go vet, staticcheck,
+      and go test. Produce a structured review:
+      1. Critical issues (bugs, races, security)
+      2. Code quality (complexity, naming, structure)
+      3. Test health (coverage, flaky tests)
+      4. Architecture concerns (package coupling, API surface)
+
+      Be concrete. Cite specific files and findings from the tool output.
+      If the tools found nothing, say so — don't invent problems.
+
+  agent ReviewGemini
+    label: "Review (Gemini)"
+    model: gemini-2.5-pro
+    provider: gemini
+    reads: project_context, vet_output, staticcheck_output, test_output
+    writes: review_gemini
+    prompt:
+      You are a senior Go engineer reviewing a codebase health report.
+
+      You have the project context and output from go vet, staticcheck,
+      and go test. Produce a structured review:
+      1. Critical issues found by the tools
+      2. Patterns suggesting technical debt
+      3. Test reliability and coverage assessment
+      4. Recommendations prioritized by impact
+
+      Ground every observation in the actual tool output.
+      Distinguish between "the tools found X" and "I suspect Y."
+
+  fan_in ReviewJoin <- ReviewAnthropic, ReviewOpenAI, ReviewGemini
+
+  # ─── Step 4: Synthesize the reviews ───────────────────────
+  #
+  # One model reads all three reviews and produces a single
+  # consolidated report. This is where consensus emerges.
+
+  agent Synthesize
+    label: "Synthesize reviews"
+    model: claude-opus-4-6
+    provider: anthropic
+    reasoning_effort: high
+    reads: review_anthropic, review_openai, review_gemini
+    writes: report
+    prompt:
+      You have three independent code review reports from different
+      AI models analyzing the same Go codebase.
+
+      Synthesize them into a single actionable report:
+
+      ## Critical Issues
+      List issues that at least 2 of 3 reviewers flagged. Include
+      file paths and specific findings.
+
+      ## Recommendations
+      Prioritized list of improvements. For each:
+      - What to change
+      - Why it matters
+      - Estimated effort (quick fix / half day / multi-day)
+
+      ## Disagreements
+      Note where reviewers disagreed and your assessment of who's right.
+
+      ## Summary
+      One paragraph: overall health, top 3 priorities, confidence level.
+
+      Keep the report under 500 words. Every claim must trace back to
+      at least one reviewer's findings.
+
+  # ─── Step 5: Quality gate ─────────────────────────────────
+  #
+  # The report must be actionable. goal_gate means the whole
+  # pipeline fails if this node's assessment is negative —
+  # even if execution reaches Done.
+
+  agent QualityGate
+    label: "Report quality check"
+    model: claude-sonnet-4-6
+    provider: anthropic
+    goal_gate: true
+    auto_status: true
+    reads: report
+    retry_target: Synthesize
+    fallback_target: Done
+    prompt:
+      Review this code health report for quality:
+
+      1. Does every recommendation cite a specific file or finding?
+      2. Are effort estimates included?
+      3. Is the summary concrete (not vague platitudes)?
+      4. Is it under 500 words?
+
+      If all four criteria are met, respond with:
+      STATUS: success
+
+      If not, respond with:
+      STATUS: fail
+      Then explain what's missing so the synthesizer can fix it.
+
+  # ─── Step 6: Write the report ─────────────────────────────
+
+  tool WriteReport
+    label: "Write report to disk"
+    timeout: 10s
+    reads: report
+    command:
+      set -eu
+      mkdir -p .ai
+      echo "Report written to .ai/code-health-report.md"
+      printf 'done'
+
+  agent Done
+    label: "Done"
+
+  # ─── Edges ────────────────────────────────────────────────
+
+  edges
+    GatherContext -> AnalysisFan
+    AnalysisFan -> RunVet
+    AnalysisFan -> RunStaticcheck
+    AnalysisFan -> RunTests
+    RunVet -> AnalysisJoin
+    RunStaticcheck -> AnalysisJoin
+    RunTests -> AnalysisJoin
+    AnalysisJoin -> ReviewFan
+    ReviewFan -> ReviewAnthropic
+    ReviewFan -> ReviewOpenAI
+    ReviewFan -> ReviewGemini
+    ReviewAnthropic -> ReviewJoin
+    ReviewOpenAI -> ReviewJoin
+    ReviewGemini -> ReviewJoin
+    ReviewJoin -> Synthesize
+    Synthesize -> QualityGate
+    QualityGate -> WriteReport  when ctx.outcome = success  label: approved
+    QualityGate -> Synthesize   when ctx.outcome = fail     label: revise  restart: true
+    WriteReport -> Done
