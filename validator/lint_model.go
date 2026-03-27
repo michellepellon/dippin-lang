@@ -84,9 +84,10 @@ var knownModelProviders = map[string]map[string]bool{
 func geminiModels() map[string]bool {
 	return map[string]bool{
 		// Gemini 3.x
-		"gemini-3.1-pro-preview":        true,
-		"gemini-3-flash-preview":        true,
-		"gemini-3.1-flash-lite-preview": true,
+		"gemini-3.1-pro-preview":             true,
+		"gemini-3.1-pro-preview-customtools": true,
+		"gemini-3-flash-preview":             true,
+		"gemini-3.1-flash-lite-preview":      true,
 		// Gemini 3 Pro (shut down 2026-03-09, replaced by 3.1)
 		"gemini-3-pro-preview": true,
 		// Gemini 2.x

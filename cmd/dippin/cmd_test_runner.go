@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/2389-research/dippin-lang/ir"
 	"github.com/2389-research/dippin-lang/testrunner"
 	"github.com/2389-research/dippin-lang/validator"
 )
@@ -14,44 +15,54 @@ func (c *CLI) CmdTest(args []string) ExitCode {
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 	fs.SetOutput(c.Stderr)
 	verbose := fs.Bool("verbose", false, "show execution path for each test")
+	coverage := fs.Bool("coverage", false, "show edge coverage summary")
 
 	if err := fs.Parse(args); err != nil {
 		return ExitUsageError
 	}
 	if fs.NArg() < 1 {
-		fmt.Fprintln(c.Stderr, "usage: dippin test [--verbose] <file.dip>")
+		fmt.Fprintln(c.Stderr, "usage: dippin test [--verbose] [--coverage] <file.dip>")
 		return ExitUsageError
 	}
 
-	return c.runTestFile(fs.Arg(0), *verbose)
+	return c.runTestFile(fs.Arg(0), *verbose, *coverage)
 }
 
 // runTestFile loads the workflow and test suite, runs it, and renders results.
-func (c *CLI) runTestFile(path string, verbose bool) ExitCode {
-	w, err := loadWorkflow(path)
-	if err != nil {
-		c.renderError(err, path)
-		return ExitError
-	}
-
-	valRes := validator.Validate(w)
-	if valRes.HasErrors() {
-		c.renderDiagnostics(valRes.Diagnostics)
-		return ExitError
-	}
-
-	testPath := testrunner.FindTestFile(path)
-	suite, err := testrunner.LoadTestFile(testPath)
-	if err != nil {
-		fmt.Fprintf(c.Stderr, "error: %v\n", err)
-		return ExitError
+func (c *CLI) runTestFile(path string, verbose, coverage bool) ExitCode {
+	w, suite, code := c.loadTestInputs(path)
+	if code != ExitCode(-1) {
+		return code
 	}
 
 	result := testrunner.RunSuite(w, suite)
 	if c.Format == FormatJSON {
 		return c.renderJSON(result)
 	}
-	return c.renderTestText(result, verbose)
+	code = c.renderTestText(result, verbose)
+	if coverage {
+		c.renderEdgeCoverage(w, result)
+	}
+	return code
+}
+
+// loadTestInputs loads and validates the workflow and test suite.
+func (c *CLI) loadTestInputs(path string) (*ir.Workflow, *testrunner.TestSuite, ExitCode) {
+	w, err := loadWorkflow(path)
+	if err != nil {
+		c.renderError(err, path)
+		return nil, nil, ExitError
+	}
+	if valRes := validator.Validate(w); valRes.HasErrors() {
+		c.renderDiagnostics(valRes.Diagnostics)
+		return nil, nil, ExitError
+	}
+	suite, err := testrunner.LoadTestFile(testrunner.FindTestFile(path))
+	if err != nil {
+		fmt.Fprintf(c.Stderr, "error: %v\n", err)
+		return nil, nil, ExitError
+	}
+	return w, suite, ExitCode(-1)
 }
 
 // renderTestText outputs test results in human-readable text format.
@@ -89,4 +100,15 @@ func (c *CLI) testExitCode(result *testrunner.SuiteResult) ExitCode {
 		return ExitError
 	}
 	return ExitOK
+}
+
+// renderEdgeCoverage outputs the edge coverage summary.
+func (c *CLI) renderEdgeCoverage(w *ir.Workflow, sr *testrunner.SuiteResult) {
+	cov := testrunner.ComputeEdgeCoverage(w, sr)
+	fmt.Fprintf(c.Stdout,
+		"\n\u2500\u2500\u2500 Edge Coverage \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n")
+	fmt.Fprintf(c.Stdout, "  %d/%d edges covered (%.1f%%)\n", cov.Covered, cov.Total, cov.Percent)
+	for _, u := range cov.Uncovered {
+		fmt.Fprintf(c.Stdout, "  \u2717 %s\n", u)
+	}
 }

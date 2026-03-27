@@ -88,6 +88,20 @@ func addLintExplanations() {
 }
 
 func buildLintExplanations() map[string]Explanation {
+	m := reachabilityExplanations()
+	for k, v := range contextExplanations() {
+		m[k] = v
+	}
+	for k, v := range configExplanations() {
+		m[k] = v
+	}
+	for k, v := range advancedExplanations() {
+		m[k] = v
+	}
+	return m
+}
+
+func reachabilityExplanations() map[string]Explanation {
 	return map[string]Explanation{
 		DIP101: {
 			Code:    DIP101,
@@ -124,6 +138,11 @@ func buildLintExplanations() map[string]Explanation {
 			Fix:     "Ensure at least one success path connects start to exit.",
 			Example: "Start -> A [failure]\nA -> End  // no success path",
 		},
+	}
+}
+
+func contextExplanations() map[string]Explanation {
+	return map[string]Explanation{
 		DIP106: {
 			Code:    DIP106,
 			Summary: "undefined variable reference in prompt",
@@ -173,6 +192,11 @@ func buildLintExplanations() map[string]Explanation {
 			Fix:     "Add the key to an upstream node's writes, or fix the key name.",
 			Example: "node B { reads [summary] }  // no upstream writes summary",
 		},
+	}
+}
+
+func configExplanations() map[string]Explanation {
+	return map[string]Explanation{
 		DIP113: {
 			Code:    DIP113,
 			Summary: "invalid retry policy name",
@@ -213,7 +237,7 @@ func buildLintExplanations() map[string]Explanation {
 			Summary: "stylesheet ID references unknown node",
 			Trigger: "A stylesheet uses #id targeting a node that does not exist.",
 			Fix:     "Fix the node ID in the stylesheet or add the missing node.",
-			Example: "style #Reviewr { color blue }  // typo in node ID",
+			Example: "style #Rvw { color blue }  // no node named Rvw exists",
 		},
 		DIP119: {
 			Code:    DIP119,
@@ -222,6 +246,11 @@ func buildLintExplanations() map[string]Explanation {
 			Fix:     "Use a valid reasoning_effort: low, medium, or high.",
 			Example: "node A { reasoning_effort extreme }  // invalid value",
 		},
+	}
+}
+
+func advancedExplanations() map[string]Explanation {
+	return map[string]Explanation{
 		DIP120: {
 			Code:    DIP120,
 			Summary: "condition variable missing namespace prefix",
@@ -263,6 +292,13 @@ func buildLintExplanations() map[string]Explanation {
 			Trigger: "The first command in the tool block references a binary not on the current PATH.",
 			Fix:     "Install the missing binary or use a full path. This check is environment-dependent.",
 			Example: "tool T\n  command:\n    npx create-nx-workspace",
+		},
+		DIP126: {
+			Code:    DIP126,
+			Summary: "subgraph ref file does not exist",
+			Trigger: "A subgraph node's ref: path does not resolve to an existing file on disk.",
+			Fix:     "Fix the ref path or create the missing workflow file.",
+			Example: "subgraph Review\n  ref: review_pipeline.dip  // file not found",
 		},
 	}
 }

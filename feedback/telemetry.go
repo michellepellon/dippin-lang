@@ -28,7 +28,7 @@ func ReadTelemetry(path string) ([]TelemetryRecord, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open telemetry: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var records []TelemetryRecord
 	scanner := bufio.NewScanner(f)

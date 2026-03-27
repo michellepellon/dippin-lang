@@ -1,0 +1,59 @@
+//go:build wasm
+
+package main
+
+import (
+	"encoding/json"
+	"syscall/js"
+
+	"github.com/2389-research/dippin-lang/formatter"
+	"github.com/2389-research/dippin-lang/parser"
+	"github.com/2389-research/dippin-lang/validator"
+)
+
+func main() {
+	js.Global().Set("dippinParse", js.FuncOf(jsParse))
+	js.Global().Set("dippinLint", js.FuncOf(jsLint))
+	js.Global().Set("dippinFormat", js.FuncOf(jsFormat))
+
+	// Block forever — WASM modules run as long-lived processes.
+	select {}
+}
+
+func jsParse(_ js.Value, args []js.Value) interface{} {
+	src := args[0].String()
+	p := parser.NewParser(src, "playground.dip")
+	w, err := p.Parse()
+	if err != nil {
+		return toJSON(map[string]string{"error": err.Error()})
+	}
+	return toJSON(w)
+}
+
+func jsLint(_ js.Value, args []js.Value) interface{} {
+	src := args[0].String()
+	p := parser.NewParser(src, "playground.dip")
+	w, err := p.Parse()
+	if err != nil {
+		return toJSON(map[string]string{"error": err.Error()})
+	}
+	valRes := validator.Validate(w)
+	lintRes := validator.Lint(w)
+	all := append(valRes.Diagnostics, lintRes.Diagnostics...)
+	return toJSON(all)
+}
+
+func jsFormat(_ js.Value, args []js.Value) interface{} {
+	src := args[0].String()
+	p := parser.NewParser(src, "playground.dip")
+	w, err := p.Parse()
+	if err != nil {
+		return toJSON(map[string]string{"error": err.Error()})
+	}
+	return formatter.Format(w)
+}
+
+func toJSON(v interface{}) string {
+	b, _ := json.Marshal(v)
+	return string(b)
+}

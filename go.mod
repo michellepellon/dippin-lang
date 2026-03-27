@@ -3,6 +3,7 @@ module github.com/2389-research/dippin-lang
 go 1.25.4
 
 require (
+	github.com/fsnotify/fsnotify v1.9.0
 	go.lsp.dev/jsonrpc2 v0.10.0
 	go.lsp.dev/protocol v0.12.0
 )
@@ -16,5 +17,5 @@ require (
 	go.uber.org/atomic v1.9.0 // indirect
 	go.uber.org/multierr v1.8.0 // indirect
 	go.uber.org/zap v1.21.0 // indirect
-	golang.org/x/sys v0.0.0-20220319134239-a9b59b0215f8 // indirect
+	golang.org/x/sys v0.13.0 // indirect
 )

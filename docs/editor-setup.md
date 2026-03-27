@@ -130,7 +130,13 @@ vim.filetype.add({
 })
 ```
 
-### Basic Syntax Highlighting (Tree-sitter not yet available)
+### Tree-sitter Grammar
+
+A tree-sitter grammar is available in [`editors/tree-sitter-dippin/`](../editors/tree-sitter-dippin/). It includes an external scanner for Dippin's indentation-sensitive syntax and highlight queries for full semantic highlighting in Neovim, Helix, and Zed.
+
+To use with `nvim-treesitter`, register the parser in your config. See the grammar directory for installation instructions.
+
+### Basic Syntax Highlighting (Fallback)
 
 For basic keyword highlighting without tree-sitter, create `~/.config/nvim/syntax/dippin.vim`:
 

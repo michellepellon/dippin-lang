@@ -66,6 +66,7 @@ func (c *CLI) commandDispatch() map[string]func([]string) ExitCode {
 		"unused":             c.CmdUnused,
 		"graph":              c.CmdGraph,
 		"test":               c.CmdTest,
+		"watch":              c.CmdWatch,
 		"lsp":                c.CmdLSP,
 	}
 }
@@ -185,8 +186,9 @@ func printGlobalUsage(w io.Writer) {
 	fmt.Fprintln(w, "  feedback <workflow> <telemetry>    Compare predicted vs actual costs")
 	fmt.Fprintln(w, "  explain <DIPxxx>                   Explain a diagnostic code in detail")
 	fmt.Fprintln(w, "  graph [--compact] <file>           Render ASCII DAG of the workflow")
-	fmt.Fprintln(w, "  test [--verbose] <file>            Run scenario tests from .test.json")
+	fmt.Fprintln(w, "  test [--verbose] [--coverage] <file>")
 	fmt.Fprintln(w, "  unused <file>                     Detect dead-branch nodes and wasted cost")
+	fmt.Fprintln(w, "  watch <file-or-dir> [...]          Watch .dip files and re-lint on change")
 	fmt.Fprintln(w, "  lsp                               Start LSP server on stdio")
 	fmt.Fprintln(w, "  version                           Show version info")
 	fmt.Fprintln(w, "  help                              Show this help")

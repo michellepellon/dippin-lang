@@ -1,0 +1,174 @@
+================================================================================
+Minimal workflow
+================================================================================
+
+workflow Hello
+  start: Begin
+  exit: End
+
+  agent Begin
+    prompt: Hello world
+
+  agent End
+    prompt: Goodbye
+
+  edges
+    Begin -> End
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (workflow_decl
+    (identifier)
+    (workflow_body
+      (workflow_field (field_value (raw_inline)))
+      (workflow_field (field_value (raw_inline)))
+      (node_decl
+        (agent_node
+          (identifier)
+          (node_field (field_name (identifier)) (field_value (raw_inline)))))
+      (node_decl
+        (agent_node
+          (identifier)
+          (node_field (field_name (identifier)) (field_value (raw_inline)))))
+      (edges_section
+        (edge_entry (identifier) (identifier))))))
+
+================================================================================
+Parallel and fan_in
+================================================================================
+
+workflow Parallel
+  start: Start
+  exit: End
+
+  agent Start
+    prompt: go
+
+  parallel Fan -> A, B
+
+  agent A
+    prompt: branch A
+
+  agent B
+    prompt: branch B
+
+  fan_in Join <- A, B
+
+  agent End
+    prompt: done
+
+  edges
+    Start -> Fan
+    Fan -> A
+    Fan -> B
+    A -> Join
+    B -> Join
+    Join -> End
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (workflow_decl
+    (identifier)
+    (workflow_body
+      (workflow_field (field_value (raw_inline)))
+      (workflow_field (field_value (raw_inline)))
+      (node_decl
+        (agent_node
+          (identifier)
+          (node_field (field_name (identifier)) (field_value (raw_inline)))))
+      (node_decl
+        (parallel_node
+          (identifier)
+          (identifier_list (identifier) (identifier))))
+      (node_decl
+        (agent_node
+          (identifier)
+          (node_field (field_name (identifier)) (field_value (raw_inline)))))
+      (node_decl
+        (agent_node
+          (identifier)
+          (node_field (field_name (identifier)) (field_value (raw_inline)))))
+      (node_decl
+        (fan_in_node
+          (identifier)
+          (identifier_list (identifier) (identifier))))
+      (node_decl
+        (agent_node
+          (identifier)
+          (node_field (field_name (identifier)) (field_value (raw_inline)))))
+      (edges_section
+        (edge_entry (identifier) (identifier))
+        (edge_entry (identifier) (identifier))
+        (edge_entry (identifier) (identifier))
+        (edge_entry (identifier) (identifier))
+        (edge_entry (identifier) (identifier))
+        (edge_entry (identifier) (identifier))))))
+
+================================================================================
+Edge with condition
+================================================================================
+
+workflow Cond
+  start: A
+  exit: C
+
+  agent A
+    auto_status: true
+    prompt: check
+
+  agent B
+    prompt: fix
+
+  agent C
+    prompt: done
+
+  edges
+    A -> C  when ctx.outcome = success
+    A -> B  when ctx.outcome = fail
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (workflow_decl
+    (identifier)
+    (workflow_body
+      (workflow_field (field_value (raw_inline)))
+      (workflow_field (field_value (raw_inline)))
+      (node_decl
+        (agent_node
+          (identifier)
+          (node_field (field_name (identifier)) (field_value (raw_inline)))
+          (node_field (field_name (identifier)) (field_value (raw_inline)))))
+      (node_decl
+        (agent_node
+          (identifier)
+          (node_field (field_name (identifier)) (field_value (raw_inline)))))
+      (node_decl
+        (agent_node
+          (identifier)
+          (node_field (field_name (identifier)) (field_value (raw_inline)))))
+      (edges_section
+        (edge_entry
+          (identifier)
+          (identifier)
+          (edge_attr
+            (condition
+              (or_expr
+                (and_expr
+                  (compare_expr
+                    (operand (variable (identifier) (identifier)))
+                    (compare_op)
+                    (operand (identifier))))))))
+        (edge_entry
+          (identifier)
+          (identifier)
+          (edge_attr
+            (condition
+              (or_expr
+                (and_expr
+                  (compare_expr
+                    (operand (variable (identifier) (identifier)))
+                    (compare_op)
+                    (operand (identifier))))))))))))

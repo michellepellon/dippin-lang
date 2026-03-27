@@ -102,7 +102,13 @@ release tag msg:
     git tag -a {{tag}} -m "{{msg}}"
     git push origin {{tag}}
 
+# Build WASM binary for the browser playground
+wasm:
+    GOOS=js GOARCH=wasm go build -o site/dippin.wasm ./cmd/wasm/
+    cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" site/wasm_exec.js
+    @echo "WASM built: site/dippin.wasm"
+
 # Clean build artifacts
 clean:
-    rm -f dippin cover.out cover_filtered.out cover_check.out
+    rm -f dippin cover.out cover_filtered.out cover_check.out site/dippin.wasm site/wasm_exec.js
     @echo "Cleaned."

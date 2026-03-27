@@ -1,5 +1,7 @@
 package testrunner
 
+import "github.com/2389-research/dippin-lang/event"
+
 // TestSuite holds a collection of test cases loaded from a .test.json file.
 type TestSuite struct {
 	Tests []TestCase `json:"tests"`
@@ -32,8 +34,9 @@ type SuiteResult struct {
 
 // CaseResult captures the outcome of a single test case.
 type CaseResult struct {
-	Name   string   `json:"name"`
-	Passed bool     `json:"passed"`
-	Errors []string `json:"errors,omitempty"`
-	Path   []string `json:"path,omitempty"`
+	Name   string        `json:"name"`
+	Passed bool          `json:"passed"`
+	Errors []string      `json:"errors,omitempty"`
+	Path   []string      `json:"path,omitempty"`
+	Events []event.Event `json:"-"`
 }

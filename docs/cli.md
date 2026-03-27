@@ -114,7 +114,7 @@ error[DIP003]: unknown node reference "InterpretX" in edge
 
 ### lint
 
-Run both structural validation and semantic linting (DIP001–DIP009 + DIP101–DIP125).
+Run both structural validation and semantic linting (DIP001–DIP009 + DIP101–DIP126).
 
 ```bash
 dippin lint <file>
@@ -122,7 +122,7 @@ dippin lint <file>
 
 **Input**: `.dip` or `.dot` file
 
-**Checks**: All 34 diagnostic rules. Errors (DIP001–DIP009) cause exit code 1. Warnings (DIP101–DIP125) are reported but don't affect the exit code.
+**Checks**: All 35 diagnostic rules. Errors (DIP001–DIP009) cause exit code 1. Warnings (DIP101–DIP126) are reported but don't affect the exit code.
 
 **Output**: All diagnostics (errors and warnings) to stderr.
 
@@ -584,7 +584,7 @@ $ dippin graph --compact pipeline.dip
 Run scenario tests defined in `.test.json` files against a workflow.
 
 ```bash
-dippin test [--verbose] <file.dip>
+dippin test [--verbose] [--coverage] <file.dip>
 ```
 
 **Flags**:
@@ -592,6 +592,7 @@ dippin test [--verbose] <file.dip>
 | Flag | Description |
 |------|-------------|
 | `--verbose` | Show the execution path for each test case |
+| `--coverage` | Show edge coverage summary after test results |
 
 **Input**: A `.dip` file. The runner auto-discovers the corresponding `.test.json` file (e.g., `pipeline.dip` → `pipeline.test.json`).
 
@@ -608,6 +609,29 @@ $ dippin test pipeline.dip
 ```
 
 **Exit code**: 0 if all tests pass, 1 if any fail. JSON mode outputs the full `SuiteResult`.
+
+---
+
+### watch
+
+Watch `.dip` files for changes and re-run lint on save.
+
+```bash
+dippin watch <file-or-dir> [...]
+```
+
+**Input**: One or more `.dip` files or directories containing `.dip` files.
+
+**Behavior**: Uses `fsnotify` to monitor for writes and creates. Changes are debounced (200ms) to avoid duplicate runs. On each change, the file is parsed, validated, and linted, with results printed to the terminal.
+
+**Example**:
+```bash
+# Watch a directory:
+dippin watch examples/
+
+# Watch specific files:
+dippin watch pipeline.dip review.dip
+```
 
 ---
 

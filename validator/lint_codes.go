@@ -1,6 +1,6 @@
 package validator
 
-// Diagnostic codes for semantic quality warnings (DIP101–DIP125).
+// Diagnostic codes for semantic quality warnings (DIP101–DIP126).
 const (
 	DIP101 = "DIP101" // unreachable nodes after conditional branches
 	DIP102 = "DIP102" // routing node without default/unconditional edge
@@ -27,6 +27,7 @@ const (
 	DIP123 = "DIP123" // tool command has shell syntax errors
 	DIP124 = "DIP124" // tool command references runtime-only ${ctx.*} variable
 	DIP125 = "DIP125" // tool command binary not found on PATH
+	DIP126 = "DIP126" // subgraph ref file does not exist
 )
 
 func init() {
@@ -56,4 +57,5 @@ func init() {
 	CodeDescription[DIP123] = "tool command has shell syntax errors"
 	CodeDescription[DIP124] = "tool command references runtime-only ${ctx.*} variable"
 	CodeDescription[DIP125] = "tool command binary not found on PATH"
+	CodeDescription[DIP126] = "subgraph ref file does not exist"
 }

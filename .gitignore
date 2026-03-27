@@ -11,6 +11,10 @@ ask_*.txt
 ask_*.json
 paths.jsonl
 
+# WASM build output
+site/dippin.wasm
+site/wasm_exec.js
+
 # Tracker build artifacts
 .tracker/
 .ai/

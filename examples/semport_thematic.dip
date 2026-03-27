@@ -61,7 +61,7 @@ workflow SemportThematic
 
   agent PlanGemini
     label: "Plan Themes (Gemini 3.1 Pro)"
-    model: gemini-3.1-pro-preview
+    model: gemini-3.1-pro-preview-customtools
     provider: gemini
     reasoning_effort: high
     auto_status: true
@@ -121,7 +121,7 @@ workflow SemportThematic
 
   agent ValidateGemini
     label: "Validate (Gemini 3.1 Pro)"
-    model: gemini-3.1-pro-preview
+    model: gemini-3.1-pro-preview-customtools
     provider: gemini
     reasoning_effort: high
     auto_status: true

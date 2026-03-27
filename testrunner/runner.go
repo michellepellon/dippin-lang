@@ -43,6 +43,7 @@ func RunCase(w *ir.Workflow, tc TestCase) CaseResult {
 	}
 
 	cr.Path = result.Path
+	cr.Events = result.Events
 	cr.Errors = checkExpectations(result, tc.Expect)
 	cr.Passed = len(cr.Errors) == 0
 	return cr

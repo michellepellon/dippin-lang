@@ -2,6 +2,35 @@
 
 All notable changes to dippin-lang are documented here. Versions follow [semver](https://semver.org/).
 
+## [v0.11.0] — 2026-03-27
+
+### Added
+- **DIP126** lint rule: subgraph `ref:` file validation — warns when referenced workflow file does not exist on disk.
+- **`dippin watch`** command: file watcher that re-runs lint on `.dip` changes with 200ms debounce. Uses `fsnotify`.
+- **`dippin test --coverage`** flag: edge coverage summary showing which workflow edges were/weren't traversed by test scenarios.
+- **Tree-sitter grammar** scaffolding in `editors/tree-sitter-dippin/` — grammar.js, external scanner for indentation, highlight queries, and test corpus. Enables proper syntax highlighting in Neovim, Helix, and Zed.
+- **WASM playground** at `site/playground.html` — browser-based editor with live parse, lint, and format via WebAssembly. Build with `just wasm`.
+- `gemini-3.1-pro-preview-customtools` added to model catalog and pricing tables.
+- 35 diagnostic codes total (was 34).
+
+### Fixed
+- **CI failures**: golangci-lint `errcheck` on `f.Close()`, `funlen` on `buildLintExplanations` (split into 4 functions), misspell false positive in DIP118 example.
+- **Migration parity**: `consensus_task_parity.dip` and `semport_thematic.dip` model names now match DOT originals (`gemini-3.1-pro-preview-customtools`).
+
+### Changed
+- `validator/lint_tool_cmd.go` split with `//go:build !wasm` / `wasm` tags — `bash -n` syntax check and `exec.LookPath` binary check are no-ops in WASM.
+- `validator/lint_subgraph.go` similarly gated for WASM (no `os.Stat`).
+- Site mobile CSS improvements: table overflow handling, code word-break, install-cmd sizing.
+- Site nav updated with Playground link across all pages.
+
+### Documentation
+- All references updated from 34→35 codes, DIP101–DIP125→DIP101–DIP126 across README, CLAUDE.md, docs/, and site/.
+- `docs/validation.md` — full entry for DIP126.
+- `docs/cli.md` — `watch` command section, `test --coverage` flag.
+- `docs/editor-setup.md` — tree-sitter grammar availability.
+- `dippin explain DIP126` — explanation with trigger and fix guidance.
+- `mode: labeled` documented as not supported in `docs/nodes.md`.
+
 ## [v0.10.0] — 2026-03-26
 
 ### Added

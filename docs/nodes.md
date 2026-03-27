@@ -161,7 +161,7 @@ Human nodes pause execution and wait for human input. They support two interacti
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `mode` | String | — | Interaction mode. `"choice"` presents predefined options (defined by edge labels). `"freeform"` presents an open text input. |
+| `mode` | String | — | Interaction mode. `"choice"` presents predefined options (defined by edge labels). `"freeform"` presents an open text input. Note: only `choice` and `freeform` are supported. Use `preferred_label` on edges for human gate routing. |
 | `default` | String | — | Default selection if no input is provided within the timeout period. Only meaningful for `"choice"` mode. |
 
 ### Choice Mode

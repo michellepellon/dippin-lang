@@ -1,9 +1,9 @@
 # Validation and Linting Reference
 
-Dippin provides 34 diagnostic checks split into two categories:
+Dippin provides 35 diagnostic checks split into two categories:
 
 - **Structural validation** (DIP001–DIP009): Errors that **must** be fixed. A workflow with any of these cannot execute.
-- **Semantic linting** (DIP101–DIP125): Warnings that flag likely bugs or questionable patterns. They don't block execution but should be reviewed.
+- **Semantic linting** (DIP101–DIP126): Warnings that flag likely bugs or questionable patterns. They don't block execution but should be reviewed.
 
 Run `dippin validate <file>` for structural checks only, or `dippin lint <file>` for both.
 
@@ -12,7 +12,7 @@ graph LR
     SRC[".dip file"] --> PARSE["Parser"]
     PARSE --> IR["IR"]
     IR --> VAL["Structural Validation<br>DIP001–DIP009<br>(errors)"]
-    IR --> LINT["Semantic Linting<br>DIP101–DIP125<br>(warnings)"]
+    IR --> LINT["Semantic Linting<br>DIP101–DIP126<br>(warnings)"]
     VAL --> DIAG["Diagnostics"]
     LINT --> DIAG
 ```
@@ -224,7 +224,7 @@ error[DIP009]: duplicate edge
 
 ---
 
-## Semantic Lint Warnings (DIP101–DIP125)
+## Semantic Lint Warnings (DIP101–DIP126)
 
 ### DIP101: Node Only Reachable via Conditional Edges
 
@@ -712,6 +712,26 @@ hint[DIP125]: tool command binary "npx" not found on PATH
 
 ---
 
+### DIP126: Subgraph Ref File Not Found
+
+**Severity**: Warning
+
+A subgraph node references a file that does not exist at the declared path.
+
+```
+warning[DIP126]: subgraph node "Review" references "review_pipeline.dip" which does not exist
+  --> pipeline.dip:28:5
+  = help: resolved path: /home/user/project/review_pipeline.dip
+```
+
+**What triggers it**: A `subgraph` node declares `ref: path/to/workflow.dip` but the file cannot be found on disk. The path is resolved relative to the workflow source file's directory.
+
+**How to fix**: Verify the file path is correct, or create the missing workflow file. Absolute paths are also supported.
+
+**Note**: This check is skipped when source file context is unavailable (e.g., hand-constructed IR in tests) and in WASM environments where filesystem access is not available.
+
+---
+
 ## Running Validation
 
 ### Structural validation only
@@ -728,7 +748,7 @@ Runs DIP001–DIP009. Exit code 0 if all pass, 1 if any errors.
 dippin lint pipeline.dip
 ```
 
-Runs all DIP001–DIP009 errors and DIP101–DIP125 warnings. Exit code 1 only for errors; warnings alone exit 0.
+Runs all DIP001–DIP009 errors and DIP101–DIP126 warnings. Exit code 1 only for errors; warnings alone exit 0.
 
 ### JSON output for CI
 

@@ -30,7 +30,7 @@ graph LR
 | Shell scripts | `tool_command="#!/bin/sh\nset -eu\nif..."` | Real multiline, real syntax |
 | Model config | Untyped `llm_model="..."` attribute | Typed `model:` field with validation |
 | Branching | `condition="context.x!=y && context.a==b"` | `when ctx.x != "y" and ctx.a == "b"` |
-| Validation | Silent — typos in attrs are ignored | 34 diagnostic codes (DIP001–DIP009, DIP101–DIP125) |
+| Validation | Silent — typos in attrs are ignored | 35 diagnostic codes (DIP001–DIP009, DIP101–DIP126) |
 | Node types | Shape overloading (`box`=agent, `hexagon`=human) | Explicit `agent`, `tool`, `human` keywords |
 | Composition | No import/include system | `subgraph` with ref (v2) |
 
@@ -119,7 +119,7 @@ dippin lint pipeline.dip
 |---------|-------------|
 | `dippin parse <file>` | Parse and output IR as JSON |
 | `dippin validate <file>` | Structural validation (DIP001–DIP009) |
-| `dippin lint <file>` | Validation + semantic warnings (DIP101–DIP125) |
+| `dippin lint <file>` | Validation + semantic warnings (DIP101–DIP126) |
 | `dippin check [--format json\|text] <file>` | Parse+validate+lint in one shot (JSON default, for LLM tooling) |
 | `dippin fmt [--check] [--write] <file>` | Format to canonical style |
 | `dippin new [--name N] [--write F] <template>` | Generate a starter .dip from a template |
@@ -141,12 +141,13 @@ dippin lint pipeline.dip
 | `dippin explain <DIPxxx>` | Explain a diagnostic code in detail |
 | `dippin unused <file>` | Detect dead-branch nodes and wasted cost |
 | `dippin graph [--compact] <file>` | Render ASCII DAG of the workflow |
-| `dippin test [--verbose] <file>` | Run scenario tests from .test.json |
+| `dippin test [--verbose] [--coverage] <file>` | Run scenario tests from .test.json |
 
 ### Editor & Tooling
 
 | Command | Description |
 |---------|-------------|
+| `dippin watch <file-or-dir> [...]` | Watch .dip files and re-lint on changes |
 | `dippin lsp` | Start Language Server Protocol server (stdio) |
 | `dippin version` | Show version info |
 | `dippin help` | Show usage |
@@ -352,7 +353,7 @@ error[DIP003]: unknown node reference "InterpretX" in edge
 | DIP008 | Duplicate node ID |
 | DIP009 | Duplicate edge |
 
-### Warnings (DIP101–DIP125)
+### Warnings (DIP101–DIP126)
 
 | Code | What it catches |
 |------|----------------|
@@ -381,6 +382,7 @@ error[DIP003]: unknown node reference "InterpretX" in edge
 | DIP123 | Tool command has shell syntax errors (`bash -n`) |
 | DIP124 | Tool command references runtime-only `${ctx.*}` variable |
 | DIP125 | Tool command binary not found on PATH |
+| DIP126 | Subgraph ref file does not exist |
 
 ## Simulation
 
@@ -466,7 +468,7 @@ graph LR
     Parser --> IR["IR (Workflow)"]
     Migrator --> IR
     IR --> Validator["Validator<br>(DIP001–009)"]
-    IR --> Linter["Linter<br>(DIP101–125)"]
+    IR --> Linter["Linter<br>(DIP101–126)"]
     IR --> Formatter["Formatter<br>(canonical .dip)"]
     IR --> DOT["DOT Exporter<br>(visualization)"]
     IR --> Sim["Simulator<br>(dry-run)"]
@@ -483,7 +485,7 @@ Everything flows through `ir.Workflow` — the canonical intermediate representa
 |---------|-------------|
 | `ir/` | Core types: `Workflow`, `Node`, `Edge`, `Condition` AST, typed `NodeConfig` sealed interface |
 | `parser/` | Indentation-aware lexer + recursive-descent parser producing IR |
-| `validator/` | 9 structural checks + 22 semantic lint rules |
+| `validator/` | 9 structural checks + 26 semantic lint rules |
 | `formatter/` | Canonical pretty-printer (idempotent: `format(format(x)) == format(x)`) |
 | `export/` | DOT export with shape mapping, condition serialization, restart edge styling |
 | `migrate/` | DOT→IR→Dippin converter with namespace prefixing and structural parity checker |
@@ -502,7 +504,9 @@ Everything flows through `ir.Workflow` — the canonical intermediate representa
 | `scaffold/` | Template generation for `dippin new` |
 | `cmd/dippin/` | CLI wiring |
 
-Zero external dependencies for core packages. The LSP server uses `go.lsp.dev` libraries.
+| `cmd/wasm/` | WebAssembly entry point for the browser playground |
+
+Zero external dependencies for core packages. The LSP server uses `go.lsp.dev` libraries. The `watch` command uses `fsnotify`.
 
 See [`docs/architecture.md`](docs/architecture.md) for the full architecture guide.
 

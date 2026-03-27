@@ -1,0 +1,29 @@
+{
+  "name": "tree-sitter-dippin",
+  "version": "0.1.0",
+  "description": "Tree-sitter grammar for the Dippin workflow language",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/2389-research/dippin-lang"
+  },
+  "license": "MIT",
+  "main": "bindings/node",
+  "keywords": [
+    "tree-sitter",
+    "dippin",
+    "parser"
+  ],
+  "dependencies": {
+    "nan": "^2.17.0"
+  },
+  "devDependencies": {
+    "tree-sitter-cli": "^0.24.0"
+  },
+  "tree-sitter": [
+    {
+      "scope": "source.dippin",
+      "file-types": ["dip"],
+      "highlights": "queries/highlights.scm"
+    }
+  ]
+}
