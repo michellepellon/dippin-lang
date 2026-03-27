@@ -2,6 +2,11 @@
 
 All notable changes to dippin-lang are documented here. Versions follow [semver](https://semver.org/).
 
+## [v0.13.1] — 2026-03-27
+
+### Fixed
+- `just install` and `just build` now inject commit hash and build timestamp via ldflags. `dippin version` shows `dev (commit: abc1234, built: 2026-03-27T18:45:10Z)` instead of `dev (commit: none, built: unknown)`.
+
 ## [v0.13.0] — 2026-03-27
 
 ### Changed
