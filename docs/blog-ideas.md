@@ -2,9 +2,42 @@
 
 25 planned posts covering every discrete feature of the Dippin toolchain. Each post should be self-contained, practical, and include runnable examples.
 
+## Status
+
+### Published (5)
+- [x] 1. Getting Started with Dippin — `site/blog/getting-started.html`
+- [x] 2. Scenario Testing with .test.json — `site/blog/scenario-testing.html`
+- [x] 3. Migrating from DOT to Dippin — `site/blog/migrating-from-dot.html`
+- [x] 4. CI Integration: Lint, Test, Format — `site/blog/ci-integration.html`
+- [x] 5. Editor Setup: LSP, VS Code, Tree-sitter — `site/blog/editor-setup.html`
+
+### Remaining (20)
+- [ ] 6. Conditional Edges: Routing with `when`
+- [ ] 7. Parallel Execution: Fan-Out and Fan-In
+- [ ] 8. Human Gates: Choice vs Freeform
+- [ ] 9. Goal Gates: Pipeline-Critical Quality Checks
+- [ ] 10. Retry Policies and Fallback Targets
+- [ ] 11. Edge Coverage: Are Your Tests Complete?
+- [ ] 12. Cost Estimation: Know Before You Run
+- [ ] 13. The Doctor Will See You Now: Health Reports
+- [ ] 14. Dead Branch Detection with `dippin unused`
+- [ ] 15. `dippin watch`: Live Feedback While You Author
+- [ ] 16. ASCII DAGs with `dippin graph`
+- [ ] 17. Multi-line Prompts Without Escaping
+- [ ] 18. Shell Scripts in Tool Nodes
+- [ ] 19. Context Variables and Data Flow
+- [ ] 20. Subgraph Composition
+- [ ] 21. Semantic Diff: Comparing Workflow Versions
+- [ ] 22. The WASM Playground: Dippin in Your Browser
+- [ ] 23. The Formatter: Canonical Style and Idempotency
+- [ ] 24. The 35 Diagnostics: What They Catch and Why
+- [ ] 25. Model Catalog: Supported Providers and Pricing
+
 ---
 
-## Guides
+## Detailed Outlines
+
+### Guides
 
 ### 1. Getting Started with Dippin
 **Synopsis**: Zero-to-running in 5 minutes. The reader leaves with a working installation and a validated workflow.
