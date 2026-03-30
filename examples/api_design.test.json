@@ -1,0 +1,101 @@
+{
+  "tests": [
+    {
+      "name": "happy path — assessor approves, quality gate passes",
+      "scenario": {"outcome": "success"},
+      "expect": {
+        "status": "success",
+        "visited": [
+          "Start", "DescribeProduct", "Interviewer", "AnswerQuestions", "Assessor",
+          "ScanContext", "ExtractRequirements",
+          "DesignClaude", "DesignGPT", "DesignGemini",
+          "Critique", "Synthesize", "QualityGate", "WriteSpec", "Done"
+        ],
+        "path_contains": [
+          "Start", "DescribeProduct", "Interviewer", "AnswerQuestions", "Assessor",
+          "ScanContext", "ExtractRequirements",
+          "Critique", "Synthesize", "QualityGate", "WriteSpec", "Done"
+        ]
+      }
+    },
+    {
+      "name": "interview loop — assessor rejects, loops back to interviewer",
+      "scenario": {"Assessor.outcome": "fail"},
+      "expect": {
+        "visited": ["Assessor", "Interviewer"],
+        "immediately_after": {"Assessor": "Interviewer"}
+      }
+    },
+    {
+      "name": "interview loop then proceed — assessor fails then succeeds",
+      "scenario": {"outcome": "success"},
+      "expect": {
+        "visited": ["Interviewer", "AnswerQuestions", "Assessor", "ScanContext"],
+        "path_contains": ["Interviewer", "AnswerQuestions", "Assessor", "ScanContext"]
+      }
+    },
+    {
+      "name": "all three designers run in parallel",
+      "scenario": {"outcome": "success"},
+      "expect": {
+        "visited": ["DesignClaude", "DesignGPT", "DesignGemini"],
+        "path_contains": ["DesignFan", "DesignClaude", "DesignGPT", "DesignGemini", "DesignJoin"]
+      }
+    },
+    {
+      "name": "quality gate rejects — synthesizer retries",
+      "scenario": {"QualityGate.outcome": "fail"},
+      "expect": {
+        "visited": ["QualityGate", "Synthesize"],
+        "immediately_after": {"QualityGate": "Synthesize"}
+      }
+    },
+    {
+      "name": "quality gate passes — writes spec to disk",
+      "scenario": {"outcome": "success"},
+      "expect": {
+        "visited": ["QualityGate", "WriteSpec", "Done"],
+        "path_contains": ["QualityGate", "WriteSpec", "Done"]
+      }
+    },
+    {
+      "name": "full pipeline order preserved",
+      "scenario": {"outcome": "success"},
+      "expect": {
+        "path_contains": [
+          "Start", "DescribeProduct",
+          "Interviewer", "AnswerQuestions", "Assessor",
+          "ScanContext", "ExtractRequirements",
+          "DesignFan",
+          "DesignClaude", "DesignGPT", "DesignGemini",
+          "DesignJoin",
+          "Critique", "Synthesize", "QualityGate",
+          "WriteSpec", "Done"
+        ]
+      }
+    },
+    {
+      "name": "critique follows design join — not skipped",
+      "scenario": {"outcome": "success"},
+      "expect": {
+        "visited": ["DesignJoin", "Critique", "Synthesize"],
+        "path_contains": ["DesignJoin", "Critique", "Synthesize"]
+      }
+    },
+    {
+      "name": "scan context runs before extract requirements",
+      "scenario": {"outcome": "success"},
+      "expect": {
+        "path_contains": ["Assessor", "ScanContext", "ExtractRequirements", "DesignFan"]
+      }
+    },
+    {
+      "name": "write spec is the only exit path",
+      "scenario": {"outcome": "success"},
+      "expect": {
+        "path_contains": ["WriteSpec", "Done"],
+        "not_visited": []
+      }
+    }
+  ]
+}

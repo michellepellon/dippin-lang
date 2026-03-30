@@ -1,44 +1,11 @@
-# API Design Pipeline
-#
-# Takes a product idea from the user and produces a complete API design
-# package: OpenAPI spec, SDK usage examples, error catalog, and an
-# architecture decision record explaining key trade-offs.
-#
-# Pipeline:
-#   1. User describes the product / domain
-#   2. Interviewer asks clarifying questions (loops until sufficient)
-#   3. Analyst extracts structured API requirements
-#   4. Three models independently design the API (parallel)
-#   5. Critic compares designs for consistency, REST hygiene, edge cases
-#   6. Architect synthesizes the best design into a final spec
-#   7. Quality gate validates completeness and correctness
-#   8. Tool node writes the artifact bundle to disk
-#
-# Features exercised:
-#   - Human input (freeform) with interview loop
-#   - Conditional looping (ask questions until requirements are clear)
-#   - Tool nodes (existing codebase scan, artifact writing)
-#   - Parallel fan-out / fan-in (three independent designers)
-#   - Multi-provider diversity (Anthropic, OpenAI, Gemini)
-#   - Data flow via reads/writes
-#   - Quality gate with retry loop and fallback
-#   - Goal gate semantics
-#   - Defaults block
-#
-# To run:
-#   dippin validate examples/api_design.dip
-#   dippin simulate examples/api_design.dip
-#   dippin cost examples/api_design.dip
-#   dippin doctor examples/api_design.dip
-
 workflow APIDesign
   goal: "Produce a complete API design package — OpenAPI spec, SDK examples, error catalog, and ADR — from a product description."
   start: Start
   exit: Done
 
   defaults
-    provider: anthropic
     model: claude-sonnet-4-6
+    provider: anthropic
     max_retries: 2
     fidelity: summary:high
 
@@ -47,13 +14,6 @@ workflow APIDesign
 
   agent Done
     label: Done
-
-  # ─── Step 1: Describe and interview loop ────────────────────
-  #
-  # The user gives an initial description, then an interviewer
-  # identifies gaps and asks targeted follow-up questions. The
-  # loop repeats until the assessor decides we have enough to
-  # proceed — or after 3 rounds, we move on with what we have.
 
   human DescribeProduct
     label: "Describe the product and what the API needs to do."
@@ -118,11 +78,6 @@ workflow APIDesign
       Then explain what's still missing so the interviewer can ask
       targeted follow-ups in the next round.
 
-  # ─── Step 2: Scan for existing code context ────────────────
-  #
-  # If there's already a codebase, grab structure hints so the
-  # API design can align with existing conventions.
-
   tool ScanContext
     label: "Scan existing project context"
     timeout: 30s
@@ -155,8 +110,6 @@ workflow APIDesign
         echo "(no recognized project manifest)"
       fi
       printf 'context-scanned'
-
-  # ─── Step 3: Extract structured requirements ───────────────
 
   agent ExtractRequirements
     label: "Extract API requirements"
@@ -196,11 +149,6 @@ workflow APIDesign
 
       Be concrete. If the user's description is vague on a point,
       make a reasonable choice and state your assumption explicitly.
-
-  # ─── Step 4: Three models design independently ─────────────
-  #
-  # Each model brings different strengths: Claude for precision,
-  # GPT for breadth, Gemini for pragmatism.
 
   parallel DesignFan -> DesignClaude, DesignGPT, DesignGemini
 
@@ -291,8 +239,6 @@ workflow APIDesign
 
   fan_in DesignJoin <- DesignClaude, DesignGPT, DesignGemini
 
-  # ─── Step 5: Comparative critique ──────────────────────────
-
   agent Critique
     label: "Compare API designs"
     model: claude-opus-4-6
@@ -334,8 +280,6 @@ workflow APIDesign
       ## Conflicts
       Where the designs disagree (e.g., nesting vs. flat, cursor vs.
       offset pagination), state which approach is better and why.
-
-  # ─── Step 6: Synthesize final design ───────────────────────
 
   agent Synthesize
     label: "Synthesize final API spec"
@@ -381,17 +325,15 @@ workflow APIDesign
       The document should be self-contained — a developer should be able
       to implement the API from this document alone without asking questions.
 
-  # ─── Step 7: Quality gate ──────────────────────────────────
-
   agent QualityGate
     label: "Spec completeness check"
     model: claude-sonnet-4-6
     provider: anthropic
     goal_gate: true
-    reads: api_requirements, final_spec
-    retry_target: Synthesize
     max_retries: 2
+    retry_target: Synthesize
     fallback_target: WriteSpec
+    reads: api_requirements, final_spec
     prompt:
       Validate the final API spec against the requirements and design standards:
 
@@ -412,8 +354,6 @@ workflow APIDesign
       STATUS: fail
       List exactly which criteria failed and what is missing or wrong.
 
-  # ─── Step 8: Write the artifact bundle ─────────────────────
-
   tool WriteSpec
     label: "Write API spec to disk"
     timeout: 10s
@@ -425,15 +365,13 @@ workflow APIDesign
       echo "  - spec.md (full design document)"
       printf 'done'
 
-  # ─── Edges ─────────────────────────────────────────────────
-
   edges
     Start -> DescribeProduct
     DescribeProduct -> Interviewer
     Interviewer -> AnswerQuestions
     AnswerQuestions -> Assessor
-    Assessor -> ScanContext           when ctx.outcome = success  label: ready
-    Assessor -> Interviewer           when ctx.outcome = fail     label: need_more  restart: true
+    Assessor -> ScanContext  when ctx.outcome = success  label: ready
+    Assessor -> Interviewer  when ctx.outcome = fail  label: need_more  restart: true
     ScanContext -> ExtractRequirements
     ExtractRequirements -> DesignFan
     DesignFan -> DesignClaude
