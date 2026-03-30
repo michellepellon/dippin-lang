@@ -95,9 +95,15 @@ func parseGlobalFlags(args []string, stdout, stderr io.Writer) (*CLI, []string, 
 	globalFlags := flag.NewFlagSet("dippin", flag.ContinueOnError)
 	globalFlags.SetOutput(stderr)
 	formatStr := globalFlags.String("format", "text", "output format (text|json)")
+	showVersion := globalFlags.Bool("version", false, "show version info")
 
 	if err := globalFlags.Parse(args); err != nil {
 		return nil, nil, ExitUsageError
+	}
+
+	if *showVersion {
+		fmt.Fprintf(stdout, "dippin %s (commit: %s, built: %s)\n", version, commit, date)
+		return nil, nil, ExitOK
 	}
 
 	f, ok := resolveFormat(*formatStr)

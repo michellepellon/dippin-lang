@@ -685,6 +685,18 @@ func TestCmdHelp(t *testing.T) {
 
 // --- Global Flag Tests ---
 
+func TestGlobalFlag_Version(t *testing.T) {
+	for _, flag := range []string{"--version", "-version"} {
+		stdout, _, code := runCLI(t, flag)
+		if code != ExitOK {
+			t.Fatalf("%s: expected exit 0, got %d", flag, code)
+		}
+		if !strings.Contains(stdout, "dippin") {
+			t.Errorf("%s: expected 'dippin' in output, got: %s", flag, stdout)
+		}
+	}
+}
+
 func TestGlobalFlag_FormatJSON_Validate(t *testing.T) {
 	// Verify that --format json works for validate command on a valid file.
 	stdout, stderr, code := runCLI(t, "--format", "json", "validate", testdata("valid_minimal.dip"))
