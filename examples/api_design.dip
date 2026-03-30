@@ -19,68 +19,13 @@ workflow APIDesign
     label: "Describe the product and what the API needs to do."
     mode: freeform
 
-  agent Interviewer
-    label: "Ask clarifying questions"
-    model: claude-opus-4-6
-    provider: anthropic
-    reasoning_effort: high
-    writes: interview_questions
-    prompt:
-      You are an API design consultant conducting a requirements interview.
-      The user has described their product. Review everything said so far
-      and identify gaps that would block a good API design.
-
-      Focus on questions that change the shape of the API:
-      - Who are the API consumers? (internal services, third-party devs, mobile app)
-      - What are the core resources and their relationships?
-      - What operations go beyond basic CRUD? (search, bulk, export, webhooks)
-      - What are the auth requirements? (public, API key, OAuth, per-tenant)
-      - Are there real-time needs? (websockets, SSE, polling)
-      - What scale constraints matter? (request size limits, rate limits, SLAs)
-      - Any existing systems this must integrate with?
-
-      Ask 3-5 pointed questions. Do NOT ask generic questions — only ask
-      about things that are genuinely unclear from what the user has said.
-      If the user already covered something, don't re-ask.
-
-      If the description is already thorough enough to design an API,
-      say "No further questions needed" and summarize the key facts.
-
-  human AnswerQuestions
-    label: "Answer the interviewer's questions."
-    mode: interview
-    questions_key: interview_questions
-    answers_key: interview_answers
-    reads: interview_questions
-    writes: interview_answers
-
-  agent Assessor
-    label: "Enough info to proceed?"
-    model: claude-sonnet-4-6
-    provider: anthropic
-    auto_status: true
-    reads: interview_questions, interview_answers
+  subgraph Interview
+    label: "Requirements interview"
+    ref: interview_loop.dip
     writes: requirements_summary
-    prompt:
-      Review the full conversation so far — the user's initial description,
-      the interviewer's questions, and the user's answers.
-
-      Decide whether we have enough information to design a solid API.
-      We need clarity on at least:
-      - The core resources (what nouns the API manages)
-      - The key operations (what verbs beyond CRUD)
-      - The consumers (who calls this API)
-      - Auth model (at least a rough direction)
-
-      If we have enough:
-      STATUS: success
-      Then write a concise requirements summary capturing everything
-      learned from the interview.
-
-      If critical gaps remain:
-      STATUS: fail
-      Then explain what's still missing so the interviewer can ask
-      targeted follow-ups in the next round.
+    params:
+      topic: "API design"
+      focus: "resources, auth, consumers, scale, integrations, real-time needs"
 
   tool ScanContext
     label: "Scan existing project context"
@@ -371,11 +316,8 @@ workflow APIDesign
 
   edges
     Start -> DescribeProduct
-    DescribeProduct -> Interviewer
-    Interviewer -> AnswerQuestions
-    AnswerQuestions -> Assessor
-    Assessor -> ScanContext  when ctx.outcome = success  label: ready
-    Assessor -> Interviewer  when ctx.outcome = fail  label: need_more  restart: true
+    DescribeProduct -> Interview
+    Interview -> ScanContext
     ScanContext -> ExtractRequirements
     ExtractRequirements -> DesignFan
     DesignFan -> DesignClaude
