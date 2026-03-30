@@ -1015,3 +1015,46 @@ func readTestdata(t *testing.T, name string) string {
 	}
 	return string(data)
 }
+
+func parseFixture(t *testing.T, name string) *ir.Workflow {
+	t.Helper()
+	src := readTestdata(t, name)
+	p := NewParser(src, name)
+	w, err := p.Parse()
+	if err != nil {
+		t.Fatalf("parse %s: %v", name, err)
+	}
+	return w
+}
+
+func findNode(t *testing.T, w *ir.Workflow, id string) *ir.Node {
+	t.Helper()
+	for _, n := range w.Nodes {
+		if n.ID == id {
+			return n
+		}
+	}
+	t.Fatalf("node %q not found", id)
+	return nil
+}
+
+func TestParseHumanInterview(t *testing.T) {
+	w := parseFixture(t, "human_interview.dip")
+	gate := findNode(t, w, "Gate")
+	cfg, ok := gate.Config.(ir.HumanConfig)
+	if !ok {
+		t.Fatal("Gate is not HumanConfig")
+	}
+	if cfg.Mode != "interview" {
+		t.Errorf("Mode = %q, want interview", cfg.Mode)
+	}
+	if cfg.QuestionsKey != "interview_questions" {
+		t.Errorf("QuestionsKey = %q, want interview_questions", cfg.QuestionsKey)
+	}
+	if cfg.AnswersKey != "interview_answers" {
+		t.Errorf("AnswersKey = %q, want interview_answers", cfg.AnswersKey)
+	}
+	if cfg.Prompt == "" {
+		t.Error("expected non-empty prompt")
+	}
+}
