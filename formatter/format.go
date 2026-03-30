@@ -361,6 +361,12 @@ func writeHumanFields(wr *writer, n *ir.Node, cfg ir.HumanConfig) {
 	if cfg.Default != "" {
 		wr.line("default: %s", quoteValue(cfg.Default))
 	}
+	if cfg.QuestionsKey != "" {
+		wr.line("questions_key: %s", quoteValue(cfg.QuestionsKey))
+	}
+	if cfg.AnswersKey != "" {
+		wr.line("answers_key: %s", quoteValue(cfg.AnswersKey))
+	}
 	writeIOFields(wr, n)
 	if cfg.Prompt != "" {
 		wr.multilineBlock("prompt", cfg.Prompt)

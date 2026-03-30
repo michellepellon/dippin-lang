@@ -1437,6 +1437,35 @@ func TestFormatEdgeConditionRawOnly(t *testing.T) {
 	assertIdempotent(t, w)
 }
 
+func TestFormatHumanInterview(t *testing.T) {
+	data, err := os.ReadFile("../parser/testdata/human_interview.dip")
+	if err != nil {
+		t.Fatalf("read human_interview.dip: %v", err)
+	}
+	w, err := parser.NewParser(string(data), "human_interview.dip").Parse()
+	if err != nil {
+		t.Fatalf("first parse: %v", err)
+	}
+	got := Format(w)
+	w2, err := parser.NewParser(got, "formatted.dip").Parse()
+	if err != nil {
+		t.Fatalf("second parse: %v\nformatted:\n%s", err, got)
+	}
+	gate := w2.Nodes[0]
+	for _, n := range w2.Nodes {
+		if n.ID == "Gate" {
+			gate = n
+		}
+	}
+	cfg := gate.Config.(ir.HumanConfig)
+	if cfg.QuestionsKey != "interview_questions" {
+		t.Errorf("round-trip QuestionsKey = %q", cfg.QuestionsKey)
+	}
+	if cfg.AnswersKey != "interview_answers" {
+		t.Errorf("round-trip AnswersKey = %q", cfg.AnswersKey)
+	}
+}
+
 func TestFormatRoundTrip(t *testing.T) {
 	// Parse all_features.dip, format, parse again, format again, assert identical.
 	data, err := os.ReadFile("../parser/testdata/all_features.dip")
