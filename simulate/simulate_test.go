@@ -1902,3 +1902,84 @@ func assertPathNotContains(t *testing.T, path []string, nodeID string) {
 		}
 	}
 }
+
+func interviewWorkflow() *ir.Workflow {
+	return &ir.Workflow{
+		Name:  "InterviewTest",
+		Start: "Start",
+		Exit:  "Done",
+		Nodes: []*ir.Node{
+			{ID: "Start", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Ask questions."}},
+			{ID: "Ask", Kind: ir.NodeHuman, Label: "Answer questions", Config: ir.HumanConfig{
+				Mode:         "interview",
+				QuestionsKey: "questions",
+				AnswersKey:   "answers",
+			}},
+			{ID: "Done", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Done."}},
+		},
+		Edges: []*ir.Edge{
+			{From: "Start", To: "Ask"},
+			{From: "Ask", To: "Done"},
+		},
+	}
+}
+
+func TestRunHumanInteractive_InterviewMode(t *testing.T) {
+	ResetRunCounter()
+	w := interviewWorkflow()
+	input := strings.NewReader("answer one\nanswer two\n\n")
+	var stderr bytes.Buffer
+	res, err := Run(w, Options{
+		Interactive: true,
+		Stdin:       input,
+		Stderr:      &stderr,
+	})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if res.Status != "success" {
+		t.Errorf("Status = %q, want success", res.Status)
+	}
+	if !strings.Contains(stderr.String(), "interview") {
+		t.Error("expected 'interview' in stderr prompt")
+	}
+	// Verify answers stored in custom key.
+	var foundAnswers bool
+	for _, ev := range res.Events {
+		if cu, ok := ev.(event.ContextUpdate); ok && cu.Key == "answers" {
+			foundAnswers = true
+			if !strings.Contains(cu.Value, "answer one") {
+				t.Errorf("answers missing 'answer one': %s", cu.Value)
+			}
+		}
+	}
+	if !foundAnswers {
+		t.Error("expected context update for answers key")
+	}
+}
+
+func TestRunHumanAutoSuccess_InterviewMode(t *testing.T) {
+	w := interviewWorkflow()
+	res, err := Run(w, Options{})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if res.Status != "success" {
+		t.Errorf("non-interactive interview should auto-succeed, got %q", res.Status)
+	}
+}
+
+func TestRunHumanInteractive_InterviewEOF(t *testing.T) {
+	w := interviewWorkflow()
+	input := strings.NewReader("")
+	res, err := Run(w, Options{
+		Interactive: true,
+		Stdin:       input,
+	})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if res.Status != "success" {
+		t.Errorf("EOF on interview should succeed, got %q", res.Status)
+	}
+}
