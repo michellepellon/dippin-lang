@@ -1,0 +1,450 @@
+# API Design Pipeline
+#
+# Takes a product idea from the user and produces a complete API design
+# package: OpenAPI spec, SDK usage examples, error catalog, and an
+# architecture decision record explaining key trade-offs.
+#
+# Pipeline:
+#   1. User describes the product / domain
+#   2. Interviewer asks clarifying questions (loops until sufficient)
+#   3. Analyst extracts structured API requirements
+#   4. Three models independently design the API (parallel)
+#   5. Critic compares designs for consistency, REST hygiene, edge cases
+#   6. Architect synthesizes the best design into a final spec
+#   7. Quality gate validates completeness and correctness
+#   8. Tool node writes the artifact bundle to disk
+#
+# Features exercised:
+#   - Human input (freeform) with interview loop
+#   - Conditional looping (ask questions until requirements are clear)
+#   - Tool nodes (existing codebase scan, artifact writing)
+#   - Parallel fan-out / fan-in (three independent designers)
+#   - Multi-provider diversity (Anthropic, OpenAI, Gemini)
+#   - Data flow via reads/writes
+#   - Quality gate with retry loop and fallback
+#   - Goal gate semantics
+#   - Defaults block
+#
+# To run:
+#   dippin validate examples/api_design.dip
+#   dippin simulate examples/api_design.dip
+#   dippin cost examples/api_design.dip
+#   dippin doctor examples/api_design.dip
+
+workflow APIDesign
+  goal: "Produce a complete API design package — OpenAPI spec, SDK examples, error catalog, and ADR — from a product description."
+  start: Start
+  exit: Done
+
+  defaults
+    provider: anthropic
+    model: claude-sonnet-4-6
+    max_retries: 2
+    fidelity: summary:high
+
+  agent Start
+    label: Start
+
+  agent Done
+    label: Done
+
+  # ─── Step 1: Describe and interview loop ────────────────────
+  #
+  # The user gives an initial description, then an interviewer
+  # identifies gaps and asks targeted follow-up questions. The
+  # loop repeats until the assessor decides we have enough to
+  # proceed — or after 3 rounds, we move on with what we have.
+
+  human DescribeProduct
+    label: "Describe the product and what the API needs to do."
+    mode: freeform
+
+  agent Interviewer
+    label: "Ask clarifying questions"
+    model: claude-opus-4-6
+    provider: anthropic
+    reasoning_effort: high
+    writes: interview_questions
+    prompt:
+      You are an API design consultant conducting a requirements interview.
+      The user has described their product. Review everything said so far
+      and identify gaps that would block a good API design.
+
+      Focus on questions that change the shape of the API:
+      - Who are the API consumers? (internal services, third-party devs, mobile app)
+      - What are the core resources and their relationships?
+      - What operations go beyond basic CRUD? (search, bulk, export, webhooks)
+      - What are the auth requirements? (public, API key, OAuth, per-tenant)
+      - Are there real-time needs? (websockets, SSE, polling)
+      - What scale constraints matter? (request size limits, rate limits, SLAs)
+      - Any existing systems this must integrate with?
+
+      Ask 3-5 pointed questions. Do NOT ask generic questions — only ask
+      about things that are genuinely unclear from what the user has said.
+      If the user already covered something, don't re-ask.
+
+      If the description is already thorough enough to design an API,
+      say "No further questions needed" and summarize the key facts.
+
+  human AnswerQuestions
+    label: "Answer the interviewer's questions."
+    mode: freeform
+
+  agent Assessor
+    label: "Enough info to proceed?"
+    model: claude-sonnet-4-6
+    provider: anthropic
+    auto_status: true
+    reads: interview_questions
+    writes: requirements_summary
+    prompt:
+      Review the full conversation so far — the user's initial description,
+      the interviewer's questions, and the user's answers.
+
+      Decide whether we have enough information to design a solid API.
+      We need clarity on at least:
+      - The core resources (what nouns the API manages)
+      - The key operations (what verbs beyond CRUD)
+      - The consumers (who calls this API)
+      - Auth model (at least a rough direction)
+
+      If we have enough:
+      STATUS: success
+      Then write a concise requirements summary capturing everything
+      learned from the interview.
+
+      If critical gaps remain:
+      STATUS: fail
+      Then explain what's still missing so the interviewer can ask
+      targeted follow-ups in the next round.
+
+  # ─── Step 2: Scan for existing code context ────────────────
+  #
+  # If there's already a codebase, grab structure hints so the
+  # API design can align with existing conventions.
+
+  tool ScanContext
+    label: "Scan existing project context"
+    timeout: 30s
+    writes: project_context
+    command:
+      set -eu
+      echo "=== Project files ==="
+      find . -maxdepth 3 -type f \
+        \( -name '*.go' -o -name '*.py' -o -name '*.ts' -o -name '*.rs' \
+           -o -name '*.yaml' -o -name '*.json' -o -name '*.proto' \) \
+        -not -path './vendor/*' -not -path './node_modules/*' \
+        | head -40
+      echo ""
+      echo "=== Existing API definitions ==="
+      find . -maxdepth 3 -type f \
+        \( -name 'openapi*' -o -name 'swagger*' -o -name '*.proto' \
+           -o -name 'routes.*' -o -name 'router.*' \) \
+        2>/dev/null | head -10
+      echo ""
+      if [ -f go.mod ]; then
+        echo "=== go.mod ==="
+        head -20 go.mod
+      elif [ -f package.json ]; then
+        echo "=== package.json (excerpt) ==="
+        head -20 package.json
+      elif [ -f pyproject.toml ]; then
+        echo "=== pyproject.toml (excerpt) ==="
+        head -20 pyproject.toml
+      else
+        echo "(no recognized project manifest)"
+      fi
+      printf 'context-scanned'
+
+  # ─── Step 3: Extract structured requirements ───────────────
+
+  agent ExtractRequirements
+    label: "Extract API requirements"
+    model: claude-opus-4-6
+    provider: anthropic
+    reasoning_effort: high
+    reads: project_context, requirements_summary
+    writes: api_requirements
+    prompt:
+      The user described a product and you have project context from a codebase scan. Extract structured API requirements.
+
+      Produce:
+
+      ## Domain Model
+      The core entities (nouns) and their relationships. For each entity:
+      name, key attributes, cardinality to other entities.
+
+      ## Operations
+      For each entity, list the operations needed (CRUD and beyond).
+      Use the format: VERB /resource — one-line description.
+      Flag which operations are public vs. internal.
+
+      ## Authentication & Authorization
+      What auth model fits (API key, OAuth2, JWT, none for internal).
+      Which operations need elevated permissions.
+
+      ## Constraints
+      - Expected request/response sizes
+      - Rate limiting needs
+      - Pagination requirements (cursor vs. offset)
+      - Versioning strategy (URL path, header, or query param)
+      - Idempotency requirements for write operations
+
+      ## Non-Functional Requirements
+      Latency targets, consistency model (eventual vs. strong),
+      caching strategy, webhook/event needs.
+
+      Be concrete. If the user's description is vague on a point,
+      make a reasonable choice and state your assumption explicitly.
+
+  # ─── Step 4: Three models design independently ─────────────
+  #
+  # Each model brings different strengths: Claude for precision,
+  # GPT for breadth, Gemini for pragmatism.
+
+  parallel DesignFan -> DesignClaude, DesignGPT, DesignGemini
+
+  agent DesignClaude
+    label: "Design (Claude)"
+    model: claude-sonnet-4-6
+    provider: anthropic
+    reasoning_effort: high
+    reads: api_requirements
+    writes: design_claude
+    prompt:
+      Design a REST API based on the requirements above.
+
+      Produce a complete OpenAPI 3.1 spec in YAML covering:
+      - All endpoints with request/response schemas
+      - Shared component schemas for every entity
+      - Error response schemas (4xx and 5xx) with problem+json format
+      - Authentication scheme definitions
+      - Pagination parameters and response envelope
+      - Example values for every schema
+
+      Then add a section after the spec:
+
+      ## SDK Usage Examples
+      Show 3-4 realistic usage scenarios in Python, each as a code block
+      using httpx or requests. Cover: create, list with filters, error handling,
+      and pagination traversal.
+
+      Prioritize correctness — every endpoint must match the requirements.
+      Use kebab-case for URL paths, camelCase for JSON fields.
+
+  agent DesignGPT
+    label: "Design (GPT)"
+    model: gpt-5.4
+    provider: openai
+    reasoning_effort: high
+    reads: api_requirements
+    writes: design_gpt
+    prompt:
+      Design a REST API based on the requirements above.
+
+      Produce a complete OpenAPI 3.1 spec in YAML covering:
+      - All endpoints with full request/response schemas
+      - Component schemas with JSON Schema validation (minLength, pattern, enum)
+      - Error responses using RFC 9457 Problem Details format
+      - Idempotency key headers for write operations
+      - Rate limit headers (X-RateLimit-Limit, Remaining, Reset)
+      - Webhook event schemas if the requirements mention events
+
+      Then add:
+
+      ## SDK Usage Examples
+      Show 3-4 usage scenarios in TypeScript using fetch, with full
+      type definitions. Cover: CRUD flow, error handling with type narrowing,
+      and paginated list traversal.
+
+      Prioritize developer experience — the API should be predictable
+      and self-documenting. Use plural nouns for collections.
+
+  agent DesignGemini
+    label: "Design (Gemini)"
+    model: gemini-2.5-pro
+    provider: gemini
+    reasoning_effort: high
+    reads: api_requirements
+    writes: design_gemini
+    prompt:
+      Design a REST API based on the requirements above.
+
+      Produce a complete OpenAPI 3.1 spec in YAML covering:
+      - All endpoints with schemas
+      - Component schemas with realistic example data
+      - Error catalog: every error code the API can return, with
+        cause, resolution, and example response body
+      - Batch operation endpoints where multiple items can be
+        created/updated in a single call
+      - Filtering and sorting query parameter conventions
+
+      Then add:
+
+      ## SDK Usage Examples
+      Show 3-4 usage scenarios in Go using net/http, with struct
+      definitions and error handling. Cover: create, batch create,
+      filtered list, and retry on 429.
+
+      Prioritize robustness — think about what happens when things fail.
+      Document every edge case in the error catalog.
+
+  fan_in DesignJoin <- DesignClaude, DesignGPT, DesignGemini
+
+  # ─── Step 5: Comparative critique ──────────────────────────
+
+  agent Critique
+    label: "Compare API designs"
+    model: claude-opus-4-6
+    provider: anthropic
+    reasoning_effort: high
+    reads: api_requirements, design_claude, design_gpt, design_gemini
+    writes: design_critique
+    prompt:
+      You have three independent API designs for the same requirements.
+      Compare them on these dimensions:
+
+      ## Resource Modeling
+      Do the URL structures and resource hierarchies match the domain?
+      Flag any design that introduces unnecessary nesting or flat structures
+      that lose important relationships.
+
+      ## Schema Consistency
+      Are field names, types, and enums consistent across endpoints?
+      Flag any design where the same concept has different names in
+      different endpoints.
+
+      ## Error Handling
+      Which design has the most complete error catalog? Are error
+      responses consistent and machine-parseable?
+
+      ## Edge Cases
+      Which design handles pagination, filtering, batch operations,
+      idempotency, and rate limiting most thoroughly?
+
+      ## Developer Experience
+      Which SDK examples are most realistic and instructive?
+
+      ## Synthesis Instructions
+      For each aspect of the final API (resource structure, schemas,
+      errors, headers, examples), specify which design to use as the base
+      and what to incorporate from the others. Be explicit — name
+      specific endpoints and schemas.
+
+      ## Conflicts
+      Where the designs disagree (e.g., nesting vs. flat, cursor vs.
+      offset pagination), state which approach is better and why.
+
+  # ─── Step 6: Synthesize final design ───────────────────────
+
+  agent Synthesize
+    label: "Synthesize final API spec"
+    model: claude-opus-4-6
+    provider: anthropic
+    reasoning_effort: high
+    reads: api_requirements, design_claude, design_gpt, design_gemini, design_critique
+    writes: final_spec
+    prompt:
+      Follow the critique's synthesis instructions to produce the final
+      API design package. The output must be a single markdown document
+      with these sections:
+
+      ## 1. Architecture Decision Record
+      Key design decisions and their rationale:
+      - Resource hierarchy choices
+      - Authentication model
+      - Pagination strategy
+      - Versioning approach
+      - Error handling conventions
+      For each: decision, alternatives considered, why this choice wins.
+
+      ## 2. OpenAPI Specification
+      Complete OpenAPI 3.1 spec in a YAML code block. Must include:
+      - Every endpoint from the requirements
+      - Full request/response schemas with examples
+      - Shared component schemas
+      - Error responses in Problem Details format
+      - Auth, pagination, rate limit, and idempotency conventions
+
+      ## 3. Error Catalog
+      Table of every error the API returns: HTTP status, error code,
+      description, common cause, resolution.
+
+      ## 4. SDK Usage Examples
+      Python, TypeScript, and Go examples covering the core workflows.
+      Each example must be runnable (correct imports, types, error handling).
+
+      ## 5. Integration Checklist
+      Ordered list of implementation steps: which endpoints to build
+      first, what middleware to set up, testing strategy.
+
+      The document should be self-contained — a developer should be able
+      to implement the API from this document alone without asking questions.
+
+  # ─── Step 7: Quality gate ──────────────────────────────────
+
+  agent QualityGate
+    label: "Spec completeness check"
+    model: claude-sonnet-4-6
+    provider: anthropic
+    goal_gate: true
+    reads: api_requirements, final_spec
+    retry_target: Synthesize
+    max_retries: 2
+    fallback_target: WriteSpec
+    prompt:
+      Validate the final API spec against the requirements and design standards:
+
+      1. Every operation from the requirements has a corresponding endpoint
+      2. Every entity from the domain model has a component schema
+      3. The OpenAPI YAML is syntactically valid (correct indentation,
+         proper $ref paths, valid HTTP methods)
+      4. Error responses are consistent across all endpoints
+      5. SDK examples cover create, read, list, update, delete, and
+         at least one error handling scenario
+      6. The ADR explains at least 3 non-obvious design decisions
+      7. The integration checklist is ordered by dependency
+
+      If ALL criteria pass:
+      STATUS: success
+
+      If ANY criterion fails:
+      STATUS: fail
+      List exactly which criteria failed and what is missing or wrong.
+
+  # ─── Step 8: Write the artifact bundle ─────────────────────
+
+  tool WriteSpec
+    label: "Write API spec to disk"
+    timeout: 10s
+    reads: final_spec
+    command:
+      set -eu
+      mkdir -p .ai/api-design
+      echo "API design package written to .ai/api-design/"
+      echo "  - spec.md (full design document)"
+      printf 'done'
+
+  # ─── Edges ─────────────────────────────────────────────────
+
+  edges
+    Start -> DescribeProduct
+    DescribeProduct -> Interviewer
+    Interviewer -> AnswerQuestions
+    AnswerQuestions -> Assessor
+    Assessor -> ScanContext           when ctx.outcome = success  label: ready
+    Assessor -> Interviewer           when ctx.outcome = fail     label: need_more  restart: true
+    ScanContext -> ExtractRequirements
+    ExtractRequirements -> DesignFan
+    DesignFan -> DesignClaude
+    DesignFan -> DesignGPT
+    DesignFan -> DesignGemini
+    DesignClaude -> DesignJoin
+    DesignGPT -> DesignJoin
+    DesignGemini -> DesignJoin
+    DesignJoin -> Critique
+    Critique -> Synthesize
+    Synthesize -> QualityGate
+    QualityGate -> WriteSpec  when ctx.outcome = success  label: approved
+    QualityGate -> Synthesize  when ctx.outcome = fail  label: revise  restart: true
+    WriteSpec -> Done
