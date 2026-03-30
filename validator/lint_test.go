@@ -1483,6 +1483,64 @@ func TestLint_DIP119_EmptyReasoningEffort_NoDiag(t *testing.T) {
 	assertNoCode(t, res, DIP119)
 }
 
+func TestLint_DIP127_InvalidHumanMode(t *testing.T) {
+	w := cleanMinimalWorkflow()
+	w.Nodes[0].Kind = ir.NodeHuman
+	w.Nodes[0].Config = ir.HumanConfig{Mode: "invalid"}
+	res := Lint(w)
+	assertHasCode(t, res, DIP127)
+}
+
+func TestLint_DIP127_ValidModes(t *testing.T) {
+	for _, mode := range []string{"choice", "freeform", "interview", ""} {
+		w := cleanMinimalWorkflow()
+		w.Nodes[0].Kind = ir.NodeHuman
+		w.Nodes[0].Config = ir.HumanConfig{Mode: mode}
+		res := Lint(w)
+		assertNoCode(t, res, DIP127)
+	}
+}
+
+func TestLint_DIP128_InterviewWithDefault(t *testing.T) {
+	w := cleanMinimalWorkflow()
+	w.Nodes[0].Kind = ir.NodeHuman
+	w.Nodes[0].Config = ir.HumanConfig{Mode: "interview", Default: "yes"}
+	res := Lint(w)
+	assertHasCode(t, res, DIP128)
+}
+
+func TestLint_DIP128_ChoiceWithDefault_NoDiag(t *testing.T) {
+	w := cleanMinimalWorkflow()
+	w.Nodes[0].Kind = ir.NodeHuman
+	w.Nodes[0].Config = ir.HumanConfig{Mode: "choice", Default: "yes"}
+	res := Lint(w)
+	assertNoCode(t, res, DIP128)
+}
+
+func TestLint_DIP129_InterviewWithLabeledEdges(t *testing.T) {
+	w := cleanMinimalWorkflow()
+	w.Nodes[0].Kind = ir.NodeHuman
+	w.Nodes[0].Config = ir.HumanConfig{Mode: "interview"}
+	w.Nodes = append(w.Nodes, &ir.Node{
+		ID: "Alt", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Alt."},
+	})
+	w.Edges = []*ir.Edge{
+		{From: w.Nodes[0].ID, To: w.Exit, Label: "approve"},
+		{From: w.Nodes[0].ID, To: "Alt", Label: "reject"},
+		{From: "Alt", To: w.Exit},
+	}
+	res := Lint(w)
+	assertHasCode(t, res, DIP129)
+}
+
+func TestLint_DIP129_InterviewSingleEdge_NoDiag(t *testing.T) {
+	w := cleanMinimalWorkflow()
+	w.Nodes[0].Kind = ir.NodeHuman
+	w.Nodes[0].Config = ir.HumanConfig{Mode: "interview"}
+	res := Lint(w)
+	assertNoCode(t, res, DIP129)
+}
+
 // assertHasCode checks that a result contains at least one diagnostic with the given code.
 func assertHasCode(t *testing.T, res Result, code string) {
 	t.Helper()

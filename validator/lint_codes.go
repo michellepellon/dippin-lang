@@ -28,6 +28,9 @@ const (
 	DIP124 = "DIP124" // tool command references runtime-only ${ctx.*} variable
 	DIP125 = "DIP125" // tool command binary not found on PATH
 	DIP126 = "DIP126" // subgraph ref file does not exist
+	DIP127 = "DIP127" // invalid human node mode
+	DIP128 = "DIP128" // interview mode with meaningless default
+	DIP129 = "DIP129" // interview mode with conflicting choice-style edges
 )
 
 func init() {
@@ -58,4 +61,7 @@ func init() {
 	CodeDescription[DIP124] = "tool command references runtime-only ${ctx.*} variable"
 	CodeDescription[DIP125] = "tool command binary not found on PATH"
 	CodeDescription[DIP126] = "subgraph ref file does not exist"
+	CodeDescription[DIP127] = "invalid human node mode"
+	CodeDescription[DIP128] = "interview mode with meaningless default value"
+	CodeDescription[DIP129] = "interview mode with conflicting choice-style edges"
 }
