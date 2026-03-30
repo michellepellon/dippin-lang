@@ -48,14 +48,18 @@ workflow APIDesign
 
   human AnswerQuestions
     label: "Answer the interviewer's questions."
-    mode: freeform
+    mode: interview
+    questions_key: interview_questions
+    answers_key: interview_answers
+    reads: interview_questions
+    writes: interview_answers
 
   agent Assessor
     label: "Enough info to proceed?"
     model: claude-sonnet-4-6
     provider: anthropic
     auto_status: true
-    reads: interview_questions
+    reads: interview_questions, interview_answers
     writes: requirements_summary
     prompt:
       Review the full conversation so far — the user's initial description,
