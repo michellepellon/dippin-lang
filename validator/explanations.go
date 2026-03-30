@@ -300,5 +300,26 @@ func advancedExplanations() map[string]Explanation {
 			Fix:     "Fix the ref path or create the missing workflow file.",
 			Example: "subgraph Review\n  ref: review_pipeline.dip  // file not found",
 		},
+		DIP127: {
+			Code:    DIP127,
+			Summary: "invalid human node mode",
+			Trigger: "A human node has a mode value other than choice, freeform, or interview.",
+			Fix:     "Change mode to one of: choice, freeform, interview.",
+			Example: "human Gate\n  mode: interactive  // invalid — did you mean interview?",
+		},
+		DIP128: {
+			Code:    DIP128,
+			Summary: "interview mode with meaningless default value",
+			Trigger: "A human node with mode interview also has a default value. Interview mode collects answers to questions — it has no predefined choices to default to.",
+			Fix:     "Remove the default field, or change mode to choice if you want label-based routing.",
+			Example: "human Ask\n  mode: interview\n  default: yes  // meaningless",
+		},
+		DIP129: {
+			Code:    DIP129,
+			Summary: "interview mode with conflicting choice-style edges",
+			Trigger: "A human node with mode interview has multiple labeled outgoing edges. Interview mode does not route by label — it collects structured answers and follows a single edge.",
+			Fix:     "Remove edge labels, or change mode to choice if routing is intended.",
+			Example: "human Ask\n  mode: interview\n\nedges\n  Ask -> A label: yes\n  Ask -> B label: no  // conflicting",
+		},
 	}
 }
