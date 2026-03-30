@@ -393,6 +393,22 @@ Parameters let you customize a reusable workflow at invocation time:
 
 The embedded workflow can reference these via `${params.severity}`.
 
+### Reusable Interview Loop
+
+The `interview_loop.dip` example is a pre-built subgraph that collects structured requirements through iterative Q&A. It combines an LLM interviewer, an `interview` mode human node, and an assessor loop:
+
+```dippin
+  subgraph Requirements
+    ref: interview_loop.dip
+    reads: human_response
+    writes: requirements_summary
+    params:
+      topic: "API design"
+      focus: "resources, auth, scale, integrations"
+```
+
+The subgraph handles the full interview lifecycle: generating questions with suggested options, collecting structured answers via `huh` forms, assessing completeness, and looping until requirements are clear. See `examples/interview_loop.dip` for the full source.
+
 ---
 
 ## Node Declaration Order

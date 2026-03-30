@@ -218,6 +218,20 @@ Recommended answer JSON schema:
 }
 ```
 
+### Reusable Interview Loop
+
+The `examples/interview_loop.dip` workflow encapsulates the full interview pattern (ask → answer → assess → loop) as a standalone workflow that can be embedded via `subgraph`:
+
+```dippin
+subgraph Requirements
+  ref: interview_loop.dip
+  params:
+    topic: "API design"
+    focus: "resources, auth, scale, integrations"
+```
+
+The loop handles question generation with inline options, structured answer collection via interview mode, and iterative refinement until the assessor is satisfied. It writes `requirements_summary` to context when complete.
+
 ---
 
 ## Writing an Adapter (Tracker Example)

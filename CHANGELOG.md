@@ -11,6 +11,7 @@ All notable changes to dippin-lang are documented here. Versions follow [semver]
 - **DIP129**: lint warning when interview mode has conflicting choice-style labeled edges.
 - Integration guide updated with interview mode implementation guidance and recommended answer JSON schema.
 - `api_design.dip` example updated to use interview mode for Q&A collection.
+- **`interview_loop.dip`** example: reusable interview subgraph with iterative Q&A. Parameterized by topic and focus areas. LLM generates questions with suggested options, human answers via interview mode, assessor loops until requirements are clear. Grade A, ~$0.92/run.
 
 ### Fixed
 - `--version` / `-version` flags now work (previously failed with "flag provided but not defined").
