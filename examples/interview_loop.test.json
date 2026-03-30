@@ -1,0 +1,42 @@
+{
+  "tests": [
+    {
+      "name": "happy path — assessor approves after first round",
+      "scenario": {"outcome": "success"},
+      "expect": {
+        "status": "success",
+        "visited": ["Start", "Interviewer", "Answer", "Assess", "Done"],
+        "path_contains": ["Start", "Interviewer", "Answer", "Assess", "Done"]
+      }
+    },
+    {
+      "name": "interview loop — assessor rejects, loops back",
+      "scenario": {"Assess.outcome": "fail"},
+      "expect": {
+        "visited": ["Assess", "Interviewer"],
+        "immediately_after": {"Assess": "Interviewer"}
+      }
+    },
+    {
+      "name": "interview loop then proceed — fails then succeeds",
+      "scenario": {"Assess.outcome": "fail"},
+      "expect": {
+        "visited": ["Interviewer", "Answer", "Assess"]
+      }
+    },
+    {
+      "name": "assessor follows interviewer answer sequence",
+      "scenario": {"outcome": "success"},
+      "expect": {
+        "immediately_after": {"Answer": "Assess"}
+      }
+    },
+    {
+      "name": "done is only reachable via assessor success",
+      "scenario": {"outcome": "success"},
+      "expect": {
+        "immediately_after": {"Assess": "Done"}
+      }
+    }
+  ]
+}

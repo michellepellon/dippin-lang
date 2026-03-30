@@ -1,0 +1,75 @@
+workflow InterviewLoop
+  goal: "Collect structured requirements through iterative Q&A with an LLM interviewer."
+  start: Start
+  exit: Done
+
+  defaults
+    model: claude-sonnet-4-6
+    provider: anthropic
+    max_retries: 2
+
+  agent Start
+    label: Start
+
+  agent Done
+    label: Done
+
+  agent Interviewer
+    label: "Generate questions"
+    model: claude-opus-4-6
+    provider: anthropic
+    reasoning_effort: high
+    writes: interview_questions
+    prompt:
+      You are conducting a requirements interview about: ${params.topic}
+      Focus areas: ${params.focus}
+
+      Review everything the user has said so far and identify gaps
+      that would block good results.
+
+      For each question, provide 2-4 likely options in parentheses
+      where applicable. Example format:
+        1. Who are the consumers? (internal teams, third-party devs, end users)
+        2. What scale do you expect? (hobby <1k/day, startup 1k-100k/day, enterprise >100k/day)
+        3. Describe any existing constraints or integrations.
+
+      Ask 3-5 pointed questions. Only ask about things genuinely
+      unclear from what the user has said. Do NOT re-ask covered topics.
+
+      If the description is already thorough enough, say
+      "No further questions needed" and summarize the key facts.
+
+  human Answer
+    label: "Answer the interviewer's questions."
+    mode: interview
+    questions_key: interview_questions
+    answers_key: interview_answers
+    reads: interview_questions
+    writes: interview_answers
+
+  agent Assess
+    label: "Enough info to proceed?"
+    auto_status: true
+    reads: interview_questions, interview_answers
+    writes: requirements_summary
+    prompt:
+      Review the full conversation — the user's initial input,
+      the interviewer's questions, and the user's answers.
+
+      Decide whether we have enough information to proceed.
+
+      If we have enough:
+      STATUS: success
+      Write a concise requirements summary capturing everything learned.
+
+      If critical gaps remain:
+      STATUS: fail
+      Explain what's still missing so the interviewer can ask
+      targeted follow-ups in the next round.
+
+  edges
+    Start -> Interviewer
+    Interviewer -> Answer
+    Answer -> Assess
+    Assess -> Done          when ctx.outcome = success  label: ready
+    Assess -> Interviewer   when ctx.outcome = fail     label: need_more  restart: true
