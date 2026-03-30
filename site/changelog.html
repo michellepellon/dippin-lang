@@ -37,46 +37,7 @@
 </div>
 
 <nav class="nav">
-<div class="nav-top">
-  <a href="index.html" class="nav-brand">Dippin</a>
-  <button class="nav-toggle" onclick="document.querySelector('.nav-mobile').classList.toggle('open')" aria-label="Menu">
-    <span></span><span></span><span></span>
-  </button>
-  <div class="nav-primary">
-    <a href="language.html">Docs</a>
-    <a href="playground.html">Playground</a>
-    <a href="blog/index.html">Blog</a>
-    <a href="https://github.com/2389-research/dippin-lang" class="nav-gh">GitHub</a>
-  </div>
-</div>
-<div class="nav-sub">
-  <div class="nav-sub-inner">
-    <a href="cli.html">CLI</a>
-    <a href="language.html">Language</a>
-    <a href="testing.html">Testing</a>
-    <a href="validation.html">Validation</a>
-    <a href="analysis.html">Analysis</a>
-    <a href="architecture.html">Architecture</a>
-    <a href="editors.html">Editors</a>
-    <a href="changelog.html" class="active">Changelog</a>
-  </div>
-</div>
-<div class="nav-mobile">
-  <a href="language.html">Docs</a>
-  <a href="playground.html">Playground</a>
-  <a href="blog/index.html">Blog</a>
-  <div class="nav-divider"></div>
-  <a href="cli.html">CLI</a>
-  <a href="language.html">Language</a>
-  <a href="testing.html">Testing</a>
-  <a href="validation.html">Validation</a>
-  <a href="analysis.html">Analysis</a>
-  <a href="architecture.html">Architecture</a>
-  <a href="editors.html">Editors</a>
-  <a href="changelog.html" class="active">Changelog</a>
-  <div class="nav-divider"></div>
-  <a href="https://github.com/2389-research/dippin-lang">GitHub</a>
-</div>
+<!-- placeholder: sync-nav.sh replaces this block -->
 </nav>
 
 <section class="doc">
@@ -88,6 +49,27 @@
   </div>
 
   <div class="doc-body">
+    <div class="version-card">
+      <div class="version-header">
+        <span class="version-tag">v0.15.0</span>
+        <span class="version-date">2026-03-30</span>
+      </div>
+      <h4>Added</h4>
+      <ul>
+        <li><strong>Interview mode</strong> for human nodes (<code>mode: interview</code>). Runtimes extract questions from upstream agent output and present each as an individual form field with optional suggested answers. New fields: <code>questions_key</code>, <code>answers_key</code>.</li>
+        <li><strong>DIP127</strong>: lint warning for invalid human node mode values.</li>
+        <li><strong>DIP128</strong>: lint warning when interview mode has a meaningless <code>default</code> value.</li>
+        <li><strong>DIP129</strong>: lint warning when interview mode has conflicting choice-style labeled edges.</li>
+        <li>Integration guide updated with interview mode implementation guidance and recommended answer JSON schema.</li>
+        <li><code>api_design.dip</code> example updated to use interview mode for Q&A collection.</li>
+      </ul>
+      <h4>Fixed</h4>
+      <ul>
+        <li><code>--version</code> / <code>-version</code> flags now work (previously failed with "flag provided but not defined").</li>
+      </ul>
+      <a class="gh-link" href="https://github.com/2389-research/dippin-lang/releases/tag/v0.15.0">View on GitHub &rarr;</a>
+    </div>
+
     <div class="version-card">
       <div class="version-header">
         <span class="version-tag">v0.14.0</span>

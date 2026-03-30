@@ -159,8 +159,10 @@ case ir.AgentConfig:
     fmt.Println(cfg.Model)
     fmt.Println(cfg.GoalGate)
 case ir.HumanConfig:
-    fmt.Println(cfg.Mode)    // "choice" or "freeform"
+    fmt.Println(cfg.Mode)         // "choice", "freeform", or "interview"
     fmt.Println(cfg.Default)
+    fmt.Println(cfg.QuestionsKey) // interview mode: context key for questions
+    fmt.Println(cfg.AnswersKey)   // interview mode: context key for answers
 case ir.ToolConfig:
     fmt.Println(cfg.Command)
     fmt.Println(cfg.Timeout)
@@ -183,6 +185,37 @@ node := workflow.Node("Analyze")         // find by ID
 outgoing := workflow.EdgesFrom("Analyze") // all edges leaving this node
 incoming := workflow.EdgesTo("Analyze")   // all edges entering this node
 ids := workflow.NodeIDs()                 // all IDs in declaration order
+```
+
+### Interview Mode (Runtime Integration)
+
+When `cfg.Mode == "interview"`, the runtime is expected to:
+
+1. **Read questions** from `ctx[cfg.QuestionsKey]` (default: `"interview_questions"`).
+2. **Parse questions** from the upstream agent's markdown output — numbered/bulleted lines ending in `?`, imperative prompts ("Describe...", "List..."). Skip content inside fenced code blocks.
+3. **Extract inline options** from trailing parentheticals: `"Auth model? (API key, OAuth, JWT)"` becomes a Select field with 3 options + "Other" freeform.
+4. **Present each question** as an individual form field. Recommended mapping:
+   - Questions with options → Select + "Other" text input
+   - Yes/no questions → Confirm + optional elaboration
+   - All other questions → TextArea
+5. **Store answers** in `ctx[cfg.AnswersKey]` (default: `"interview_answers"`) as JSON and in `ctx["human_response"]` as markdown.
+6. **Handle edge cases:**
+   - 0 questions: show confirmation + optional freeform note
+   - Malformed output: fall back to single TextArea with `cfg.Prompt` as instructions
+   - Ctrl-C: write partial answers with `canceled: true` in JSON
+   - Retry loop: pre-fill with previous answers from `ctx[cfg.AnswersKey]`
+
+Recommended answer JSON schema:
+
+```json
+{
+  "questions": [
+    {"id": "q1", "text": "Auth model?", "options": ["API key", "OAuth", "JWT"], "answer": "OAuth", "elaboration": "Google + GitHub"},
+    {"id": "q2", "text": "Describe integrations", "answer": "Salesforce nightly sync..."}
+  ],
+  "incomplete": false,
+  "canceled": false
+}
 ```
 
 ---

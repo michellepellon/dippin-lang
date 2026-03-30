@@ -3,7 +3,7 @@
 Dippin provides 35 diagnostic checks split into two categories:
 
 - **Structural validation** (DIP001–DIP009): Errors that **must** be fixed. A workflow with any of these cannot execute.
-- **Semantic linting** (DIP101–DIP126): Warnings that flag likely bugs or questionable patterns. They don't block execution but should be reviewed.
+- **Semantic linting** (DIP101–DIP129): Warnings that flag likely bugs or questionable patterns. They don't block execution but should be reviewed.
 
 Run `dippin validate <file>` for structural checks only, or `dippin lint <file>` for both.
 
@@ -12,7 +12,7 @@ graph LR
     SRC[".dip file"] --> PARSE["Parser"]
     PARSE --> IR["IR"]
     IR --> VAL["Structural Validation<br>DIP001–DIP009<br>(errors)"]
-    IR --> LINT["Semantic Linting<br>DIP101–DIP126<br>(warnings)"]
+    IR --> LINT["Semantic Linting<br>DIP101–DIP129<br>(warnings)"]
     VAL --> DIAG["Diagnostics"]
     LINT --> DIAG
 ```
@@ -224,7 +224,7 @@ error[DIP009]: duplicate edge
 
 ---
 
-## Semantic Lint Warnings (DIP101–DIP126)
+## Semantic Lint Warnings (DIP101–DIP129)
 
 ### DIP101: Node Only Reachable via Conditional Edges
 
@@ -730,6 +730,54 @@ warning[DIP126]: subgraph node "Review" references "review_pipeline.dip" which d
 
 **Note**: This check is skipped when source file context is unavailable (e.g., hand-constructed IR in tests) and in WASM environments where filesystem access is not available.
 
+### DIP127: Invalid Human Node Mode
+
+**Severity**: Warning
+
+A human node has a `mode` value that is not one of the recognized modes.
+
+```
+warning[DIP127]: node "Gate" has mode "interactive" which is not a recognized human mode
+  --> pipeline.dip:12:3
+  = help: valid modes: choice, freeform, interview
+```
+
+**What triggers it**: A human node declares a mode other than `choice`, `freeform`, or `interview`.
+
+**How to fix**: Change the mode to a valid value.
+
+### DIP128: Interview Mode with Meaningless Default
+
+**Severity**: Warning
+
+A human node with `mode: interview` also sets a `default` value. Interview mode collects structured answers — it has no predefined choices to default to.
+
+```
+warning[DIP128]: node "Ask" is mode interview but has default "yes" which is ignored
+  --> pipeline.dip:15:3
+  = help: default is only meaningful for choice mode; remove it
+```
+
+**What triggers it**: `mode: interview` combined with a non-empty `default` field.
+
+**How to fix**: Remove the `default` field, or change the mode to `choice` if you want label-based routing.
+
+### DIP129: Interview Mode with Conflicting Choice-Style Edges
+
+**Severity**: Warning
+
+A human node with `mode: interview` has multiple labeled outgoing edges. Interview mode does not route by label — it collects answers and follows a single unconditional edge.
+
+```
+warning[DIP129]: node "Ask" is mode interview but has 2 labeled edges (interview does not route by label)
+  --> pipeline.dip:15:3
+  = help: interview mode collects answers, not choices; use mode choice for label-based routing
+```
+
+**What triggers it**: A `mode: interview` node has 2 or more outgoing edges with labels.
+
+**How to fix**: Remove edge labels, or change the mode to `choice` if routing by selection is intended.
+
 ---
 
 ## Running Validation
@@ -748,7 +796,7 @@ Runs DIP001–DIP009. Exit code 0 if all pass, 1 if any errors.
 dippin lint pipeline.dip
 ```
 
-Runs all DIP001–DIP009 errors and DIP101–DIP126 warnings. Exit code 1 only for errors; warnings alone exit 0.
+Runs all DIP001–DIP009 errors and DIP101–DIP129 warnings. Exit code 1 only for errors; warnings alone exit 0.
 
 ### JSON output for CI
 

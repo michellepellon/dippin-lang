@@ -148,7 +148,7 @@ In DOT export, goal gate nodes are highlighted with a red filled background.
 
 ## Human Nodes
 
-Human nodes pause execution and wait for human input. They support two interaction modes.
+Human nodes pause execution and wait for human input. They support three interaction modes.
 
 ```dippin
   human Approve
@@ -161,8 +161,10 @@ Human nodes pause execution and wait for human input. They support two interacti
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `mode` | String | — | Interaction mode. `"choice"` presents predefined options (defined by edge labels). `"freeform"` presents an open text input. Note: only `choice` and `freeform` are supported. Use `preferred_label` on edges for human gate routing. |
-| `default` | String | — | Default selection if no input is provided within the timeout period. Only meaningful for `"choice"` mode. |
+| `mode` | String | — | Interaction mode: `"choice"` (select from edge labels), `"freeform"` (open text), or `"interview"` (structured Q&A from upstream agent output). |
+| `default` | String | — | Default selection if no input. Only meaningful for `"choice"` mode. |
+| `questions_key` | String | `interview_questions` | Context key to read questions from. Interview mode only. |
+| `answers_key` | String | `interview_answers` | Context key to write answers to. Interview mode only. |
 
 ### Choice Mode
 
@@ -195,6 +197,35 @@ In `freeform` mode, the human can type any text. The input is stored in `ctx.hum
     prompt:
       The user said: ${ctx.human_response}
 ```
+
+### Interview Mode
+
+In `interview` mode, the runtime extracts questions from the upstream agent's output and presents each as an individual form field. Questions with inline options (e.g., "Auth model? (API key, OAuth, JWT)") are shown as selection lists with an "Other (freeform)" escape hatch. Pure text questions become text areas.
+
+```dippin
+  human AnswerQuestions
+    label: "Answer the interviewer's questions."
+    mode: interview
+    questions_key: interview_questions
+    answers_key: interview_answers
+    reads: interview_questions
+    writes: interview_answers
+    prompt:
+      If no questions were detected, describe your
+      requirements here instead.
+```
+
+**How it works:**
+
+1. The upstream agent writes its output (containing questions) to the context key specified by `questions_key`.
+2. The runtime parses the output for questions — numbered lists, lines ending in `?`, and imperative prompts ("Describe...", "List...").
+3. Inline options in parentheses (e.g., `(API key, OAuth, JWT)`) become selection choices with an additional "Other" freeform option.
+4. Questions without options become text areas.
+5. Answers are stored in `answers_key` as structured JSON and in `human_response` as markdown.
+
+If the upstream output contains no parseable questions (e.g., the agent said "No further questions needed"), the runtime falls back to showing the `prompt` field as a single text area.
+
+**Lint checks:** DIP127 (invalid mode), DIP128 (meaningless default on interview), DIP129 (conflicting labeled edges on interview).
 
 ---
 

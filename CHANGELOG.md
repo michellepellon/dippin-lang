@@ -2,6 +2,19 @@
 
 All notable changes to dippin-lang are documented here. Versions follow [semver](https://semver.org/).
 
+## [v0.15.0] — 2026-03-30
+
+### Added
+- **Interview mode** for human nodes (`mode: interview`). Runtimes extract questions from upstream agent output and present each as an individual form field with optional suggested answers. New fields: `questions_key`, `answers_key`.
+- **DIP127**: lint warning for invalid human node mode values.
+- **DIP128**: lint warning when interview mode has a meaningless `default` value.
+- **DIP129**: lint warning when interview mode has conflicting choice-style labeled edges.
+- Integration guide updated with interview mode implementation guidance and recommended answer JSON schema.
+- `api_design.dip` example updated to use interview mode for Q&A collection.
+
+### Fixed
+- `--version` / `-version` flags now work (previously failed with "flag provided but not defined").
+
 ## [v0.14.0] — 2026-03-27
 
 ### Added
