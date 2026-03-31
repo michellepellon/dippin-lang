@@ -240,17 +240,32 @@ func (p *Parser) applyAgentParsedField(cfg *ir.AgentConfig, key, val string, loc
 
 // applyHumanField applies human-specific configuration fields.
 func (p *Parser) applyHumanField(cfg *ir.HumanConfig, key, val string, loc ir.SourceLocation) {
+	if applyHumanStringField(cfg, key, val) {
+		return
+	}
+	applyHumanInterviewField(cfg, key, val)
+}
+
+func applyHumanStringField(cfg *ir.HumanConfig, key, val string) bool {
 	switch key {
 	case "mode":
 		cfg.Mode = val
 	case "default":
 		cfg.Default = val
+	case "prompt":
+		cfg.Prompt = val
+	default:
+		return false
+	}
+	return true
+}
+
+func applyHumanInterviewField(cfg *ir.HumanConfig, key, val string) {
+	switch key {
 	case "questions_key":
 		cfg.QuestionsKey = val
 	case "answers_key":
 		cfg.AnswersKey = val
-	case "prompt":
-		cfg.Prompt = val
 	}
 }
 
@@ -285,16 +300,21 @@ func (p *Parser) parseParamsBlock(raw string) map[string]string {
 		if line == "" {
 			continue
 		}
-		k, v := splitKeyValue(line)
-		if k != "" {
-			if _, exists := params[k]; exists {
-				p.diagnostics = append(p.diagnostics,
-					fmt.Sprintf("duplicate params key %q (last value wins)", k))
-			}
-			params[k] = unquoteRaw(v)
-		}
+		p.parseParamLine(params, line)
 	}
 	return params
+}
+
+func (p *Parser) parseParamLine(params map[string]string, line string) {
+	k, v := splitKeyValue(line)
+	if k == "" {
+		return
+	}
+	if _, exists := params[k]; exists {
+		p.diagnostics = append(p.diagnostics,
+			fmt.Sprintf("duplicate params key %q (last value wins)", k))
+	}
+	params[k] = unquoteRaw(v)
 }
 
 func (p *Parser) parseParallel() {

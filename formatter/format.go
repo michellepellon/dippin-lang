@@ -370,6 +370,14 @@ func writeIOFields(wr *writer, n *ir.Node) {
 
 func writeHumanFields(wr *writer, n *ir.Node, cfg ir.HumanConfig) {
 	writeCommonNodeFields(wr, n)
+	writeHumanModeFields(wr, cfg)
+	writeIOFields(wr, n)
+	if cfg.Prompt != "" {
+		wr.multilineBlock("prompt", cfg.Prompt)
+	}
+}
+
+func writeHumanModeFields(wr *writer, cfg ir.HumanConfig) {
 	if cfg.Mode != "" {
 		wr.line("mode: %s", quoteValue(cfg.Mode))
 	}
@@ -381,10 +389,6 @@ func writeHumanFields(wr *writer, n *ir.Node, cfg ir.HumanConfig) {
 	}
 	if cfg.AnswersKey != "" {
 		wr.line("answers_key: %s", quoteValue(cfg.AnswersKey))
-	}
-	writeIOFields(wr, n)
-	if cfg.Prompt != "" {
-		wr.multilineBlock("prompt", cfg.Prompt)
 	}
 }
 

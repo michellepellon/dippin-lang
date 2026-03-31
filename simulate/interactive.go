@@ -17,6 +17,10 @@ func (s *simulator) handleHumanInteraction(node *ir.Node) error {
 	if hc.Mode == "interview" {
 		return s.handleInterviewMode(node, hc)
 	}
+	return s.handleChoiceFreeform(node, hc)
+}
+
+func (s *simulator) handleChoiceFreeform(node *ir.Node, hc ir.HumanConfig) error {
 	response, err := s.promptInteractive(node, hc)
 	if err != nil {
 		return fmt.Errorf("interactive prompt at %q: %w", node.ID, err)

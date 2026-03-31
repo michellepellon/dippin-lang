@@ -59,21 +59,28 @@ func lintInterviewLabeledEdges(w *ir.Workflow) []Diagnostic {
 		if !ok || cfg.Mode != "interview" {
 			continue
 		}
-		labelCount := 0
-		for _, e := range w.Edges {
-			if e.From == n.ID && e.Label != "" {
-				labelCount++
-			}
-		}
-		if labelCount > 1 {
-			diags = append(diags, Diagnostic{
-				Code:     DIP129,
-				Severity: SeverityWarning,
-				Message:  fmt.Sprintf("node %q is mode interview but has %d labeled edges (interview does not route by label)", n.ID, labelCount),
-				Location: n.Source,
-				Help:     "interview mode collects answers, not choices; use mode choice for label-based routing",
-			})
+		if d := checkInterviewLabels(n, w.Edges); d != nil {
+			diags = append(diags, *d)
 		}
 	}
 	return diags
+}
+
+func checkInterviewLabels(n *ir.Node, edges []*ir.Edge) *Diagnostic {
+	labelCount := 0
+	for _, e := range edges {
+		if e.From == n.ID && e.Label != "" {
+			labelCount++
+		}
+	}
+	if labelCount <= 1 {
+		return nil
+	}
+	return &Diagnostic{
+		Code:     DIP129,
+		Severity: SeverityWarning,
+		Message:  fmt.Sprintf("node %q is mode interview but has %d labeled edges (interview does not route by label)", n.ID, labelCount),
+		Location: n.Source,
+		Help:     "interview mode collects answers, not choices; use mode choice for label-based routing",
+	}
 }
