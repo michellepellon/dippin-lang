@@ -2,7 +2,7 @@
 
 All notable changes to dippin-lang are documented here. Versions follow [semver](https://semver.org/).
 
-## [v0.15.0] — 2026-03-30
+## [v0.15.0] — 2026-03-31
 
 ### Added
 - **Interview mode** for human nodes (`mode: interview`). Runtimes extract questions from upstream agent output and present each as an individual form field with optional suggested answers. New fields: `questions_key`, `answers_key`.
@@ -12,9 +12,12 @@ All notable changes to dippin-lang are documented here. Versions follow [semver]
 - Integration guide updated with interview mode implementation guidance and recommended answer JSON schema.
 - `api_design.dip` example updated to use interview mode for Q&A collection.
 - **`interview_loop.dip`** example: reusable interview subgraph with iterative Q&A. Parameterized by topic and focus areas. LLM generates questions with suggested options, human answers via interview mode, assessor loops until requirements are clear. Grade A, ~$0.92/run.
+- **3 blog posts**: Multi-line Prompts Without Escaping (deep dive), Conditional Edges (tutorial), Cost Estimation (tutorial). Hub-and-spokes model with cross-links.
+- **Auto-deploy**: CI now deploys `site/` to GitHub Pages on successful main builds.
 
 ### Fixed
 - `--version` / `-version` flags now work (previously failed with "flag provided but not defined").
+- **Formatter idempotency**: subgraph param values with quotes (e.g., `"API design"`) were double-quoted on each format pass. Parser now strips surrounding quotes from param values.
 
 ## [v0.14.0] — 2026-03-27
 
