@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -1036,6 +1037,47 @@ func findNode(t *testing.T, w *ir.Workflow, id string) *ir.Node {
 	}
 	t.Fatalf("node %q not found", id)
 	return nil
+}
+
+func TestParseResponseFormat(t *testing.T) {
+	w := parseFixture(t, "response_format.dip")
+
+	// JsonAgent: response_format=json_object, empty response_schema
+	jsonAgent := findNode(t, w, "JsonAgent")
+	jcfg := jsonAgent.Config.(ir.AgentConfig)
+	if jcfg.ResponseFormat != "json_object" {
+		t.Errorf("JsonAgent ResponseFormat = %q, want json_object", jcfg.ResponseFormat)
+	}
+	if jcfg.ResponseSchema != "" {
+		t.Errorf("JsonAgent ResponseSchema = %q, want empty", jcfg.ResponseSchema)
+	}
+
+	// SchemaAgent: response_format=json_schema, valid JSON response_schema
+	schemaAgent := findNode(t, w, "SchemaAgent")
+	scfg := schemaAgent.Config.(ir.AgentConfig)
+	if scfg.ResponseFormat != "json_schema" {
+		t.Errorf("SchemaAgent ResponseFormat = %q, want json_schema", scfg.ResponseFormat)
+	}
+	if scfg.ResponseSchema == "" {
+		t.Fatal("SchemaAgent ResponseSchema is empty, want valid JSON")
+	}
+	var schemaObj map[string]interface{}
+	if err := json.Unmarshal([]byte(scfg.ResponseSchema), &schemaObj); err != nil {
+		t.Errorf("SchemaAgent ResponseSchema is not valid JSON: %v\ngot: %q", err, scfg.ResponseSchema)
+	}
+
+	// ParamsAgent: params with backend and permission_mode
+	paramsAgent := findNode(t, w, "ParamsAgent")
+	pcfg := paramsAgent.Config.(ir.AgentConfig)
+	if pcfg.Params == nil {
+		t.Fatal("ParamsAgent Params is nil")
+	}
+	if pcfg.Params["backend"] != "claude-code" {
+		t.Errorf("ParamsAgent Params[backend] = %q, want claude-code", pcfg.Params["backend"])
+	}
+	if pcfg.Params["permission_mode"] != "auto" {
+		t.Errorf("ParamsAgent Params[permission_mode] = %q, want auto", pcfg.Params["permission_mode"])
+	}
 }
 
 func TestParseHumanInterview(t *testing.T) {

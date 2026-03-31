@@ -171,6 +171,8 @@ func applyAgentPromptField(cfg *ir.AgentConfig, key, val string) bool {
 		cfg.SystemPrompt = val
 	case "reasoning_effort":
 		cfg.ReasoningEffort = val
+	case "response_schema":
+		cfg.ResponseSchema = val
 	default:
 		return false
 	}
@@ -186,6 +188,8 @@ func applyAgentModelField(cfg *ir.AgentConfig, key, val string) bool {
 		cfg.Provider = val
 	case "fidelity":
 		cfg.Fidelity = val
+	case "response_format":
+		cfg.ResponseFormat = val
 	default:
 		return false
 	}
@@ -195,6 +199,10 @@ func applyAgentModelField(cfg *ir.AgentConfig, key, val string) bool {
 // applyAgentComplexField handles fields needing parsing for agent config.
 func (p *Parser) applyAgentComplexField(cfg *ir.AgentConfig, key, val string, loc ir.SourceLocation) {
 	if applyAgentBoolField(cfg, key, val) {
+		return
+	}
+	if key == "params" {
+		cfg.Params = parseParamsBlock(val)
 		return
 	}
 	p.applyAgentParsedField(cfg, key, val, loc)
