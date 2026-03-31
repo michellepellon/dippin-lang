@@ -29,11 +29,12 @@ just clean              # remove build artifacts
 
 ## Code Quality
 
-Pre-commit hook enforces:
+Pre-commit hook enforces (mirrors CI exactly):
+- `golangci-lint` (includes staticcheck, errcheck, etc.)
 - Cyclomatic complexity ≤ 5 per function (`gocyclo`)
 - Cognitive complexity ≤ 7 per function (`gocognit`)
 - `gofmt` canonical formatting
-- All tests pass
+- All tests pass with race detector
 - All example `.dip` files validate
 
 When a function exceeds complexity: extract helpers, don't add `//nolint` directives.

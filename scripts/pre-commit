@@ -9,6 +9,13 @@ go build ./...
 echo "=== pre-commit: go vet ==="
 go vet ./...
 
+echo "=== pre-commit: golangci-lint ==="
+if command -v golangci-lint >/dev/null 2>&1; then
+  golangci-lint run --timeout=10m
+else
+  echo "WARN: golangci-lint not installed — skipping (install: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest)"
+fi
+
 echo "=== pre-commit: gofmt ==="
 unformatted=$(gofmt -l . 2>&1 || true)
 if [ -n "$unformatted" ]; then

@@ -28,6 +28,10 @@ test-pkg pkg:
 vet:
     go vet ./...
 
+# Run golangci-lint (same as CI)
+lint-go:
+    golangci-lint run --timeout=10m
+
 # Check formatting (exit 1 if unformatted)
 fmt-check:
     @unformatted=$(gofmt -l . 2>&1); \
@@ -75,8 +79,8 @@ complexity:
     fi
     @echo "Complexity OK."
 
-# Run the full pre-commit check suite
-check: build vet fmt-check test-race complexity validate-examples
+# Run the full pre-commit check suite (mirrors CI exactly)
+check: build vet fmt-check lint-go test-race complexity validate-examples
     @echo "All checks passed."
 
 # Generate test coverage report (excludes untestable files: main.go, cmd_lsp.go)
