@@ -66,13 +66,17 @@ agent_field     = "prompt"            ":" field_value
                 | "model"             ":" field_value
                 | "provider"          ":" field_value
                 | "max_turns"         ":" INTEGER
+                | "cmd_timeout"       ":" DURATION
                 | "goal_gate"         ":" BOOLEAN
                 | "auto_status"       ":" BOOLEAN
                 | "reasoning_effort"  ":" field_value
                 | "fidelity"          ":" field_value
                 | "cache_tools"       ":" BOOLEAN
                 | "compaction"        ":" field_value
-                | "compaction_threshold" ":" FLOAT ;
+                | "compaction_threshold" ":" FLOAT
+                | "response_format"   ":" field_value    (* "json_object" | "json_schema" *)
+                | "response_schema"   ":" field_value    (* multiline JSON Schema block *)
+                | "params"            ":" params_block ; (* pass-through key-value map *)
 
 (* --- Human Node ------------------------------------------- *)
 
@@ -281,6 +285,7 @@ digit           = "0" | "1" | ... | "9" ;
 (*   compaction                                               *)
 (* Agent: label, class, model, provider, reasoning_effort,    *)
 (*   fidelity, goal_gate, auto_status, max_turns,             *)
+(*   cmd_timeout, response_format, response_schema, params,   *)
 (*   retry_policy, max_retries, base_delay, retry_target,     *)
 (*   fallback_target, reads, writes, system_prompt, prompt    *)
 (* Human: label, mode, default, reads, writes                 *)

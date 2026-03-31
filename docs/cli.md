@@ -114,7 +114,7 @@ error[DIP003]: unknown node reference "InterpretX" in edge
 
 ### lint
 
-Run both structural validation and semantic linting (DIP001–DIP009 + DIP101–DIP126).
+Run both structural validation and semantic linting (DIP001–DIP009 + DIP101–DIP133).
 
 ```bash
 dippin lint <file>
@@ -122,7 +122,7 @@ dippin lint <file>
 
 **Input**: `.dip` or `.dot` file
 
-**Checks**: All 35 diagnostic rules. Errors (DIP001–DIP009) cause exit code 1. Warnings (DIP101–DIP126) are reported but don't affect the exit code.
+**Checks**: All 39 diagnostic rules. Errors (DIP001–DIP009) cause exit code 1. Warnings (DIP101–DIP133) are reported but don't affect the exit code.
 
 **Output**: All diagnostics (errors and warnings) to stderr.
 

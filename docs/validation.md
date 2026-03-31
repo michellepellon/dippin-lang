@@ -1,9 +1,9 @@
 # Validation and Linting Reference
 
-Dippin provides 35 diagnostic checks split into two categories:
+Dippin provides 39 diagnostic checks split into two categories:
 
 - **Structural validation** (DIP001–DIP009): Errors that **must** be fixed. A workflow with any of these cannot execute.
-- **Semantic linting** (DIP101–DIP129): Warnings that flag likely bugs or questionable patterns. They don't block execution but should be reviewed.
+- **Semantic linting** (DIP101–DIP133): Warnings that flag likely bugs or questionable patterns. They don't block execution but should be reviewed.
 
 Run `dippin validate <file>` for structural checks only, or `dippin lint <file>` for both.
 
@@ -12,7 +12,7 @@ graph LR
     SRC[".dip file"] --> PARSE["Parser"]
     PARSE --> IR["IR"]
     IR --> VAL["Structural Validation<br>DIP001–DIP009<br>(errors)"]
-    IR --> LINT["Semantic Linting<br>DIP101–DIP129<br>(warnings)"]
+    IR --> LINT["Semantic Linting<br>DIP101–DIP133<br>(warnings)"]
     VAL --> DIAG["Diagnostics"]
     LINT --> DIAG
 ```
@@ -224,7 +224,7 @@ error[DIP009]: duplicate edge
 
 ---
 
-## Semantic Lint Warnings (DIP101–DIP129)
+## Semantic Lint Warnings (DIP101–DIP133)
 
 ### DIP101: Node Only Reachable via Conditional Edges
 
@@ -778,6 +778,84 @@ warning[DIP129]: node "Ask" is mode interview but has 2 labeled edges (interview
 
 **How to fix**: Remove edge labels, or change the mode to `choice` if routing by selection is intended.
 
+### DIP130: Invalid `response_format` Value
+
+**Severity**: Warning
+
+An agent node (or any node) specifies a `response_format` value that is not one of the recognized values.
+
+```
+warning[DIP130]: node "Analyze" has response_format "json" which is not a recognized value
+  --> pipeline.dip:12:3
+  = help: valid values: json_object, json_schema
+```
+
+**What triggers it**: A `response_format` field is set to anything other than `json_object` or `json_schema`. Also fires when `response_format` is used on non-agent nodes, where it has no effect.
+
+**How to fix**: Use one of the two recognized values:
+- `json_object` — Forces the LLM to return valid JSON (any shape).
+- `json_schema` — Forces the LLM to return JSON matching the schema in `response_schema`.
+
+---
+
+### DIP131: `response_schema` / `response_format` Mismatch
+
+**Severity**: Warning (or Hint)
+
+There is a mismatch between `response_schema` and `response_format: json_schema`.
+
+```
+warning[DIP131]: node "Analyze" has response_schema but response_format is not json_schema
+  --> pipeline.dip:12:3
+  = help: set response_format: json_schema to enforce the schema
+
+hint[DIP131]: node "Analyze" has response_format: json_schema but no response_schema
+  --> pipeline.dip:12:3
+  = help: add a response_schema block to define the expected JSON shape
+```
+
+**What triggers it**:
+- `response_schema` is set but `response_format` is not `json_schema` — the schema will be ignored (warning).
+- `response_format: json_schema` is set but `response_schema` is absent — schema enforcement has no definition (hint).
+
+**How to fix**: Ensure both fields are set together when using schema-constrained output.
+
+---
+
+### DIP132: `response_schema` Must Be Valid JSON
+
+**Severity**: Warning
+
+The content of the `response_schema` block is not valid JSON.
+
+```
+warning[DIP132]: node "Analyze" has response_schema that is not valid JSON
+  --> pipeline.dip:12:3
+  = help: response_schema must be a valid JSON Schema object
+```
+
+**What triggers it**: The `response_schema` multiline block cannot be parsed as valid JSON.
+
+**How to fix**: Ensure the schema block contains valid JSON. The content must be a JSON object (typically a JSON Schema definition).
+
+---
+
+### DIP133: Agent `params` Key Shadows First-Class Field
+
+**Severity**: Hint
+
+An agent node's `params` block contains a key that matches a first-class agent field (e.g., `model`, `provider`).
+
+```
+hint[DIP133]: node "Analyze" params key "model" shadows the first-class field model
+  --> pipeline.dip:12:3
+  = help: use the top-level model: field instead of params: model to avoid ambiguity
+```
+
+**What triggers it**: A key in the agent's `params` block has the same name as a recognized first-class field like `model`, `provider`, `prompt`, `system_prompt`, etc.
+
+**How to fix**: Move the value to the appropriate first-class field, or rename the params key if the intent is to pass it through as a custom parameter.
+
 ---
 
 ## Running Validation
@@ -796,7 +874,7 @@ Runs DIP001–DIP009. Exit code 0 if all pass, 1 if any errors.
 dippin lint pipeline.dip
 ```
 
-Runs all DIP001–DIP009 errors and DIP101–DIP129 warnings. Exit code 1 only for errors; warnings alone exit 0.
+Runs all DIP001–DIP009 errors and DIP101–DIP133 warnings. Exit code 1 only for errors; warnings alone exit 0.
 
 ### JSON output for CI
 

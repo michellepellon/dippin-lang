@@ -2,6 +2,25 @@
 
 All notable changes to dippin-lang are documented here. Versions follow [semver](https://semver.org/).
 
+## [v0.16.0] — 2026-03-31
+
+### Added
+- **Structured output support** for agent nodes. New fields:
+  - `response_format`: force LLM to produce structured JSON output (`json_object` or `json_schema`)
+  - `response_schema`: inline JSON Schema definition (multiline block, like `prompt:`)
+  - `params`: generic key-value pass-through for runtime features (same syntax as subgraph `params`)
+- **DIP130**: lint warning for invalid `response_format` value.
+- **DIP131**: lint warning when `response_schema` is set without `response_format: json_schema` (schema ignored); hint when `json_schema` is set without a schema.
+- **DIP132**: lint warning when `response_schema` is not valid JSON.
+- **DIP133**: lint hint when agent `params` key shadows a first-class field (e.g., `model`, `provider`).
+- `cmd_timeout` field now parsed and formatted on agent nodes (previously only populated by DOT migrator).
+
+### Fixed
+- **Duplicate params keys** now emit a parse diagnostic instead of silently last-write-wins.
+- **Unknown defaults fields** now emit a parse diagnostic instead of being silently discarded.
+- **`AgentConfig.Params`** initialized to empty map (matching `SubgraphConfig`), preventing nil-pointer issues in downstream consumers.
+- **Cyclomatic/cognitive complexity** violations resolved across 6 files (lint_response.go, lint_human.go, parse_nodes.go, format.go, interactive.go).
+
 ## [v0.15.0] — 2026-03-31
 
 ### Added

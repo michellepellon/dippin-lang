@@ -104,7 +104,7 @@ Agent nodes invoke an LLM. They are the most configurable node kind.
 | `model` | String | workflow default | LLM model identifier (e.g., `"claude-opus-4-6"`, `"gpt-5.4"`). Overrides the workflow-level default. |
 | `provider` | String | workflow default | LLM provider (e.g., `"anthropic"`, `"openai"`, `"gemini"`). Overrides the workflow-level default. |
 | `max_turns` | Integer | 1 | Maximum conversation turns in an agentic loop. A turn is one request-response cycle. Set higher for multi-step tool-using agents. |
-| `cmd_timeout` | Duration | — | Timeout for tool/command execution within the agent's agentic loop. |
+| `cmd_timeout` | Duration | — | Command execution timeout for the agent's agentic loop (e.g., `30s`, `5m`). Applies to tool/command calls made within the agent, not to the LLM API call itself. |
 | `cache_tools` | Boolean | workflow default | Whether to cache tool call results for this agent. Useful for expensive, deterministic tools. |
 | `compaction` | String | workflow default | Context compaction mode for managing long context windows. |
 | `compaction_threshold` | Float | — | Threshold value that triggers compaction (provider-specific semantics). |
@@ -112,6 +112,9 @@ Agent nodes invoke an LLM. They are the most configurable node kind.
 | `fidelity` | String | workflow default | Checkpoint fidelity level for this node's state. |
 | `auto_status` | Boolean | false | When true, the engine parses `STATUS: <status>` from the LLM response to set `ctx.outcome`. This enables automatic routing based on the agent's self-assessment. |
 | `goal_gate` | Boolean | false | When true, this node is a "goal gate" — if it fails (outcome != success), the entire pipeline fails even if execution reaches the exit node. Used for critical quality checks. |
+| `response_format` | String | — | Forces structured JSON output. Values: `json_object` (force valid JSON, any shape), `json_schema` (force JSON matching the schema in `response_schema`). Agent-only. Triggers DIP130 if an unrecognized value is used. |
+| `response_schema` | Multiline | — | JSON Schema definition for structured output. Requires `response_format: json_schema`. Content is preserved verbatim (same as `prompt:`). Must be valid JSON — triggers DIP132 if not. |
+| `params` | Map | — | Generic pass-through parameters for the runtime. Same key-value block syntax as subgraph `params`. Keys that match first-class fields (e.g., `model`) trigger DIP133 hint. |
 
 ### auto_status
 

@@ -157,7 +157,7 @@ Use `valid` to decide whether to retry generation. Use `diagnostics` to feed err
 
 ## Diagnostic Code Summary
 
-35 diagnostic codes across two categories:
+39 diagnostic codes across two categories:
 
 - **DIP001–DIP009** (errors): start/exit missing, unknown refs, unreachable nodes, cycles, duplicates, parallel/fan_in mismatch
-- **DIP101–DIP126** (warnings): conditional reachability, missing defaults, overlapping conditions, unbounded retries, undefined variables, unknown models, empty prompts, missing timeouts, invalid policy/fidelity/reasoning_effort, stylesheet refs, namespace prefixes, condition type checking
+- **DIP101–DIP133** (warnings): conditional reachability, missing defaults, overlapping conditions, unbounded retries, undefined variables, unknown models, empty prompts, missing timeouts, invalid policy/fidelity/reasoning_effort, stylesheet refs, namespace prefixes, condition type checking, structured output validation
