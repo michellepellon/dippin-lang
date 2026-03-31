@@ -1493,3 +1493,105 @@ func TestFormatRoundTrip(t *testing.T) {
 		t.Errorf("round-trip not stable:\n--- first ---\n%s\n--- second ---\n%s", formatted1, formatted2)
 	}
 }
+
+func TestFormatResponseFormat(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "resp_fmt_test",
+		Start: "A",
+		Exit:  "A",
+		Nodes: []*ir.Node{
+			{
+				ID:   "A",
+				Kind: ir.NodeAgent,
+				Config: ir.AgentConfig{
+					Provider:       "openai",
+					ResponseFormat: "json_object",
+					Prompt:         "Return JSON.",
+				},
+			},
+		},
+	}
+
+	output := Format(w)
+	assertContains(t, output, "response_format: json_object")
+	assertContains(t, output, "provider: openai")
+	assertContains(t, output, "prompt:")
+
+	// response_format appears after provider, before prompt
+	providerIdx := strings.Index(output, "provider:")
+	responseFormatIdx := strings.Index(output, "response_format:")
+	promptIdx := strings.Index(output, "prompt:")
+	if responseFormatIdx < providerIdx {
+		t.Error("response_format should appear after provider")
+	}
+	if responseFormatIdx > promptIdx {
+		t.Error("response_format should appear before prompt")
+	}
+	assertIdempotent(t, w)
+}
+
+func TestFormatResponseSchema(t *testing.T) {
+	schema := `{
+  "type": "object",
+  "properties": {
+    "result": {"type": "string"}
+  }
+}`
+	w := &ir.Workflow{
+		Name:  "resp_schema_test",
+		Start: "A",
+		Exit:  "A",
+		Nodes: []*ir.Node{
+			{
+				ID:   "A",
+				Kind: ir.NodeAgent,
+				Config: ir.AgentConfig{
+					ResponseFormat: "json_schema",
+					ResponseSchema: schema,
+					Prompt:         "Return structured output.",
+				},
+			},
+		},
+	}
+
+	output := Format(w)
+	assertContains(t, output, "response_format: json_schema")
+	assertContains(t, output, "response_schema:")
+	assertContains(t, output, `"type": "object"`)
+	assertContains(t, output, `"result": {"type": "string"}`)
+	assertIdempotent(t, w)
+}
+
+func TestFormatAgentParams(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "agent_params_test",
+		Start: "A",
+		Exit:  "A",
+		Nodes: []*ir.Node{
+			{
+				ID:   "A",
+				Kind: ir.NodeAgent,
+				Config: ir.AgentConfig{
+					Params: map[string]string{
+						"backend":         "claude-code",
+						"permission_mode": "auto",
+					},
+					Prompt: "Do work.",
+				},
+			},
+		},
+	}
+
+	output := Format(w)
+	assertContains(t, output, "params:")
+	assertContains(t, output, "backend: claude-code")
+	assertContains(t, output, "permission_mode: auto")
+
+	// params appear before prompt
+	paramsIdx := strings.Index(output, "params:")
+	promptIdx := strings.Index(output, "prompt:")
+	if paramsIdx > promptIdx {
+		t.Error("params should appear before prompt")
+	}
+	assertIdempotent(t, w)
+}

@@ -252,10 +252,12 @@ func writeNodeConfigFields(wr *writer, n *ir.Node) {
 func writeAgentFields(wr *writer, n *ir.Node, cfg ir.AgentConfig) {
 	writeCommonNodeFields(wr, n)
 	writeAgentModelFields(wr, cfg)
+	writeAgentResponseFields(wr, cfg)
 	writeAgentBehaviorFields(wr, cfg)
 	writeAgentCompactionFields(wr, cfg)
 	writeRetryFields(wr, n)
 	writeIOFields(wr, n)
+	writeSubgraphParams(wr, cfg.Params)
 
 	if cfg.Prompt != "" {
 		wr.multilineBlock("prompt", cfg.Prompt)
@@ -285,6 +287,16 @@ func writeAgentModelFields(wr *writer, cfg ir.AgentConfig) {
 	}
 	if cfg.Fidelity != "" {
 		wr.line("fidelity: %s", quoteValue(cfg.Fidelity))
+	}
+}
+
+// writeAgentResponseFields writes response format fields for agent nodes.
+func writeAgentResponseFields(wr *writer, cfg ir.AgentConfig) {
+	if cfg.ResponseFormat != "" {
+		wr.line("response_format: %s", quoteValue(cfg.ResponseFormat))
+	}
+	if cfg.ResponseSchema != "" {
+		wr.multilineBlock("response_schema", cfg.ResponseSchema)
 	}
 }
 
