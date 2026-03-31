@@ -95,7 +95,7 @@ type AgentConfig struct {
 	GoalGate            bool              // Pipeline fails if this node fails
 	ResponseFormat      string            // "json_object" or "json_schema"
 	ResponseSchema      string            // JSON schema (when ResponseFormat is "json_schema")
-	Params              map[string]string  // Generic key-value pairs passed through to runtime
+	Params              map[string]string // Generic key-value pairs passed through to runtime
 }
 
 func (AgentConfig) nodeConfig() {}
