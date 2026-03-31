@@ -311,6 +311,9 @@ func writeAgentBehaviorFields(wr *writer, cfg ir.AgentConfig) {
 	if cfg.MaxTurns != 0 {
 		wr.line("max_turns: %d", cfg.MaxTurns)
 	}
+	if cfg.CmdTimeout != 0 {
+		wr.line("cmd_timeout: %s", formatDuration(cfg.CmdTimeout))
+	}
 }
 
 // writeAgentCompactionFields writes compaction-related fields for agent nodes.

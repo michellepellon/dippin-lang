@@ -1,6 +1,8 @@
 package parser
 
 import (
+	"fmt"
+
 	"github.com/2389-research/dippin-lang/ir"
 )
 
@@ -94,5 +96,8 @@ func (p *Parser) applyDefaultComplexField(key, val string, loc ir.SourceLocation
 		p.workflow.Defaults.MaxRestarts = p.parseInt(val, key, loc)
 	case "cache_tools":
 		p.workflow.Defaults.CacheTools = (val == "true")
+	default:
+		p.diagnostics = append(p.diagnostics,
+			fmt.Sprintf("unknown defaults field %q at %d:%d", key, loc.Line, loc.Column))
 	}
 }

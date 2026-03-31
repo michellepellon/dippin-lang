@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/2389-research/dippin-lang/ir"
@@ -10,7 +11,7 @@ import (
 func defaultNodeConfig(kind ir.NodeKind) ir.NodeConfig {
 	switch kind {
 	case ir.NodeAgent:
-		return ir.AgentConfig{}
+		return ir.AgentConfig{Params: make(map[string]string)}
 	case ir.NodeHuman:
 		return ir.HumanConfig{}
 	case ir.NodeTool:
@@ -202,7 +203,7 @@ func (p *Parser) applyAgentComplexField(cfg *ir.AgentConfig, key, val string, lo
 		return
 	}
 	if key == "params" {
-		cfg.Params = parseParamsBlock(val)
+		cfg.Params = p.parseParamsBlock(val)
 		return
 	}
 	p.applyAgentParsedField(cfg, key, val, loc)
@@ -232,6 +233,8 @@ func (p *Parser) applyAgentParsedField(cfg *ir.AgentConfig, key, val string, loc
 		cfg.MaxTurns = p.parseInt(val, key, loc)
 	case "compaction_threshold":
 		cfg.CompactionThreshold = p.parseFloat(val, key, loc)
+	case "cmd_timeout":
+		cfg.CmdTimeout = p.parseDuration(val, key, loc)
 	}
 }
 
@@ -269,12 +272,13 @@ func (p *Parser) applySubgraphField(cfg *ir.SubgraphConfig, key, val string, loc
 	case "ref":
 		cfg.Ref = val
 	case "params":
-		cfg.Params = parseParamsBlock(val)
+		cfg.Params = p.parseParamsBlock(val)
 	}
 }
 
 // parseParamsBlock parses a raw block of key: value lines into a map.
-func parseParamsBlock(raw string) map[string]string {
+// Duplicate keys emit a diagnostic and last-write-wins.
+func (p *Parser) parseParamsBlock(raw string) map[string]string {
 	params := make(map[string]string)
 	for _, line := range strings.Split(raw, "\n") {
 		line = strings.TrimSpace(line)
@@ -283,6 +287,10 @@ func parseParamsBlock(raw string) map[string]string {
 		}
 		k, v := splitKeyValue(line)
 		if k != "" {
+			if _, exists := params[k]; exists {
+				p.diagnostics = append(p.diagnostics,
+					fmt.Sprintf("duplicate params key %q (last value wins)", k))
+			}
 			params[k] = unquoteRaw(v)
 		}
 	}
