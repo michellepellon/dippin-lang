@@ -1915,3 +1915,50 @@ func TestLintParamsNoShadow(t *testing.T) {
 	res := Lint(w)
 	assertNoCode(t, res, DIP133)
 }
+
+// --- DIP131: response_schema with response_format absent entirely ---
+
+func TestLintResponseSchemaFormatAbsent(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "dip131_format_absent",
+		Start: "A",
+		Exit:  "A",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+				Prompt:         "Hello.",
+				ResponseSchema: `{"type": "object"}`,
+				// ResponseFormat intentionally empty
+			}},
+		},
+	}
+	res := Lint(w)
+	assertHasCode(t, res, DIP131)
+	for _, d := range res.Diagnostics {
+		if d.Code == DIP131 && d.Severity != SeverityWarning {
+			t.Errorf("DIP131 for absent format should be warning, got %s", d.Severity)
+		}
+	}
+}
+
+// --- All structured output fields valid together ---
+
+func TestLintAllStructuredFieldsValidNoWarnings(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "all_structured_valid",
+		Start: "A",
+		Exit:  "A",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+				Prompt:         "Return structured output.",
+				ResponseFormat: "json_schema",
+				ResponseSchema: `{"type":"object","properties":{"result":{"type":"string"}}}`,
+				Params:         map[string]string{"backend": "claude-code"},
+			}},
+		},
+	}
+	res := Lint(w)
+	assertNoCode(t, res, DIP130)
+	assertNoCode(t, res, DIP131)
+	assertNoCode(t, res, DIP132)
+	assertNoCode(t, res, DIP133)
+}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/2389-research/dippin-lang/ir"
 )
@@ -80,7 +81,7 @@ func lintResponseSchemaJSON(w *ir.Workflow) []Diagnostic {
 	var diags []Diagnostic
 	for _, n := range w.Nodes {
 		cfg, ok := n.Config.(ir.AgentConfig)
-		if !ok || cfg.ResponseSchema == "" {
+		if !ok || strings.TrimSpace(cfg.ResponseSchema) == "" {
 			continue
 		}
 		if !json.Valid([]byte(cfg.ResponseSchema)) {

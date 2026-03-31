@@ -1595,3 +1595,55 @@ func TestFormatAgentParams(t *testing.T) {
 	}
 	assertIdempotent(t, w)
 }
+
+func TestFormatAgentNoResponseFieldsWhenUnset(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "no_response_fields",
+		Start: "A",
+		Exit:  "A",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+				Prompt: "Just a plain prompt.",
+			}},
+		},
+	}
+	output := Format(w)
+	assertNotContains(t, output, "response_format:")
+	assertNotContains(t, output, "response_schema:")
+	assertNotContains(t, output, "params:")
+}
+
+func TestFormatAllStructuredOutputFieldsTogether(t *testing.T) {
+	schema := "{\"type\":\"object\",\"properties\":{\"answer\":{\"type\":\"string\"}},\"required\":[\"answer\"]}"
+	w := &ir.Workflow{
+		Name:  "all_structured",
+		Start: "A",
+		Exit:  "A",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+				ResponseFormat: "json_schema",
+				ResponseSchema: schema,
+				Params:         map[string]string{"backend": "claude-code"},
+				Prompt:         "Return structured output.",
+			}},
+		},
+	}
+	output := Format(w)
+	assertContains(t, output, "response_format: json_schema")
+	assertContains(t, output, "response_schema:")
+	assertContains(t, output, "params:")
+	assertContains(t, output, "backend: claude-code")
+
+	// Field ordering
+	rfIdx := strings.Index(output, "response_format:")
+	rsIdx := strings.Index(output, "response_schema:")
+	pIdx := strings.Index(output, "params:")
+	prIdx := strings.Index(output, "prompt:")
+	if rfIdx > rsIdx {
+		t.Error("response_format should appear before response_schema")
+	}
+	if pIdx > prIdx {
+		t.Error("params should appear before prompt")
+	}
+	assertIdempotent(t, w)
+}
