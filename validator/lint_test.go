@@ -1758,3 +1758,160 @@ func TestLint_DIP122_DeclaredOutput_NoWarning(t *testing.T) {
 	res := Lint(w)
 	assertNoCode(t, res, DIP122)
 }
+
+// --- DIP130: invalid response_format value ---
+
+func TestLintResponseFormatInvalid(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "dip130_invalid",
+		Start: "A",
+		Exit:  "A",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+				Prompt:         "Hello.",
+				ResponseFormat: "xml",
+			}},
+		},
+	}
+	res := Lint(w)
+	assertHasCode(t, res, DIP130)
+}
+
+func TestLintResponseFormatValid(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "dip130_valid",
+		Start: "A",
+		Exit:  "A",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+				Prompt:         "Hello.",
+				ResponseFormat: "json_object",
+			}},
+		},
+	}
+	res := Lint(w)
+	assertNoCode(t, res, DIP130)
+}
+
+// --- DIP131: response_schema/response_format mismatch ---
+
+func TestLintResponseSchemaWithoutJsonSchema(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "dip131_schema_no_format",
+		Start: "A",
+		Exit:  "A",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+				Prompt:         "Hello.",
+				ResponseFormat: "json_object",
+				ResponseSchema: `{"type":"object"}`,
+			}},
+		},
+	}
+	res := Lint(w)
+	found := false
+	for _, d := range res.Diagnostics {
+		if d.Code == DIP131 && d.Severity == SeverityWarning {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected DIP131 warning, got: %v", res.Diagnostics)
+	}
+}
+
+func TestLintJsonSchemaWithoutResponseSchema(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "dip131_format_no_schema",
+		Start: "A",
+		Exit:  "A",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+				Prompt:         "Hello.",
+				ResponseFormat: "json_schema",
+			}},
+		},
+	}
+	res := Lint(w)
+	found := false
+	for _, d := range res.Diagnostics {
+		if d.Code == DIP131 && d.Severity == SeverityHint {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected DIP131 hint, got: %v", res.Diagnostics)
+	}
+}
+
+// --- DIP132: response_schema is not valid JSON ---
+
+func TestLintResponseSchemaInvalidJSON(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "dip132_invalid_json",
+		Start: "A",
+		Exit:  "A",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+				Prompt:         "Hello.",
+				ResponseFormat: "json_schema",
+				ResponseSchema: `{not valid json`,
+			}},
+		},
+	}
+	res := Lint(w)
+	assertHasCode(t, res, DIP132)
+}
+
+func TestLintResponseSchemaValidJSON(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "dip132_valid_json",
+		Start: "A",
+		Exit:  "A",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+				Prompt:         "Hello.",
+				ResponseFormat: "json_schema",
+				ResponseSchema: `{"type":"object","properties":{"name":{"type":"string"}}}`,
+			}},
+		},
+	}
+	res := Lint(w)
+	assertNoCode(t, res, DIP132)
+}
+
+// --- DIP133: agent params key shadows a first-class field ---
+
+func TestLintParamsShadowsField(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "dip133_shadow",
+		Start: "A",
+		Exit:  "A",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+				Prompt: "Hello.",
+				Params: map[string]string{"model": "gpt-4"},
+			}},
+		},
+	}
+	res := Lint(w)
+	assertHasCode(t, res, DIP133)
+}
+
+func TestLintParamsNoShadow(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "dip133_no_shadow",
+		Start: "A",
+		Exit:  "A",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+				Prompt: "Hello.",
+				Params: map[string]string{"custom_key": "value", "another_key": "data"},
+			}},
+		},
+	}
+	res := Lint(w)
+	assertNoCode(t, res, DIP133)
+}

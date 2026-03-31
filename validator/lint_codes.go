@@ -1,6 +1,6 @@
 package validator
 
-// Diagnostic codes for semantic quality warnings (DIP101–DIP126).
+// Diagnostic codes for semantic quality warnings (DIP101–DIP133).
 const (
 	DIP101 = "DIP101" // unreachable nodes after conditional branches
 	DIP102 = "DIP102" // routing node without default/unconditional edge
@@ -31,6 +31,10 @@ const (
 	DIP127 = "DIP127" // invalid human node mode
 	DIP128 = "DIP128" // interview mode with meaningless default
 	DIP129 = "DIP129" // interview mode with conflicting choice-style edges
+	DIP130 = "DIP130" // invalid response_format value or on non-agent node
+	DIP131 = "DIP131" // response_schema/response_format mismatch
+	DIP132 = "DIP132" // response_schema is not valid JSON
+	DIP133 = "DIP133" // agent params key shadows a first-class field
 )
 
 func init() {
@@ -64,4 +68,8 @@ func init() {
 	CodeDescription[DIP127] = "invalid human node mode"
 	CodeDescription[DIP128] = "interview mode with meaningless default value"
 	CodeDescription[DIP129] = "interview mode with conflicting choice-style edges"
+	CodeDescription[DIP130] = "invalid response_format value or on non-agent node"
+	CodeDescription[DIP131] = "response_schema and response_format mismatch"
+	CodeDescription[DIP132] = "response_schema is not valid JSON"
+	CodeDescription[DIP133] = "agent params key shadows a first-class field"
 }

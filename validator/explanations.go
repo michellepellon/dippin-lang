@@ -321,5 +321,33 @@ func advancedExplanations() map[string]Explanation {
 			Fix:     "Remove edge labels, or change mode to choice if routing is intended.",
 			Example: "human Ask\n  mode: interview\n\nedges\n  Ask -> A label: yes\n  Ask -> B label: no  // conflicting",
 		},
+		DIP130: {
+			Code:    DIP130,
+			Summary: "invalid response_format value or on non-agent node",
+			Trigger: "An agent node has a response_format value other than json_object or json_schema.",
+			Fix:     "Set response_format to json_object or json_schema.",
+			Example: "agent Parse\n  response_format: xml  // invalid",
+		},
+		DIP131: {
+			Code:    DIP131,
+			Summary: "response_schema and response_format mismatch",
+			Trigger: "response_schema is set but response_format is not json_schema (schema will be ignored), or response_format is json_schema but no response_schema is provided.",
+			Fix:     "Set response_format: json_schema when providing a schema, or remove response_schema if not needed.",
+			Example: "agent Parse\n  response_format: json_object\n  response_schema: {...}  // schema will be ignored",
+		},
+		DIP132: {
+			Code:    DIP132,
+			Summary: "response_schema is not valid JSON",
+			Trigger: "The response_schema field contains text that is not valid JSON.",
+			Fix:     "Fix the JSON syntax in the response_schema block.",
+			Example: "agent Parse\n  response_schema: {not valid json  // syntax error",
+		},
+		DIP133: {
+			Code:    DIP133,
+			Summary: "agent params key shadows a first-class field",
+			Trigger: "A key in the params block matches a typed first-class field like model, provider, or response_format. The typed field takes precedence and the params entry is ignored.",
+			Fix:     "Move the value from params to the dedicated typed field.",
+			Example: "agent Call\n  params:\n    model: gpt-4  // use top-level model: instead",
+		},
 	}
 }
