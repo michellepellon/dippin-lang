@@ -91,8 +91,11 @@ type AgentConfig struct {
 	CompactionThreshold float64
 	ReasoningEffort     string
 	Fidelity            string
-	AutoStatus          bool // Parse STATUS: from response
-	GoalGate            bool // Pipeline fails if this node fails
+	AutoStatus          bool              // Parse STATUS: from response
+	GoalGate            bool              // Pipeline fails if this node fails
+	ResponseFormat      string            // "json_object" or "json_schema"
+	ResponseSchema      string            // JSON schema (when ResponseFormat is "json_schema")
+	Params              map[string]string  // Generic key-value pairs passed through to runtime
 }
 
 func (AgentConfig) nodeConfig() {}
