@@ -2,14 +2,16 @@
 /dippin
 
 # Coverage
-cover.out
-cover_check.out
+cover*.out
 
 # Temp test files
 test_*.dip
 ask_*.txt
 ask_*.json
 paths.jsonl
+
+# Temp site files
+site/*.tmp
 
 # WASM build output
 site/dippin.wasm
