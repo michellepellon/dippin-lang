@@ -51,13 +51,13 @@ func lintResponseSchemaMismatch(w *ir.Workflow) []Diagnostic {
 		if !ok {
 			continue
 		}
-		diags = append(diags, checkSchemaWithoutJsonSchema(n, cfg)...)
-		diags = append(diags, checkJsonSchemaWithoutSchema(n, cfg)...)
+		diags = append(diags, checkSchemaWithoutJSONSchema(n, cfg)...)
+		diags = append(diags, checkJSONSchemaWithoutSchema(n, cfg)...)
 	}
 	return diags
 }
 
-func checkSchemaWithoutJsonSchema(n *ir.Node, cfg ir.AgentConfig) []Diagnostic {
+func checkSchemaWithoutJSONSchema(n *ir.Node, cfg ir.AgentConfig) []Diagnostic {
 	if cfg.ResponseSchema == "" || cfg.ResponseFormat == "json_schema" {
 		return nil
 	}
@@ -74,7 +74,7 @@ func checkSchemaWithoutJsonSchema(n *ir.Node, cfg ir.AgentConfig) []Diagnostic {
 	}}
 }
 
-func checkJsonSchemaWithoutSchema(n *ir.Node, cfg ir.AgentConfig) []Diagnostic {
+func checkJSONSchemaWithoutSchema(n *ir.Node, cfg ir.AgentConfig) []Diagnostic {
 	if cfg.ResponseFormat != "json_schema" || cfg.ResponseSchema != "" {
 		return nil
 	}
