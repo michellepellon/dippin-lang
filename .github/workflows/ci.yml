@@ -223,6 +223,24 @@ jobs:
             ./dippin optimize "$f" 2>&1 || true
           done
 
+  deploy-site:
+    name: Deploy Site
+    needs: [test, lint, build, validate-examples]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Deploy to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./site
+          keep_files: true
+
   dippin-lint:
     name: Dippin Lint Action (dogfood)
     runs-on: ubuntu-latest

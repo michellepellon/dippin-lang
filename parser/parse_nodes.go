@@ -275,7 +275,7 @@ func parseParamsBlock(raw string) map[string]string {
 		}
 		k, v := splitKeyValue(line)
 		if k != "" {
-			params[k] = v
+			params[k] = unquoteRaw(v)
 		}
 	}
 	return params
