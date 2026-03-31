@@ -65,6 +65,7 @@ workflow APIDesign
     model: claude-opus-4-6
     provider: anthropic
     reasoning_effort: high
+    response_format: json_object
     reads: project_context, requirements_summary
     writes: api_requirements
     prompt:
