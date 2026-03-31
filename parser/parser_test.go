@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/2389-research/dippin-lang/formatter"
 	"github.com/2389-research/dippin-lang/ir"
 )
 
@@ -1077,6 +1078,42 @@ func TestParseResponseFormat(t *testing.T) {
 	}
 	if pcfg.Params["permission_mode"] != "auto" {
 		t.Errorf("ParamsAgent Params[permission_mode] = %q, want auto", pcfg.Params["permission_mode"])
+	}
+}
+
+func TestRoundtripResponseFormatFields(t *testing.T) {
+	w1 := parseFixture(t, "response_format.dip")
+	formatted := formatter.Format(w1)
+	w2, err := NewParser(formatted, "roundtrip").Parse()
+	if err != nil {
+		t.Fatalf("failed to parse formatted output: %v", err)
+	}
+
+	// Verify response_format survives
+	jsonNode := findNode(t, w2, "JsonAgent")
+	jcfg := jsonNode.Config.(ir.AgentConfig)
+	if jcfg.ResponseFormat != "json_object" {
+		t.Errorf("round-trip: JsonAgent ResponseFormat = %q, want json_object", jcfg.ResponseFormat)
+	}
+
+	// Verify response_schema JSON survives with valid structure
+	schemaNode := findNode(t, w2, "SchemaAgent")
+	scfg := schemaNode.Config.(ir.AgentConfig)
+	if scfg.ResponseFormat != "json_schema" {
+		t.Errorf("round-trip: SchemaAgent ResponseFormat = %q, want json_schema", scfg.ResponseFormat)
+	}
+	if !json.Valid([]byte(scfg.ResponseSchema)) {
+		t.Errorf("round-trip: SchemaAgent ResponseSchema is not valid JSON: %s", scfg.ResponseSchema)
+	}
+
+	// Verify params survive
+	paramsNode := findNode(t, w2, "ParamsAgent")
+	pcfg2 := paramsNode.Config.(ir.AgentConfig)
+	if pcfg2.Params["backend"] != "claude-code" {
+		t.Errorf("round-trip: ParamsAgent Params[backend] = %q, want claude-code", pcfg2.Params["backend"])
+	}
+	if pcfg2.Params["permission_mode"] != "auto" {
+		t.Errorf("round-trip: ParamsAgent Params[permission_mode] = %q, want auto", pcfg2.Params["permission_mode"])
 	}
 }
 

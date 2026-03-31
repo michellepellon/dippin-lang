@@ -3,6 +3,7 @@ package validator
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 
 	"github.com/2389-research/dippin-lang/ir"
 )
@@ -50,10 +51,14 @@ func lintResponseSchemaMismatch(w *ir.Workflow) []Diagnostic {
 			continue
 		}
 		if cfg.ResponseSchema != "" && cfg.ResponseFormat != "json_schema" {
+			fmtDesc := fmt.Sprintf("%q", cfg.ResponseFormat)
+			if cfg.ResponseFormat == "" {
+				fmtDesc = "not set"
+			}
 			diags = append(diags, Diagnostic{
 				Code:     DIP131,
 				Severity: SeverityWarning,
-				Message:  fmt.Sprintf("node %q has response_schema but response_format is %q (schema will be ignored)", n.ID, cfg.ResponseFormat),
+				Message:  fmt.Sprintf("node %q has response_schema but response_format is %s (schema will be ignored)", n.ID, fmtDesc),
 				Location: n.Source,
 				Help:     "set response_format: json_schema to use the schema, or remove response_schema",
 			})
@@ -98,7 +103,12 @@ func lintAgentParamsShadow(w *ir.Workflow) []Diagnostic {
 		if !ok || len(cfg.Params) == 0 {
 			continue
 		}
+		keys := make([]string, 0, len(cfg.Params))
 		for k := range cfg.Params {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
 			if agentFirstClassFields[k] {
 				diags = append(diags, Diagnostic{
 					Code:     DIP133,
