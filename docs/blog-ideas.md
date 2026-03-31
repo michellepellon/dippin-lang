@@ -4,26 +4,26 @@
 
 ## Status
 
-### Published (5)
+### Published (8)
 - [x] 1. Getting Started with Dippin — `site/blog/getting-started.html`
 - [x] 2. Scenario Testing with .test.json — `site/blog/scenario-testing.html`
 - [x] 3. Migrating from DOT to Dippin — `site/blog/migrating-from-dot.html`
 - [x] 4. CI Integration: Lint, Test, Format — `site/blog/ci-integration.html`
 - [x] 5. Editor Setup: LSP, VS Code, Tree-sitter — `site/blog/editor-setup.html`
 
-### Remaining (20)
-- [ ] 6. Conditional Edges: Routing with `when`
+### Remaining (17)
+- [x] 6. Conditional Edges: Routing with `when` — `site/blog/conditional-edges.html`
 - [ ] 7. Parallel Execution: Fan-Out and Fan-In
 - [ ] 8. Human Gates: Choice vs Freeform
 - [ ] 9. Goal Gates: Pipeline-Critical Quality Checks
 - [ ] 10. Retry Policies and Fallback Targets
 - [ ] 11. Edge Coverage: Are Your Tests Complete?
-- [ ] 12. Cost Estimation: Know Before You Run
+- [x] 12. Cost Estimation: Know Before You Run — `site/blog/cost-estimation.html`
 - [ ] 13. The Doctor Will See You Now: Health Reports
 - [ ] 14. Dead Branch Detection with `dippin unused`
 - [ ] 15. `dippin watch`: Live Feedback While You Author
 - [ ] 16. ASCII DAGs with `dippin graph`
-- [ ] 17. Multi-line Prompts Without Escaping
+- [x] 17. Multi-line Prompts Without Escaping — `site/blog/multi-line-prompts.html`
 - [ ] 18. Shell Scripts in Tool Nodes
 - [ ] 19. Context Variables and Data Flow
 - [ ] 20. Subgraph Composition
