@@ -1246,3 +1246,65 @@ func TestParseConditionalNode(t *testing.T) {
 		t.Errorf("label = %q, want %q", route.Label, "Route by Outcome")
 	}
 }
+
+func TestNestedRetryBlockError(t *testing.T) {
+	input := `workflow Test
+  start: A
+  exit: B
+  tool A
+    label: "Verify"
+    command: "verify.sh"
+    timeout: 30s
+    retry
+      policy: aggressive
+      max_retries: 5
+      retry_target: process
+  agent B
+    prompt: done
+  edges
+    A -> B
+`
+	p := NewParser(input, "test.dip")
+	_, err := p.Parse()
+	if err == nil {
+		t.Fatal("expected parse error for nested retry block")
+	}
+	if !strings.Contains(err.Error(), "retry") {
+		t.Errorf("error should mention retry, got: %s", err.Error())
+	}
+	if !strings.Contains(err.Error(), "retry_policy") {
+		t.Errorf("error should suggest retry_policy, got: %s", err.Error())
+	}
+	if !strings.Contains(err.Error(), "max_retries") {
+		t.Errorf("error should suggest max_retries, got: %s", err.Error())
+	}
+}
+
+func TestNestedRetryBlockRestOfWorkflowParses(t *testing.T) {
+	input := `workflow Test
+  start: A
+  exit: B
+  tool A
+    label: "Verify"
+    command: "verify.sh"
+    timeout: 30s
+    retry
+      policy: aggressive
+      max_retries: 5
+      retry_target: process
+  agent B
+    prompt: done
+  edges
+    A -> B
+`
+	p := NewParser(input, "test.dip")
+	w, _ := p.Parse()
+	// Even with the error, the parser should recover and parse remaining nodes and edges.
+	nodeB := w.Node("B")
+	if nodeB == nil {
+		t.Fatal("node B should be parsed despite retry error in node A")
+	}
+	if len(w.Edges) == 0 {
+		t.Error("edges should be parsed despite retry error in node A")
+	}
+}

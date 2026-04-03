@@ -44,20 +44,68 @@ func (p *Parser) parseNode(kind ir.NodeKind) {
 // parseNodeBody parses the indented fields within a node declaration.
 func (p *Parser) parseNodeBody(node *ir.Node) {
 	for p.lexer.PeekToken().Type != TokenOutdent && p.lexer.PeekToken().Type != TokenEOF {
-		t := p.lexer.PeekToken()
-		if t.Type == TokenNewline {
-			p.lexer.NextToken()
-			continue
-		}
-		if t.Type == TokenIdentifier {
-			key := t.Value
-			p.lexer.NextToken()
-			p.expect(TokenColon)
-			val := p.readFieldValue(t.Location.Line)
-			p.applyNodeField(node, key, val, t.Location)
-		} else {
-			p.lexer.NextToken()
-		}
+		p.parseNodeBodyLine(node)
+	}
+}
+
+// parseNodeBodyLine processes one token (or logical line) inside a node body.
+func (p *Parser) parseNodeBodyLine(node *ir.Node) {
+	t := p.lexer.PeekToken()
+	if t.Type == TokenNewline {
+		p.lexer.NextToken()
+		return
+	}
+	if t.Type == TokenIdentifier && t.Value == "retry" {
+		p.emitNestedRetryError(t.Location)
+		return
+	}
+	if t.Type == TokenIdentifier {
+		p.parseNodeField(node, t)
+		return
+	}
+	p.lexer.NextToken()
+}
+
+// parseNodeField parses a single key: value field in a node body.
+func (p *Parser) parseNodeField(node *ir.Node, t Token) {
+	key := t.Value
+	p.lexer.NextToken()
+	p.expect(TokenColon)
+	val := p.readFieldValue(t.Location.Line)
+	p.applyNodeField(node, key, val, t.Location)
+}
+
+func (p *Parser) emitNestedRetryError(loc ir.SourceLocation) {
+	p.diagnostics = append(p.diagnostics, fmt.Sprintf(
+		"nested retry blocks are not supported; use flat attributes instead (retry_policy, max_retries, retry_target, fallback_target, base_delay) at %d:%d",
+		loc.Line, loc.Column))
+	p.lexer.NextToken() // consume "retry"
+	p.consumeUntilNewline()
+	p.skipIndentedBlock()
+}
+
+// skipIndentedBlock skips over an optional indented block following the current position.
+func (p *Parser) skipIndentedBlock() {
+	p.skipLeadingNewline()
+	if p.lexer.PeekToken().Type != TokenIndent {
+		return
+	}
+	p.lexer.NextToken() // consume indent
+	p.consumeUntilOutdent()
+}
+
+func (p *Parser) skipLeadingNewline() {
+	if p.lexer.PeekToken().Type == TokenNewline {
+		p.lexer.NextToken()
+	}
+}
+
+func (p *Parser) consumeUntilOutdent() {
+	for p.lexer.PeekToken().Type != TokenOutdent && p.lexer.PeekToken().Type != TokenEOF {
+		p.lexer.NextToken()
+	}
+	if p.lexer.PeekToken().Type == TokenOutdent {
+		p.lexer.NextToken()
 	}
 }
 
