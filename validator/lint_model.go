@@ -109,6 +109,38 @@ func grokModels() map[string]bool {
 	}
 }
 
+// RegisterExtraModels extends the known model catalog with user-provided entries.
+// Format: "provider:model1,model2;provider2:model3"
+func RegisterExtraModels(spec string) {
+	for _, entry := range strings.Split(spec, ";") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		registerOneProvider(entry)
+	}
+}
+
+// registerOneProvider parses a single "provider:model1,model2" entry and adds
+// the models to the known catalog.
+func registerOneProvider(entry string) {
+	parts := strings.SplitN(entry, ":", 2)
+	if len(parts) != 2 {
+		return
+	}
+	provider := strings.TrimSpace(parts[0])
+	models := strings.Split(parts[1], ",")
+	if knownModelProviders[provider] == nil {
+		knownModelProviders[provider] = make(map[string]bool)
+	}
+	for _, m := range models {
+		m = strings.TrimSpace(m)
+		if m != "" {
+			knownModelProviders[provider][m] = true
+		}
+	}
+}
+
 // lintModelProvider checks DIP108: model/provider combinations should be
 // in the known catalog. Unknown combinations may indicate typos.
 func lintModelProvider(w *ir.Workflow) []Diagnostic {

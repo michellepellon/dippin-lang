@@ -1185,6 +1185,80 @@ func TestLintDIP108NoModelOrProvider(t *testing.T) {
 	}
 }
 
+func TestRegisterExtraModels(t *testing.T) {
+	const provider = "custom-corp"
+	const model = "custom-llm-v1"
+
+	// Cleanup: remove the test provider after the test.
+	t.Cleanup(func() {
+		delete(knownModelProviders, provider)
+	})
+
+	w := &ir.Workflow{
+		Name:  "custom_model",
+		Start: "A",
+		Exit:  "A",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+				Prompt:   "hello",
+				Model:    model,
+				Provider: provider,
+			}},
+		},
+	}
+
+	// Before registration, DIP108 should fire.
+	result := Lint(w)
+	hasDIP108 := false
+	for _, d := range result.Diagnostics {
+		if d.Code == DIP108 {
+			hasDIP108 = true
+			break
+		}
+	}
+	if !hasDIP108 {
+		t.Error("expected DIP108 before RegisterExtraModels, but got none")
+	}
+
+	// Register the custom model.
+	RegisterExtraModels(provider + ":" + model)
+
+	// After registration, DIP108 should not fire.
+	result2 := Lint(w)
+	for _, d := range result2.Diagnostics {
+		if d.Code == DIP108 {
+			t.Errorf("unexpected DIP108 after RegisterExtraModels: %s", d.Message)
+		}
+	}
+}
+
+func TestRegisterExtraModels_MultipleProviders(t *testing.T) {
+	t.Cleanup(func() {
+		delete(knownModelProviders, "corp-a")
+		delete(knownModelProviders, "corp-b")
+	})
+
+	RegisterExtraModels("corp-a:model-x,model-y;corp-b:model-z")
+
+	if !knownModelProviders["corp-a"]["model-x"] {
+		t.Error("expected corp-a:model-x to be registered")
+	}
+	if !knownModelProviders["corp-a"]["model-y"] {
+		t.Error("expected corp-a:model-y to be registered")
+	}
+	if !knownModelProviders["corp-b"]["model-z"] {
+		t.Error("expected corp-b:model-z to be registered")
+	}
+}
+
+func TestRegisterExtraModels_EmptyAndMalformed(t *testing.T) {
+	// Should not panic or register garbage.
+	RegisterExtraModels("")
+	RegisterExtraModels(";;")
+	RegisterExtraModels("no-colon-here")
+	RegisterExtraModels("provider-only:")
+}
+
 func TestLintDIP112CycleDoesNotPanic(t *testing.T) {
 	// A workflow with a cycle (via non-restart edges) should not cause
 	// the topological sort in DIP112 to hang or panic.

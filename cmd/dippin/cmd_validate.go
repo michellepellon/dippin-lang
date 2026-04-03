@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 
 	"github.com/2389-research/dippin-lang/validator"
@@ -31,12 +32,32 @@ func (c *CLI) CmdValidate(args []string) ExitCode {
 	return ExitOK
 }
 
+// parseLintArgs parses lint/doctor flags and returns (path, extraModels, ok).
+// It writes usage to c.Stderr and returns ExitUsageError on failure.
+func parseLintArgs(name, usage string, args []string, c *CLI) (path, extraModels string, code ExitCode) {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	fs.SetOutput(c.Stderr)
+	em := fs.String("extra-models", "", "extend model catalog: provider:model1,model2;provider2:model3")
+	if err := fs.Parse(args); err != nil {
+		return "", "", ExitUsageError
+	}
+	if fs.NArg() < 1 {
+		fmt.Fprintln(c.Stderr, usage)
+		return "", "", ExitUsageError
+	}
+	return fs.Arg(0), *em, ExitCode(-1)
+}
+
 // CmdLint runs both structural validation and semantic linting.
 // Errors cause exit 1; warnings alone exit 0.
 func (c *CLI) CmdLint(args []string) ExitCode {
-	path, code := parseSingleFileArg("lint", "usage: dippin lint <file>", args, c.Stderr)
+	path, extraModels, code := parseLintArgs("lint", "usage: dippin lint [--extra-models spec] <file>", args, c)
 	if code != ExitCode(-1) {
 		return code
+	}
+
+	if extraModels != "" {
+		validator.RegisterExtraModels(extraModels)
 	}
 
 	w, err := loadWorkflow(path)
