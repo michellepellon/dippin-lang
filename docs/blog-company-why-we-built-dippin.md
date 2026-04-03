@@ -219,6 +219,5 @@ Install it, point it at a workflow, and see what it finds.
 go install github.com/2389-research/dippin-lang/cmd/dippin@latest
 ```
 
-Sixteen releases, five production pipelines, and a team that no
-longer dreads editing prompts. Nobody has spent forty minutes on a
-missing backslash since.
+It's on [GitHub](https://github.com/2389-research/dippin-lang).
+MIT license.
