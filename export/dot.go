@@ -82,14 +82,15 @@ func buildExecOrder(path []string) map[string][]int {
 
 // nodeShapes maps NodeKind to the corresponding DOT shape attribute.
 // Per §15: agent→box, human→hexagon, tool→parallelogram,
-// parallel→component, fan_in→tripleoctagon, subgraph→tab.
+// parallel→component, fan_in→tripleoctagon, subgraph→tab, conditional→diamond.
 var nodeShapes = map[ir.NodeKind]string{
-	ir.NodeAgent:    "box",
-	ir.NodeHuman:    "hexagon",
-	ir.NodeTool:     "parallelogram",
-	ir.NodeParallel: "component",
-	ir.NodeFanIn:    "tripleoctagon",
-	ir.NodeSubgraph: "tab",
+	ir.NodeAgent:       "box",
+	ir.NodeHuman:       "hexagon",
+	ir.NodeTool:        "parallelogram",
+	ir.NodeParallel:    "component",
+	ir.NodeFanIn:       "tripleoctagon",
+	ir.NodeSubgraph:    "tab",
+	ir.NodeConditional: "diamond",
 }
 
 // nodeShape returns the DOT shape for a given NodeKind.
@@ -193,6 +194,8 @@ func applyStructuralConfigAttrs(attrs map[string]string, cfg interface{}) {
 		applyParallelAttrs(attrs, c)
 	case ir.FanInConfig:
 		applyFanInAttrs(attrs, c)
+	case ir.ConditionalConfig:
+		// No additional attributes for conditional nodes.
 	}
 }
 

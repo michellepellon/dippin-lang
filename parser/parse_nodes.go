@@ -7,20 +7,21 @@ import (
 	"github.com/2389-research/dippin-lang/ir"
 )
 
+// defaultNodeConfigs maps node kinds to their zero config constructors.
+var defaultNodeConfigs = map[ir.NodeKind]func() ir.NodeConfig{
+	ir.NodeAgent:       func() ir.NodeConfig { return ir.AgentConfig{Params: make(map[string]string)} },
+	ir.NodeHuman:       func() ir.NodeConfig { return ir.HumanConfig{} },
+	ir.NodeTool:        func() ir.NodeConfig { return ir.ToolConfig{} },
+	ir.NodeSubgraph:    func() ir.NodeConfig { return ir.SubgraphConfig{Params: make(map[string]string)} },
+	ir.NodeConditional: func() ir.NodeConfig { return ir.ConditionalConfig{} },
+}
+
 // defaultNodeConfig returns the zero config for a given node kind.
 func defaultNodeConfig(kind ir.NodeKind) ir.NodeConfig {
-	switch kind {
-	case ir.NodeAgent:
-		return ir.AgentConfig{Params: make(map[string]string)}
-	case ir.NodeHuman:
-		return ir.HumanConfig{}
-	case ir.NodeTool:
-		return ir.ToolConfig{}
-	case ir.NodeSubgraph:
-		return ir.SubgraphConfig{Params: make(map[string]string)}
-	default:
-		return ir.AgentConfig{}
+	if fn, ok := defaultNodeConfigs[kind]; ok {
+		return fn()
 	}
+	return ir.AgentConfig{}
 }
 
 func (p *Parser) parseNode(kind ir.NodeKind) {
@@ -69,6 +70,14 @@ func (p *Parser) applyNodeField(n *ir.Node, key, val string, loc ir.SourceLocati
 
 // applyConfigField dispatches to config-specific field handlers.
 func (p *Parser) applyConfigField(n *ir.Node, key, val string, loc ir.SourceLocation) {
+	if p.applyPrimaryConfigField(n, key, val, loc) {
+		return
+	}
+	p.applySecondaryConfigField(n, key, val, loc)
+}
+
+// applyPrimaryConfigField handles agent and human config fields. Returns true if handled.
+func (p *Parser) applyPrimaryConfigField(n *ir.Node, key, val string, loc ir.SourceLocation) bool {
 	switch cfg := n.Config.(type) {
 	case ir.AgentConfig:
 		p.applyAgentField(&cfg, key, val, loc)
@@ -76,12 +85,23 @@ func (p *Parser) applyConfigField(n *ir.Node, key, val string, loc ir.SourceLoca
 	case ir.HumanConfig:
 		p.applyHumanField(&cfg, key, val, loc)
 		n.Config = cfg
+	default:
+		return false
+	}
+	return true
+}
+
+// applySecondaryConfigField handles tool, subgraph, and conditional config fields.
+func (p *Parser) applySecondaryConfigField(n *ir.Node, key, val string, loc ir.SourceLocation) {
+	switch cfg := n.Config.(type) {
 	case ir.ToolConfig:
 		p.applyToolField(&cfg, key, val, loc)
 		n.Config = cfg
 	case ir.SubgraphConfig:
 		p.applySubgraphField(&cfg, key, val, loc)
 		n.Config = cfg
+	case ir.ConditionalConfig:
+		// Conditional nodes only accept common fields (label, class, reads, writes).
 	}
 }
 

@@ -54,7 +54,8 @@ defaults_field   = "model"          ":" field_value
 (* ═══════════════════════════════════════════════════════════ *)
 
 node_decl       = agent_node | human_node | tool_node
-                | subgraph_node | parallel_node | fan_in_node ;
+                | subgraph_node | conditional_node
+                | parallel_node | fan_in_node ;
 
 (* --- Agent Node ------------------------------------------- *)
 
@@ -104,6 +105,11 @@ subgraph_field  = "ref"    ":" field_value
                 | "params" ":" params_block ;
 
 params_block    = NEWLINE INDENT { IDENTIFIER ":" field_value } OUTDENT ;
+
+(* --- Conditional Node ------------------------------------- *)
+
+conditional_node = "conditional" IDENTIFIER NEWLINE
+                   INDENT { common_field } OUTDENT ;
 
 (* --- Parallel / Fan-In (inline syntax) -------------------- *)
 

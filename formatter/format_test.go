@@ -1647,3 +1647,27 @@ func TestFormatAllStructuredOutputFieldsTogether(t *testing.T) {
 	}
 	assertIdempotent(t, w)
 }
+
+func TestFormatConditionalNode(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "cond_test",
+		Start: "Start",
+		Exit:  "Done",
+		Nodes: []*ir.Node{
+			{ID: "Start", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Go."}},
+			{ID: "Check", Kind: ir.NodeConditional, Label: "Evaluate", Config: ir.ConditionalConfig{}},
+			{ID: "Done", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Done."}},
+		},
+		Edges: []*ir.Edge{
+			{From: "Start", To: "Check"},
+			{From: "Check", To: "Done"},
+		},
+	}
+	output := Format(w)
+	if !strings.Contains(output, "conditional Check") {
+		t.Errorf("expected 'conditional Check' in output, got:\n%s", output)
+	}
+	if !strings.Contains(output, "label: Evaluate") {
+		t.Errorf("expected 'label: Evaluate' in output, got:\n%s", output)
+	}
+}

@@ -77,7 +77,7 @@ func (p *Parser) parseWorkflowBody() {
 
 // workflowNodeKinds maps identifiers to their node kinds for dispatch.
 var workflowNodeKinds = map[string]bool{
-	"agent": true, "human": true, "tool": true, "subgraph": true,
+	"agent": true, "human": true, "tool": true, "subgraph": true, "conditional": true,
 }
 
 // workflowSimpleBlocks maps workflow block keywords to their parser methods.

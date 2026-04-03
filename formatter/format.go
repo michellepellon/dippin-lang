@@ -237,15 +237,34 @@ func writeBranchFields(wr *writer, b ir.BranchConfig) {
 
 // writeNodeConfigFields dispatches to the appropriate field writer based on config type.
 func writeNodeConfigFields(wr *writer, n *ir.Node) {
+	if writePrimaryConfigFields(wr, n) {
+		return
+	}
+	writeSecondaryConfigFields(wr, n)
+}
+
+// writePrimaryConfigFields handles agent and human config. Returns true if handled.
+func writePrimaryConfigFields(wr *writer, n *ir.Node) bool {
 	switch cfg := n.Config.(type) {
 	case ir.AgentConfig:
 		writeAgentFields(wr, n, cfg)
 	case ir.HumanConfig:
 		writeHumanFields(wr, n, cfg)
+	default:
+		return false
+	}
+	return true
+}
+
+// writeSecondaryConfigFields handles tool, subgraph, and conditional config.
+func writeSecondaryConfigFields(wr *writer, n *ir.Node) {
+	switch cfg := n.Config.(type) {
 	case ir.ToolConfig:
 		writeToolFields(wr, n, cfg)
 	case ir.SubgraphConfig:
 		writeSubgraphFields(wr, n, cfg)
+	case ir.ConditionalConfig:
+		writeConditionalFields(wr, n)
 	}
 }
 
@@ -404,6 +423,11 @@ func writeToolFields(wr *writer, n *ir.Node, cfg ir.ToolConfig) {
 	if cfg.Command != "" {
 		wr.multilineBlock("command", cfg.Command)
 	}
+}
+
+func writeConditionalFields(wr *writer, n *ir.Node) {
+	writeCommonNodeFields(wr, n)
+	writeIOFields(wr, n)
 }
 
 func writeSubgraphFields(wr *writer, n *ir.Node, cfg ir.SubgraphConfig) {

@@ -1206,3 +1206,43 @@ func TestParseBracketEdgeSyntaxRemainingEdgesParsed(t *testing.T) {
 		t.Error("expected edge B -> C to be parsed after bracket syntax error")
 	}
 }
+
+func TestParseConditionalNode(t *testing.T) {
+	input := `workflow Test
+  goal: "Conditional routing"
+  start: A
+  exit: Done
+
+  agent A
+    prompt: "Analyze input."
+
+  conditional Route
+    label: "Route by Outcome"
+
+  agent Done
+    prompt: "Finish."
+
+  edges
+    A -> Route
+    Route -> Done
+`
+	p := NewParser(input, "test.dip")
+	w, err := p.Parse()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	route := w.Node("Route")
+	if route == nil {
+		t.Fatal("node Route not found")
+	}
+	if route.Kind != ir.NodeConditional {
+		t.Errorf("kind = %q, want %q", route.Kind, ir.NodeConditional)
+	}
+	if _, ok := route.Config.(ir.ConditionalConfig); !ok {
+		t.Errorf("config type = %T, want ConditionalConfig", route.Config)
+	}
+	if route.Label != "Route by Outcome" {
+		t.Errorf("label = %q, want %q", route.Label, "Route by Outcome")
+	}
+}

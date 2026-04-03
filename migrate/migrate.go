@@ -39,7 +39,6 @@ func MigrateToSource(dotSource string) (string, error) {
 
 // shapeToKind maps DOT shape attributes to IR node kinds.
 // Mdiamond and Msquare are handled specially (start/exit markers).
-// diamond is handled with disambiguation logic.
 var shapeToKind = map[string]ir.NodeKind{
 	"box":           ir.NodeAgent,
 	"hexagon":       ir.NodeHuman,
@@ -47,6 +46,7 @@ var shapeToKind = map[string]ir.NodeKind{
 	"component":     ir.NodeParallel,
 	"tripleoctagon": ir.NodeFanIn,
 	"tab":           ir.NodeSubgraph,
+	"diamond":       ir.NodeConditional,
 }
 
 // convertDOTGraph transforms a parsed DOT graph into an IR workflow.
@@ -146,7 +146,7 @@ func applyIntDefault(k, v string, w *ir.Workflow) {
 // convertNode converts a DOT node to an IR node.
 func convertNode(dn dotNode, edges []dotEdge) (*ir.Node, error) {
 	shape := dn.Attrs["shape"]
-	kind := resolveKind(shape, dn.Attrs)
+	kind := resolveKind(shape)
 
 	node := &ir.Node{
 		ID:   dn.ID,
@@ -180,7 +180,7 @@ func applyNodeConfig(node *ir.Node, kind ir.NodeKind, attrs map[string]string) (
 	return node, nil
 }
 
-// buildOtherConfig builds config for parallel, fan_in, subgraph, or fallback.
+// buildOtherConfig builds config for parallel, fan_in, subgraph, conditional, or fallback.
 func buildOtherConfig(kind ir.NodeKind, attrs map[string]string) ir.NodeConfig {
 	switch kind {
 	case ir.NodeParallel:
@@ -189,30 +189,20 @@ func buildOtherConfig(kind ir.NodeKind, attrs map[string]string) ir.NodeConfig {
 		return buildFanInConfig(attrs)
 	case ir.NodeSubgraph:
 		return buildSubgraphConfig(attrs)
+	case ir.NodeConditional:
+		return ir.ConditionalConfig{}
 	default:
 		return ir.AgentConfig{}
 	}
 }
 
-// resolveKind determines the IR node kind from the DOT shape and attributes.
-// Implements the diamond disambiguation logic from §5.
-func resolveKind(shape string, attrs map[string]string) ir.NodeKind {
+// resolveKind determines the IR node kind from the DOT shape.
+func resolveKind(shape string) ir.NodeKind {
 	if shape == "Mdiamond" || shape == "Msquare" {
 		return ir.NodeAgent
 	}
-	if shape == "diamond" {
-		return resolveDiamondKind(attrs)
-	}
 	if kind, ok := shapeToKind[shape]; ok {
 		return kind
-	}
-	return ir.NodeAgent
-}
-
-// resolveDiamondKind handles diamond shape disambiguation per §5.
-func resolveDiamondKind(attrs map[string]string) ir.NodeKind {
-	if _, hasTool := attrs["tool_command"]; hasTool {
-		return ir.NodeTool
 	}
 	return ir.NodeAgent
 }
