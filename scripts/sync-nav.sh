@@ -27,19 +27,20 @@ inject_nav() {
   # Build nav with prefix
   sed -e "s|{{PREFIX}}|$prefix|g" -e "s|{{BLOG_HREF}}|$blog_href|g" "$NAV_TEMPLATE" > "$nav_tmp"
 
-  # Set active class
+  # Set active class (portable: works on both GNU and BSD sed)
+  sedi() { sed -i"" "$@"; }
   case "$active" in
-    docs)         sed -i '' 's|>Docs</a>| class="active">Docs</a>|;s|>Language</a>| class="active">Language</a>|' "$nav_tmp" ;;
-    playground)   sed -i '' 's|>Playground</a>| class="active">Playground</a>|' "$nav_tmp" ;;
-    blog)         sed -i '' 's|>Blog</a>| class="active">Blog</a>|' "$nav_tmp" ;;
-    cli)          sed -i '' 's|>CLI</a>| class="active">CLI</a>|' "$nav_tmp" ;;
-    language)     sed -i '' 's|>Language</a>| class="active">Language</a>|' "$nav_tmp" ;;
-    testing)      sed -i '' 's|>Testing</a>| class="active">Testing</a>|' "$nav_tmp" ;;
-    validation)   sed -i '' 's|>Validation</a>| class="active">Validation</a>|' "$nav_tmp" ;;
-    analysis)     sed -i '' 's|>Analysis</a>| class="active">Analysis</a>|' "$nav_tmp" ;;
-    architecture) sed -i '' 's|>Architecture</a>| class="active">Architecture</a>|' "$nav_tmp" ;;
-    editors)      sed -i '' 's|>Editors</a>| class="active">Editors</a>|' "$nav_tmp" ;;
-    changelog)    sed -i '' 's|>Changelog</a>| class="active">Changelog</a>|' "$nav_tmp" ;;
+    docs)         sedi 's|>Docs</a>| class="active">Docs</a>|;s|>Language</a>| class="active">Language</a>|' "$nav_tmp" ;;
+    playground)   sedi 's|>Playground</a>| class="active">Playground</a>|' "$nav_tmp" ;;
+    blog)         sedi 's|>Blog</a>| class="active">Blog</a>|' "$nav_tmp" ;;
+    cli)          sedi 's|>CLI</a>| class="active">CLI</a>|' "$nav_tmp" ;;
+    language)     sedi 's|>Language</a>| class="active">Language</a>|' "$nav_tmp" ;;
+    testing)      sedi 's|>Testing</a>| class="active">Testing</a>|' "$nav_tmp" ;;
+    validation)   sedi 's|>Validation</a>| class="active">Validation</a>|' "$nav_tmp" ;;
+    analysis)     sedi 's|>Analysis</a>| class="active">Analysis</a>|' "$nav_tmp" ;;
+    architecture) sedi 's|>Architecture</a>| class="active">Architecture</a>|' "$nav_tmp" ;;
+    editors)      sedi 's|>Editors</a>| class="active">Editors</a>|' "$nav_tmp" ;;
+    changelog)    sedi 's|>Changelog</a>| class="active">Changelog</a>|' "$nav_tmp" ;;
   esac
 
   # Replace <nav>...</nav> block: print lines before nav, insert new nav,
