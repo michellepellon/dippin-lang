@@ -1137,3 +1137,72 @@ func TestParseHumanInterview(t *testing.T) {
 		t.Error("expected non-empty prompt")
 	}
 }
+
+func TestParseBracketEdgeSyntaxEmitsDiagnostic(t *testing.T) {
+	input := `workflow Test
+  goal: "Test"
+  start: A
+  exit: B
+
+  agent A
+    prompt: "Do A."
+
+  agent B
+    prompt: "Do B."
+
+  edges
+    A -> B [label: "go" condition: "ctx.x = 1"]
+`
+	p := NewParser(input, "test.dip")
+	_, err := p.Parse()
+	if err == nil {
+		t.Fatal("expected parse error for bracket edge syntax, got nil")
+	}
+	errStr := err.Error()
+	if !strings.Contains(errStr, "bracket") {
+		t.Errorf("expected error to mention 'bracket', got: %s", errStr)
+	}
+	if !strings.Contains(errStr, "when") {
+		t.Errorf("expected error to suggest 'when' keyword, got: %s", errStr)
+	}
+}
+
+func TestParseBracketEdgeSyntaxRemainingEdgesParsed(t *testing.T) {
+	// Even when a bracket-annotated edge triggers a diagnostic, subsequent edges
+	// in the same block should still be parsed correctly.
+	input := `workflow Test
+  goal: "Test"
+  start: A
+  exit: C
+
+  agent A
+    prompt: "Do A."
+
+  agent B
+    prompt: "Do B."
+
+  agent C
+    prompt: "Do C."
+
+  edges
+    A -> B [label: "go"]
+    B -> C
+`
+	p := NewParser(input, "test.dip")
+	w, err := p.Parse()
+	// Expect a parse error due to bracket syntax on the first edge.
+	if err == nil {
+		t.Fatal("expected parse error for bracket edge syntax, got nil")
+	}
+	// The second edge (B -> C) should still have been parsed.
+	found := false
+	for _, e := range w.Edges {
+		if e.From == "B" && e.To == "C" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected edge B -> C to be parsed after bracket syntax error")
+	}
+}

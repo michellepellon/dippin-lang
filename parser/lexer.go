@@ -26,6 +26,7 @@ const (
 	TokenBackArrow
 	TokenLParen
 	TokenRParen
+	TokenLBracket // '[' — bracket syntax not supported; triggers a parse error
 	TokenRawBlock // Raw text block (multiline prompt/command content)
 )
 
@@ -370,9 +371,10 @@ var punctuationTokens = map[byte]TokenType{
 	',': TokenComma,
 	'(': TokenLParen,
 	')': TokenRParen,
+	'[': TokenLBracket,
 }
 
-// tryLexPunctuation handles single-character punctuation: : , ( )
+// tryLexPunctuation handles single-character punctuation: : , ( ) [
 func (l *Lexer) tryLexPunctuation(line string, i int, loc ir.SourceLocation) (int, bool) {
 	tokType, ok := punctuationTokens[line[i]]
 	if !ok {
