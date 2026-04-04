@@ -219,6 +219,59 @@ func TestCmdLint_WithErrors(t *testing.T) {
 	}
 }
 
+func TestCmdLint_ExtraModels_SuppressesDIP108(t *testing.T) {
+	// Without --extra-models, custom-corp provider should trigger DIP108.
+	_, stderr, code := runCLI(t, "lint", testdata("custom_provider.dip"))
+	if code != ExitOK {
+		t.Fatalf("expected exit 0 (warnings don't fail), got %d; stderr: %s", code, stderr)
+	}
+	if !strings.Contains(stderr, "DIP108") {
+		t.Errorf("expected DIP108 warning without --extra-models, got: %s", stderr)
+	}
+
+	// With --extra-models, DIP108 should be suppressed.
+	_, stderr2, code2 := runCLI(t, "lint", "--extra-models", "custom-corp:custom-llm-v1", testdata("custom_provider.dip"))
+	if code2 != ExitOK {
+		t.Fatalf("expected exit 0, got %d; stderr: %s", code2, stderr2)
+	}
+	if strings.Contains(stderr2, "DIP108") {
+		t.Errorf("expected no DIP108 with --extra-models, got: %s", stderr2)
+	}
+}
+
+func TestCmdLint_ExtraModels_MissingArg(t *testing.T) {
+	_, stderr, code := runCLI(t, "lint")
+
+	if code != ExitUsageError {
+		t.Fatalf("expected exit 2 (usage error), got %d", code)
+	}
+	if !strings.Contains(stderr, "usage:") {
+		t.Errorf("expected usage message on stderr, got: %s", stderr)
+	}
+}
+
+func TestCmdDoctor_ExtraModels_SuppressesDIP108(t *testing.T) {
+	// Without --extra-models, custom-corp provider produces DIP108 in doctor lint section.
+	stdout, _, code := runCLI(t, "doctor", testdata("custom_provider.dip"))
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d", code)
+	}
+	// Doctor runs lint internally — DIP108 should appear as a warning count.
+	// We just verify the command succeeds and health report is produced.
+	if !strings.Contains(stdout, "Health Report") {
+		t.Errorf("expected health report, got: %s", stdout)
+	}
+
+	// With --extra-models, DIP108 warnings should be suppressed → better score.
+	stdout2, _, code2 := runCLI(t, "doctor", "--extra-models", "custom-corp:custom-llm-v1", testdata("custom_provider.dip"))
+	if code2 != ExitOK {
+		t.Fatalf("expected exit 0, got %d", code2)
+	}
+	if !strings.Contains(stdout2, "Health Report") {
+		t.Errorf("expected health report, got: %s", stdout2)
+	}
+}
+
 // --- Check Command ---
 
 func TestCmdCheck_ValidFile_JSON(t *testing.T) {

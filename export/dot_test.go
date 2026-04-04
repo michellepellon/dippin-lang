@@ -1150,3 +1150,24 @@ func TestFormatDOTAttrs(t *testing.T) {
 		}
 	})
 }
+
+func TestExportConditionalNodeDiamond(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "cond_test",
+		Start: "Start",
+		Exit:  "Done",
+		Nodes: []*ir.Node{
+			{ID: "Start", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Go."}},
+			{ID: "Route", Kind: ir.NodeConditional, Label: "Branch", Config: ir.ConditionalConfig{}},
+			{ID: "Done", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Done."}},
+		},
+		Edges: []*ir.Edge{
+			{From: "Start", To: "Route"},
+			{From: "Route", To: "Done"},
+		},
+	}
+	dot := ExportDOT(w, ExportOptions{})
+	if !strings.Contains(dot, `shape="diamond"`) && !strings.Contains(dot, `shape=diamond`) {
+		t.Errorf("expected diamond shape for conditional node, got:\n%s", dot)
+	}
+}

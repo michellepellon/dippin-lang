@@ -39,7 +39,7 @@ func MigrateToSource(dotSource string) (string, error) {
 
 // shapeToKind maps DOT shape attributes to IR node kinds.
 // Mdiamond and Msquare are handled specially (start/exit markers).
-// diamond is handled with disambiguation logic.
+// diamond is handled with attribute-based disambiguation in resolveDiamondKind.
 var shapeToKind = map[string]ir.NodeKind{
 	"box":           ir.NodeAgent,
 	"hexagon":       ir.NodeHuman,
@@ -180,7 +180,7 @@ func applyNodeConfig(node *ir.Node, kind ir.NodeKind, attrs map[string]string) (
 	return node, nil
 }
 
-// buildOtherConfig builds config for parallel, fan_in, subgraph, or fallback.
+// buildOtherConfig builds config for parallel, fan_in, subgraph, conditional, or fallback.
 func buildOtherConfig(kind ir.NodeKind, attrs map[string]string) ir.NodeConfig {
 	switch kind {
 	case ir.NodeParallel:
@@ -189,13 +189,14 @@ func buildOtherConfig(kind ir.NodeKind, attrs map[string]string) ir.NodeConfig {
 		return buildFanInConfig(attrs)
 	case ir.NodeSubgraph:
 		return buildSubgraphConfig(attrs)
+	case ir.NodeConditional:
+		return ir.ConditionalConfig{}
 	default:
 		return ir.AgentConfig{}
 	}
 }
 
 // resolveKind determines the IR node kind from the DOT shape and attributes.
-// Implements the diamond disambiguation logic from §5.
 func resolveKind(shape string, attrs map[string]string) ir.NodeKind {
 	if shape == "Mdiamond" || shape == "Msquare" {
 		return ir.NodeAgent
@@ -209,12 +210,17 @@ func resolveKind(shape string, attrs map[string]string) ir.NodeKind {
 	return ir.NodeAgent
 }
 
-// resolveDiamondKind handles diamond shape disambiguation per §5.
+// resolveDiamondKind handles diamond shape disambiguation.
+// diamond + tool_command → NodeTool, diamond + prompt → NodeAgent,
+// bare diamond → NodeConditional (pure routing).
 func resolveDiamondKind(attrs map[string]string) ir.NodeKind {
 	if _, hasTool := attrs["tool_command"]; hasTool {
 		return ir.NodeTool
 	}
-	return ir.NodeAgent
+	if _, hasPrompt := attrs["prompt"]; hasPrompt {
+		return ir.NodeAgent
+	}
+	return ir.NodeConditional
 }
 
 // --- Config builders ---

@@ -99,10 +99,7 @@ func buildConditional(name string) *ir.Workflow {
 		Start: "Check",
 		Exit:  "Done",
 		Nodes: []*ir.Node{
-			{ID: "Check", Kind: ir.NodeAgent, Config: ir.AgentConfig{
-				AutoStatus: true,
-				Prompt:     "Evaluate the situation and set STATUS: success or STATUS: fail.",
-			}},
+			{ID: "Check", Kind: ir.NodeConditional, Label: "Evaluate outcome", Config: ir.ConditionalConfig{}},
 			{ID: "Pass", Kind: ir.NodeAgent, Config: ir.AgentConfig{
 				Prompt: "Handle the success path.",
 			}},

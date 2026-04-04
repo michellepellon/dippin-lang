@@ -64,12 +64,13 @@ type Node struct {
 type NodeKind string
 
 const (
-	NodeAgent    NodeKind = "agent"
-	NodeHuman    NodeKind = "human"
-	NodeTool     NodeKind = "tool"
-	NodeParallel NodeKind = "parallel"
-	NodeFanIn    NodeKind = "fan_in"
-	NodeSubgraph NodeKind = "subgraph"
+	NodeAgent       NodeKind = "agent"
+	NodeHuman       NodeKind = "human"
+	NodeTool        NodeKind = "tool"
+	NodeParallel    NodeKind = "parallel"
+	NodeFanIn       NodeKind = "fan_in"
+	NodeSubgraph    NodeKind = "subgraph"
+	NodeConditional NodeKind = "conditional"
 )
 
 // NodeConfig is implemented by kind-specific configuration types.
@@ -150,6 +151,12 @@ type SubgraphConfig struct {
 }
 
 func (SubgraphConfig) nodeConfig() {}
+
+// ConditionalConfig holds configuration for pure conditional branching nodes.
+// Conditional nodes evaluate outgoing edge conditions without making an LLM call.
+type ConditionalConfig struct{}
+
+func (ConditionalConfig) nodeConfig() {}
 
 // RetryConfig specifies retry behavior for a node.
 type RetryConfig struct {

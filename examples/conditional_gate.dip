@@ -1,0 +1,31 @@
+workflow ConditionalGate
+  goal: "Demonstrate conditional routing without LLM calls"
+  start: Analyze
+  exit: Done
+
+  agent Analyze
+    label: "Analyze Input"
+    auto_status: true
+    prompt:
+      Evaluate the input and set STATUS: success or STATUS: fail
+      based on whether the criteria are met.
+
+  conditional Route
+    label: "Route by Outcome"
+
+  agent HandleSuccess
+    prompt: Process the successful result.
+
+  agent HandleFailure
+    prompt: Handle the failure case.
+
+  agent Done
+    prompt: Summarize the final result.
+
+  edges
+    Analyze -> Route
+    Route -> HandleSuccess  when ctx.outcome = success
+    Route -> HandleFailure  when ctx.outcome = fail
+    Route -> Done
+    HandleSuccess -> Done
+    HandleFailure -> Done

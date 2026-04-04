@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/2389-research/dippin-lang/ir"
@@ -39,10 +40,24 @@ func (p *Parser) parseSingleEdge() {
 
 // parseEdgeAttributes parses optional attributes (when, label, weight, restart) on an edge.
 func (p *Parser) parseEdgeAttributes(edge *ir.Edge) {
+	if p.lexer.PeekToken().Type == TokenLBracket {
+		p.emitBracketSyntaxError()
+		return
+	}
 	for p.lexer.PeekToken().Type != TokenNewline && p.lexer.PeekToken().Type != TokenEOF {
 		attr := p.lexer.NextToken()
 		p.applyEdgeAttribute(edge, attr.Value)
 	}
+}
+
+// emitBracketSyntaxError emits a diagnostic for unsupported bracket syntax and skips to EOL.
+func (p *Parser) emitBracketSyntaxError() {
+	tok := p.lexer.NextToken() // consume '['
+	p.diagnostics = append(p.diagnostics, fmt.Sprintf(
+		"bracket syntax [label: ...] is not supported at %d:%d; use keyword syntax instead (e.g., when ctx.x = 1  label: go)",
+		tok.Location.Line, tok.Location.Column,
+	))
+	p.consumeUntilNewline()
 }
 
 // edgeAttrKeywords contains the set of edge attribute keywords that terminate condition parsing.

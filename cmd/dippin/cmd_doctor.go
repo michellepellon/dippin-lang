@@ -6,13 +6,18 @@ import (
 
 	"github.com/2389-research/dippin-lang/cost"
 	"github.com/2389-research/dippin-lang/doctor"
+	"github.com/2389-research/dippin-lang/validator"
 )
 
 // CmdDoctor produces a health report card for a workflow.
 func (c *CLI) CmdDoctor(args []string) ExitCode {
-	path, code := parseSingleFileArg("doctor", "usage: dippin doctor <file>", args, c.Stderr)
+	path, extraModels, code := parseLintArgs("doctor", "usage: dippin doctor [--extra-models spec] <file>", args, c)
 	if code != ExitCode(-1) {
 		return code
+	}
+
+	if extraModels != "" {
+		validator.RegisterExtraModels(extraModels)
 	}
 
 	w, err := loadWorkflow(path)

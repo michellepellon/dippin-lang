@@ -212,10 +212,10 @@ func TestMigrateShapeToKindMapping(t *testing.T) {
 		{"component", ir.NodeParallel},
 		{"tripleoctagon", ir.NodeFanIn},
 		{"tab", ir.NodeSubgraph},
-		{"Mdiamond", ir.NodeAgent}, // Start marker
-		{"Msquare", ir.NodeAgent},  // Exit marker
-		{"diamond", ir.NodeAgent},  // Default diamond
-		{"", ir.NodeAgent},         // Missing shape → default
+		{"Mdiamond", ir.NodeAgent},      // Start marker
+		{"Msquare", ir.NodeAgent},       // Exit marker
+		{"diamond", ir.NodeConditional}, // Diamond → conditional
+		{"", ir.NodeAgent},              // Missing shape → default
 	}
 	for _, tt := range tests {
 		t.Run("shape_"+tt.shape, func(t *testing.T) {
@@ -572,9 +572,9 @@ func TestMigrateDiamondDisambiguation(t *testing.T) {
 		attrs    string
 		wantKind ir.NodeKind
 	}{
-		{"diamond with tool_command", `shape=diamond, tool_command="echo test"`, ir.NodeTool},
+		{"bare diamond", `shape=diamond, label="Route?"`, ir.NodeConditional},
 		{"diamond with prompt", `shape=diamond, prompt="Choose wisely"`, ir.NodeAgent},
-		{"bare diamond", `shape=diamond, label="Route?"`, ir.NodeAgent},
+		{"diamond with tool_command", `shape=diamond, tool_command="echo test"`, ir.NodeTool},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1006,7 +1006,7 @@ func TestMigrateBuildDippinDOT(t *testing.T) {
 		"ReviewParallel":    ir.NodeParallel,
 		"ReviewsJoin":       ir.NodeFanIn,
 		"ReviewAnalysis":    ir.NodeAgent,
-		"CheckComplete":     ir.NodeAgent, // diamond → agent
+		"CheckComplete":     ir.NodeConditional, // diamond → conditional
 	}
 	for id, wantKind := range kindChecks {
 		n := w.Node(id)

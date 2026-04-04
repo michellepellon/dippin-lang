@@ -62,7 +62,7 @@ func TestEBNFInfixNegationDocumented(t *testing.T) {
 	}
 }
 
-// TestEBNFNodeKindsDocumented verifies that all 6 node kinds appear in the EBNF.
+// TestEBNFNodeKindsDocumented verifies that all 7 node kinds appear in the EBNF.
 func TestEBNFNodeKindsDocumented(t *testing.T) {
 	ebnf, err := os.ReadFile("../docs/GRAMMAR.ebnf")
 	if err != nil {
@@ -70,7 +70,7 @@ func TestEBNFNodeKindsDocumented(t *testing.T) {
 	}
 	content := string(ebnf)
 
-	kinds := []string{"agent", "human", "tool", "parallel", "fan_in", "subgraph"}
+	kinds := []string{"agent", "human", "tool", "parallel", "fan_in", "subgraph", "conditional"}
 	for _, k := range kinds {
 		if !strings.Contains(content, `"`+k+`"`) {
 			t.Errorf("node kind %q not found in GRAMMAR.ebnf", k)

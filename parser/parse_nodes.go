@@ -7,20 +7,21 @@ import (
 	"github.com/2389-research/dippin-lang/ir"
 )
 
+// defaultNodeConfigs maps node kinds to their zero config constructors.
+var defaultNodeConfigs = map[ir.NodeKind]func() ir.NodeConfig{
+	ir.NodeAgent:       func() ir.NodeConfig { return ir.AgentConfig{Params: make(map[string]string)} },
+	ir.NodeHuman:       func() ir.NodeConfig { return ir.HumanConfig{} },
+	ir.NodeTool:        func() ir.NodeConfig { return ir.ToolConfig{} },
+	ir.NodeSubgraph:    func() ir.NodeConfig { return ir.SubgraphConfig{Params: make(map[string]string)} },
+	ir.NodeConditional: func() ir.NodeConfig { return ir.ConditionalConfig{} },
+}
+
 // defaultNodeConfig returns the zero config for a given node kind.
 func defaultNodeConfig(kind ir.NodeKind) ir.NodeConfig {
-	switch kind {
-	case ir.NodeAgent:
-		return ir.AgentConfig{Params: make(map[string]string)}
-	case ir.NodeHuman:
-		return ir.HumanConfig{}
-	case ir.NodeTool:
-		return ir.ToolConfig{}
-	case ir.NodeSubgraph:
-		return ir.SubgraphConfig{Params: make(map[string]string)}
-	default:
-		return ir.AgentConfig{}
+	if fn, ok := defaultNodeConfigs[kind]; ok {
+		return fn()
 	}
+	return ir.AgentConfig{}
 }
 
 func (p *Parser) parseNode(kind ir.NodeKind) {
@@ -43,20 +44,68 @@ func (p *Parser) parseNode(kind ir.NodeKind) {
 // parseNodeBody parses the indented fields within a node declaration.
 func (p *Parser) parseNodeBody(node *ir.Node) {
 	for p.lexer.PeekToken().Type != TokenOutdent && p.lexer.PeekToken().Type != TokenEOF {
-		t := p.lexer.PeekToken()
-		if t.Type == TokenNewline {
-			p.lexer.NextToken()
-			continue
-		}
-		if t.Type == TokenIdentifier {
-			key := t.Value
-			p.lexer.NextToken()
-			p.expect(TokenColon)
-			val := p.readFieldValue(t.Location.Line)
-			p.applyNodeField(node, key, val, t.Location)
-		} else {
-			p.lexer.NextToken()
-		}
+		p.parseNodeBodyLine(node)
+	}
+}
+
+// parseNodeBodyLine processes one token (or logical line) inside a node body.
+func (p *Parser) parseNodeBodyLine(node *ir.Node) {
+	t := p.lexer.PeekToken()
+	if t.Type == TokenNewline {
+		p.lexer.NextToken()
+		return
+	}
+	if t.Type == TokenIdentifier && t.Value == "retry" {
+		p.emitNestedRetryError(t.Location)
+		return
+	}
+	if t.Type == TokenIdentifier {
+		p.parseNodeField(node, t)
+		return
+	}
+	p.lexer.NextToken()
+}
+
+// parseNodeField parses a single key: value field in a node body.
+func (p *Parser) parseNodeField(node *ir.Node, t Token) {
+	key := t.Value
+	p.lexer.NextToken()
+	p.expect(TokenColon)
+	val := p.readFieldValue(t.Location.Line)
+	p.applyNodeField(node, key, val, t.Location)
+}
+
+func (p *Parser) emitNestedRetryError(loc ir.SourceLocation) {
+	p.diagnostics = append(p.diagnostics, fmt.Sprintf(
+		"nested retry blocks are not supported; use flat attributes instead (retry_policy, max_retries, retry_target, fallback_target, base_delay) at %d:%d",
+		loc.Line, loc.Column))
+	p.lexer.NextToken() // consume "retry"
+	p.consumeUntilNewline()
+	p.skipIndentedBlock()
+}
+
+// skipIndentedBlock skips over an optional indented block following the current position.
+func (p *Parser) skipIndentedBlock() {
+	p.skipLeadingNewline()
+	if p.lexer.PeekToken().Type != TokenIndent {
+		return
+	}
+	p.lexer.NextToken() // consume indent
+	p.consumeUntilOutdent()
+}
+
+func (p *Parser) skipLeadingNewline() {
+	if p.lexer.PeekToken().Type == TokenNewline {
+		p.lexer.NextToken()
+	}
+}
+
+func (p *Parser) consumeUntilOutdent() {
+	for p.lexer.PeekToken().Type != TokenOutdent && p.lexer.PeekToken().Type != TokenEOF {
+		p.lexer.NextToken()
+	}
+	if p.lexer.PeekToken().Type == TokenOutdent {
+		p.lexer.NextToken()
 	}
 }
 
@@ -69,6 +118,14 @@ func (p *Parser) applyNodeField(n *ir.Node, key, val string, loc ir.SourceLocati
 
 // applyConfigField dispatches to config-specific field handlers.
 func (p *Parser) applyConfigField(n *ir.Node, key, val string, loc ir.SourceLocation) {
+	if p.applyPrimaryConfigField(n, key, val, loc) {
+		return
+	}
+	p.applySecondaryConfigField(n, key, val, loc)
+}
+
+// applyPrimaryConfigField handles agent and human config fields. Returns true if handled.
+func (p *Parser) applyPrimaryConfigField(n *ir.Node, key, val string, loc ir.SourceLocation) bool {
 	switch cfg := n.Config.(type) {
 	case ir.AgentConfig:
 		p.applyAgentField(&cfg, key, val, loc)
@@ -76,12 +133,23 @@ func (p *Parser) applyConfigField(n *ir.Node, key, val string, loc ir.SourceLoca
 	case ir.HumanConfig:
 		p.applyHumanField(&cfg, key, val, loc)
 		n.Config = cfg
+	default:
+		return false
+	}
+	return true
+}
+
+// applySecondaryConfigField handles tool, subgraph, and conditional config fields.
+func (p *Parser) applySecondaryConfigField(n *ir.Node, key, val string, loc ir.SourceLocation) {
+	switch cfg := n.Config.(type) {
 	case ir.ToolConfig:
 		p.applyToolField(&cfg, key, val, loc)
 		n.Config = cfg
 	case ir.SubgraphConfig:
 		p.applySubgraphField(&cfg, key, val, loc)
 		n.Config = cfg
+	case ir.ConditionalConfig:
+		// Conditional nodes only accept common fields (label, class, reads, writes).
 	}
 }
 

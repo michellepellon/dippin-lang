@@ -1,0 +1,19 @@
+workflow CustomProvider
+  goal: "Test workflow with a custom/private model"
+  start: Ask
+  exit: Done
+
+  agent Ask
+    model: custom-llm-v1
+    provider: custom-corp
+    prompt:
+      Process the request.
+
+  agent Done
+    model: custom-llm-v1
+    provider: custom-corp
+    prompt:
+      Finish up.
+
+  edges
+    Ask -> Done

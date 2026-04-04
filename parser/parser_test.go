@@ -1137,3 +1137,174 @@ func TestParseHumanInterview(t *testing.T) {
 		t.Error("expected non-empty prompt")
 	}
 }
+
+func TestParseBracketEdgeSyntaxEmitsDiagnostic(t *testing.T) {
+	input := `workflow Test
+  goal: "Test"
+  start: A
+  exit: B
+
+  agent A
+    prompt: "Do A."
+
+  agent B
+    prompt: "Do B."
+
+  edges
+    A -> B [label: "go" condition: "ctx.x = 1"]
+`
+	p := NewParser(input, "test.dip")
+	_, err := p.Parse()
+	if err == nil {
+		t.Fatal("expected parse error for bracket edge syntax, got nil")
+	}
+	errStr := err.Error()
+	if !strings.Contains(errStr, "bracket") {
+		t.Errorf("expected error to mention 'bracket', got: %s", errStr)
+	}
+	if !strings.Contains(errStr, "when") {
+		t.Errorf("expected error to suggest 'when' keyword, got: %s", errStr)
+	}
+}
+
+func TestParseBracketEdgeSyntaxRemainingEdgesParsed(t *testing.T) {
+	// Even when a bracket-annotated edge triggers a diagnostic, subsequent edges
+	// in the same block should still be parsed correctly.
+	input := `workflow Test
+  goal: "Test"
+  start: A
+  exit: C
+
+  agent A
+    prompt: "Do A."
+
+  agent B
+    prompt: "Do B."
+
+  agent C
+    prompt: "Do C."
+
+  edges
+    A -> B [label: "go"]
+    B -> C
+`
+	p := NewParser(input, "test.dip")
+	w, err := p.Parse()
+	// Expect a parse error due to bracket syntax on the first edge.
+	if err == nil {
+		t.Fatal("expected parse error for bracket edge syntax, got nil")
+	}
+	// The second edge (B -> C) should still have been parsed.
+	found := false
+	for _, e := range w.Edges {
+		if e.From == "B" && e.To == "C" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected edge B -> C to be parsed after bracket syntax error")
+	}
+}
+
+func TestParseConditionalNode(t *testing.T) {
+	input := `workflow Test
+  goal: "Conditional routing"
+  start: A
+  exit: Done
+
+  agent A
+    prompt: "Analyze input."
+
+  conditional Route
+    label: "Route by Outcome"
+
+  agent Done
+    prompt: "Finish."
+
+  edges
+    A -> Route
+    Route -> Done
+`
+	p := NewParser(input, "test.dip")
+	w, err := p.Parse()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	route := w.Node("Route")
+	if route == nil {
+		t.Fatal("node Route not found")
+	}
+	if route.Kind != ir.NodeConditional {
+		t.Errorf("kind = %q, want %q", route.Kind, ir.NodeConditional)
+	}
+	if _, ok := route.Config.(ir.ConditionalConfig); !ok {
+		t.Errorf("config type = %T, want ConditionalConfig", route.Config)
+	}
+	if route.Label != "Route by Outcome" {
+		t.Errorf("label = %q, want %q", route.Label, "Route by Outcome")
+	}
+}
+
+func TestNestedRetryBlockError(t *testing.T) {
+	input := `workflow Test
+  start: A
+  exit: B
+  tool A
+    label: "Verify"
+    command: "verify.sh"
+    timeout: 30s
+    retry
+      policy: aggressive
+      max_retries: 5
+      retry_target: process
+  agent B
+    prompt: done
+  edges
+    A -> B
+`
+	p := NewParser(input, "test.dip")
+	_, err := p.Parse()
+	if err == nil {
+		t.Fatal("expected parse error for nested retry block")
+	}
+	if !strings.Contains(err.Error(), "retry") {
+		t.Errorf("error should mention retry, got: %s", err.Error())
+	}
+	if !strings.Contains(err.Error(), "retry_policy") {
+		t.Errorf("error should suggest retry_policy, got: %s", err.Error())
+	}
+	if !strings.Contains(err.Error(), "max_retries") {
+		t.Errorf("error should suggest max_retries, got: %s", err.Error())
+	}
+}
+
+func TestNestedRetryBlockRestOfWorkflowParses(t *testing.T) {
+	input := `workflow Test
+  start: A
+  exit: B
+  tool A
+    label: "Verify"
+    command: "verify.sh"
+    timeout: 30s
+    retry
+      policy: aggressive
+      max_retries: 5
+      retry_target: process
+  agent B
+    prompt: done
+  edges
+    A -> B
+`
+	p := NewParser(input, "test.dip")
+	w, _ := p.Parse()
+	// Even with the error, the parser should recover and parse remaining nodes and edges.
+	nodeB := w.Node("B")
+	if nodeB == nil {
+		t.Fatal("node B should be parsed despite retry error in node A")
+	}
+	if len(w.Edges) == 0 {
+		t.Error("edges should be parsed despite retry error in node A")
+	}
+}

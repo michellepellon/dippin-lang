@@ -369,6 +369,12 @@ func TestConditionAST(t *testing.T) {
 	}
 }
 
+func TestConditionalConfigImplementsNodeConfig(t *testing.T) {
+	// Compile-time interface satisfaction check; if ConditionalConfig does
+	// not implement NodeConfig, this assignment won't compile.
+	var _ ir.NodeConfig = ir.ConditionalConfig{}
+}
+
 func TestNodeIDs(t *testing.T) {
 	w := minimalWorkflow()
 	ids := w.NodeIDs()

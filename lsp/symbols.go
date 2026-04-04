@@ -63,20 +63,22 @@ func edgeSymbol(e *ir.Edge) protocol.DocumentSymbol {
 	}
 }
 
-// nodeSymbolKind maps node kinds to LSP symbol kinds.
+// nodeSymbolKinds maps IR node kinds to their LSP symbol kind.
+var nodeSymbolKinds = map[ir.NodeKind]protocol.SymbolKind{
+	ir.NodeAgent:       protocol.SymbolKindFunction,
+	ir.NodeHuman:       protocol.SymbolKindInterface,
+	ir.NodeTool:        protocol.SymbolKindMethod,
+	ir.NodeParallel:    protocol.SymbolKindStruct,
+	ir.NodeFanIn:       protocol.SymbolKindStruct,
+	ir.NodeConditional: protocol.SymbolKindEnum,
+}
+
+// nodeSymbolKind maps a node kind to its LSP symbol kind.
 func nodeSymbolKind(kind ir.NodeKind) protocol.SymbolKind {
-	switch kind {
-	case ir.NodeAgent:
-		return protocol.SymbolKindFunction
-	case ir.NodeHuman:
-		return protocol.SymbolKindInterface
-	case ir.NodeTool:
-		return protocol.SymbolKindMethod
-	case ir.NodeParallel, ir.NodeFanIn:
-		return protocol.SymbolKindStruct
-	default:
-		return protocol.SymbolKindVariable
+	if sk, ok := nodeSymbolKinds[kind]; ok {
+		return sk
 	}
+	return protocol.SymbolKindVariable
 }
 
 // nodeRange converts a node's source location to an LSP range.
