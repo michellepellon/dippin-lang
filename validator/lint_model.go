@@ -122,23 +122,45 @@ func RegisterExtraModels(spec string) {
 }
 
 // registerOneProvider parses a single "provider:model1,model2" entry and adds
-// the models to the known catalog.
+// the models to the known catalog. Silently ignores entries with empty provider
+// or no valid model names.
 func registerOneProvider(entry string) {
 	parts := strings.SplitN(entry, ":", 2)
 	if len(parts) != 2 {
 		return
 	}
 	provider := strings.TrimSpace(parts[0])
-	models := strings.Split(parts[1], ",")
+	if provider == "" {
+		return
+	}
+	models := parseModelNames(parts[1])
+	if len(models) == 0 {
+		return
+	}
+	addModelsToProvider(provider, models)
+}
+
+// addModelsToProvider registers models under the given provider name.
+func addModelsToProvider(provider string, models []string) {
 	if knownModelProviders[provider] == nil {
 		knownModelProviders[provider] = make(map[string]bool)
 	}
 	for _, m := range models {
+		knownModelProviders[provider][m] = true
+	}
+}
+
+// parseModelNames splits a comma-separated model list, trimming whitespace
+// and discarding empty entries.
+func parseModelNames(raw string) []string {
+	var models []string
+	for _, m := range strings.Split(raw, ",") {
 		m = strings.TrimSpace(m)
 		if m != "" {
-			knownModelProviders[provider][m] = true
+			models = append(models, m)
 		}
 	}
+	return models
 }
 
 // lintModelProvider checks DIP108: model/provider combinations should be

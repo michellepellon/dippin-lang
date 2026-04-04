@@ -39,6 +39,7 @@ func MigrateToSource(dotSource string) (string, error) {
 
 // shapeToKind maps DOT shape attributes to IR node kinds.
 // Mdiamond and Msquare are handled specially (start/exit markers).
+// diamond is handled with attribute-based disambiguation in resolveDiamondKind.
 var shapeToKind = map[string]ir.NodeKind{
 	"box":           ir.NodeAgent,
 	"hexagon":       ir.NodeHuman,
@@ -46,7 +47,6 @@ var shapeToKind = map[string]ir.NodeKind{
 	"component":     ir.NodeParallel,
 	"tripleoctagon": ir.NodeFanIn,
 	"tab":           ir.NodeSubgraph,
-	"diamond":       ir.NodeConditional,
 }
 
 // convertDOTGraph transforms a parsed DOT graph into an IR workflow.
@@ -146,7 +146,7 @@ func applyIntDefault(k, v string, w *ir.Workflow) {
 // convertNode converts a DOT node to an IR node.
 func convertNode(dn dotNode, edges []dotEdge) (*ir.Node, error) {
 	shape := dn.Attrs["shape"]
-	kind := resolveKind(shape)
+	kind := resolveKind(shape, dn.Attrs)
 
 	node := &ir.Node{
 		ID:   dn.ID,
@@ -196,15 +196,31 @@ func buildOtherConfig(kind ir.NodeKind, attrs map[string]string) ir.NodeConfig {
 	}
 }
 
-// resolveKind determines the IR node kind from the DOT shape.
-func resolveKind(shape string) ir.NodeKind {
+// resolveKind determines the IR node kind from the DOT shape and attributes.
+func resolveKind(shape string, attrs map[string]string) ir.NodeKind {
 	if shape == "Mdiamond" || shape == "Msquare" {
 		return ir.NodeAgent
+	}
+	if shape == "diamond" {
+		return resolveDiamondKind(attrs)
 	}
 	if kind, ok := shapeToKind[shape]; ok {
 		return kind
 	}
 	return ir.NodeAgent
+}
+
+// resolveDiamondKind handles diamond shape disambiguation.
+// diamond + tool_command → NodeTool, diamond + prompt → NodeAgent,
+// bare diamond → NodeConditional (pure routing).
+func resolveDiamondKind(attrs map[string]string) ir.NodeKind {
+	if _, hasTool := attrs["tool_command"]; hasTool {
+		return ir.NodeTool
+	}
+	if _, hasPrompt := attrs["prompt"]; hasPrompt {
+		return ir.NodeAgent
+	}
+	return ir.NodeConditional
 }
 
 // --- Config builders ---

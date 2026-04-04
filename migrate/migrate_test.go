@@ -566,15 +566,15 @@ func TestMigrateFanInInference(t *testing.T) {
 	}
 }
 
-func TestMigrateDiamondMapsToConditional(t *testing.T) {
+func TestMigrateDiamondDisambiguation(t *testing.T) {
 	tests := []struct {
 		name     string
 		attrs    string
 		wantKind ir.NodeKind
 	}{
 		{"bare diamond", `shape=diamond, label="Route?"`, ir.NodeConditional},
-		{"diamond with prompt", `shape=diamond, prompt="Choose wisely"`, ir.NodeConditional},
-		{"diamond with tool_command", `shape=diamond, tool_command="echo test"`, ir.NodeConditional},
+		{"diamond with prompt", `shape=diamond, prompt="Choose wisely"`, ir.NodeAgent},
+		{"diamond with tool_command", `shape=diamond, tool_command="echo test"`, ir.NodeTool},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
