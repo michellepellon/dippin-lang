@@ -2,6 +2,16 @@
 
 All notable changes to dippin-lang are documented here. Versions follow [semver](https://semver.org/).
 
+## [v0.17.0] — 2026-04-03
+
+### Added
+- **`conditional` node kind** for pure branching without LLM calls. Evaluates outgoing edge conditions only — no prompt, no token cost. Maps to `diamond` shape in DOT export. DOT migration auto-detects: bare `diamond` → `conditional`, `diamond` + `prompt` → `agent`, `diamond` + `tool_command` → `tool`.
+- **`--extra-models` CLI flag** on `lint` and `doctor` commands. Extends the DIP108 model catalog at runtime for private or newly-released models. Format: `--extra-models "provider:model1,model2;provider2:model3"`.
+
+### Fixed
+- **Bracket edge syntax** (`[label: ...]`) now emits a clear parse error with a hint to use `when`/`label:` keyword syntax, instead of silently discarding annotations.
+- **Nested `retry` blocks** now emit a clear parse error suggesting flat attributes (`retry_policy`, `max_retries`, `retry_target`, `fallback_target`, `base_delay`), instead of a confusing indent mismatch error.
+
 ## [v0.16.0] — 2026-03-31
 
 ### Added
