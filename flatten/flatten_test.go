@@ -4,6 +4,7 @@ package flatten
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/2389-research/dippin-lang/ir"
@@ -296,4 +297,135 @@ func edgeKeys(w *ir.Workflow) []string {
 		keys = append(keys, e.From+"->"+e.To)
 	}
 	return keys
+}
+
+func TestFlattenCircularRef(t *testing.T) {
+	workflowA := &ir.Workflow{
+		Name:  "a",
+		Start: "X",
+		Exit:  "X",
+		Nodes: []*ir.Node{
+			{ID: "X", Kind: ir.NodeSubgraph, Config: ir.SubgraphConfig{Ref: "b.dip"}},
+		},
+	}
+	workflowB := &ir.Workflow{
+		Name:  "b",
+		Start: "Y",
+		Exit:  "Y",
+		Nodes: []*ir.Node{
+			{ID: "Y", Kind: ir.NodeSubgraph, Config: ir.SubgraphConfig{Ref: "a.dip"}},
+		},
+	}
+	resolver := &MapResolver{Workflows: map[string]*ir.Workflow{
+		"a.dip": workflowA,
+		"b.dip": workflowB,
+	}}
+
+	root := &ir.Workflow{
+		Name:  "root",
+		Start: "Entry",
+		Exit:  "Entry",
+		Nodes: []*ir.Node{
+			{ID: "Entry", Kind: ir.NodeSubgraph, Config: ir.SubgraphConfig{Ref: "a.dip"}},
+		},
+	}
+
+	_, err := Flatten(root, resolver, Options{})
+	if err == nil {
+		t.Fatal("expected error for circular ref, got nil")
+	}
+	if !strings.Contains(err.Error(), "cycle") {
+		t.Errorf("error = %q, want it to contain %q", err.Error(), "cycle")
+	}
+}
+
+func TestFlattenMaxDepth(t *testing.T) {
+	// Chain: level0 -> level1 -> level2 -> level3 -> level4
+	workflows := make(map[string]*ir.Workflow)
+	for i := 4; i >= 0; i-- {
+		w := &ir.Workflow{
+			Name:  fmt.Sprintf("level%d", i),
+			Start: "N",
+			Exit:  "N",
+		}
+		if i < 4 {
+			ref := fmt.Sprintf("level%d.dip", i+1)
+			w.Nodes = []*ir.Node{
+				{ID: "N", Kind: ir.NodeSubgraph, Config: ir.SubgraphConfig{Ref: ref}},
+			}
+		} else {
+			w.Nodes = []*ir.Node{
+				{ID: "N", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "leaf."}},
+			}
+		}
+		workflows[fmt.Sprintf("level%d.dip", i)] = w
+	}
+	resolver := &MapResolver{Workflows: workflows}
+
+	root := &ir.Workflow{
+		Name:  "root",
+		Start: "Top",
+		Exit:  "Top",
+		Nodes: []*ir.Node{
+			{ID: "Top", Kind: ir.NodeSubgraph, Config: ir.SubgraphConfig{Ref: "level0.dip"}},
+		},
+	}
+
+	_, err := Flatten(root, resolver, Options{MaxDepth: 3})
+	if err == nil {
+		t.Fatal("expected max depth error, got nil")
+	}
+	if !strings.Contains(err.Error(), "max depth") {
+		t.Errorf("error = %q, want it to contain %q", err.Error(), "max depth")
+	}
+}
+
+func TestFlattenMissingRef(t *testing.T) {
+	resolver := &MapResolver{Workflows: map[string]*ir.Workflow{}}
+
+	root := &ir.Workflow{
+		Name:  "root",
+		Start: "A",
+		Exit:  "A",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeSubgraph, Config: ir.SubgraphConfig{Ref: "missing.dip"}},
+		},
+	}
+
+	_, err := Flatten(root, resolver, Options{})
+	if err == nil {
+		t.Fatal("expected error for missing ref, got nil")
+	}
+	if !strings.Contains(err.Error(), "missing.dip") {
+		t.Errorf("error = %q, want it to contain %q", err.Error(), "missing.dip")
+	}
+}
+
+func TestFlattenMissingStartExit(t *testing.T) {
+	noStart := &ir.Workflow{
+		Name: "bad",
+		Nodes: []*ir.Node{
+			{ID: "X", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "x."}},
+		},
+	}
+	resolver := &MapResolver{Workflows: map[string]*ir.Workflow{
+		"bad.dip": noStart,
+	}}
+
+	root := &ir.Workflow{
+		Name:  "root",
+		Start: "A",
+		Exit:  "A",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeSubgraph, Config: ir.SubgraphConfig{Ref: "bad.dip"}},
+		},
+	}
+
+	_, err := Flatten(root, resolver, Options{})
+	if err == nil {
+		t.Fatal("expected error for missing start node, got nil")
+	}
+	if !strings.Contains(err.Error(), "no start node") {
+		t.Errorf("error = %q, want it to contain %q", err.Error(), "no start node")
+	}
 }
