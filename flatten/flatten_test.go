@@ -544,3 +544,42 @@ func TestDiskResolverResolve(t *testing.T) {
 		t.Errorf("Start = %q, want %q", w.Start, "A")
 	}
 }
+
+func TestFlattenPreservesParams(t *testing.T) {
+	child := &ir.Workflow{
+		Name: "child", Start: "X", Exit: "Y",
+		Nodes: []*ir.Node{
+			{ID: "X", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "x."}},
+			{ID: "Y", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "y."}},
+		},
+		Edges: []*ir.Edge{{From: "X", To: "Y"}},
+	}
+	resolver := &MapResolver{Workflows: map[string]*ir.Workflow{"child.dip": child}}
+
+	parent := &ir.Workflow{
+		Name: "main", Start: "S", Exit: "E",
+		Nodes: []*ir.Node{
+			{ID: "S", Kind: ir.NodeSubgraph, Config: ir.SubgraphConfig{
+				Ref:    "child.dip",
+				Params: map[string]string{"model": "gpt-5.4", "strict": "true"},
+			}},
+			{ID: "E", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "e."}},
+		},
+		Edges: []*ir.Edge{{From: "S", To: "E"}},
+	}
+
+	got, err := Flatten(parent, resolver, Options{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	for _, n := range got.Nodes {
+		if n.Kind == ir.NodeSubgraph {
+			t.Errorf("subgraph node %q should have been removed", n.ID)
+		}
+	}
+
+	if len(got.Nodes) != 3 {
+		t.Fatalf("len(Nodes) = %d, want 3; nodes: %v", len(got.Nodes), nodeIDs(got))
+	}
+}
