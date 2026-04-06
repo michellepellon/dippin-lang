@@ -916,6 +916,22 @@ func TestExportDOTGoalGateNonAgent(t *testing.T) {
 	assertNotContains(t, out, "fillcolor")
 }
 
+func TestExportDOTNoSubgraphNodes(t *testing.T) {
+	// After flattening, a workflow with subgraph refs should have no
+	// shape="tab" nodes in the output. This test verifies that if the
+	// caller passes an already-flattened workflow, no tab shapes appear.
+	w := &ir.Workflow{
+		Name: "flat", Start: "A", Exit: "B",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go."}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done."}},
+		},
+		Edges: []*ir.Edge{{From: "A", To: "B"}},
+	}
+	out := ExportDOT(w, ExportOptions{})
+	assertNotContains(t, out, `shape="tab"`)
+}
+
 // --- Unit tests for internal helpers ---
 
 func TestDotID(t *testing.T) {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/2389-research/dippin-lang/export"
+	"github.com/2389-research/dippin-lang/flatten"
 )
 
 // CmdExportDOT exports a workflow to DOT graph format.
@@ -27,6 +28,12 @@ func (c *CLI) CmdExportDOT(args []string) ExitCode {
 	w, err := loadWorkflow(path)
 	if err != nil {
 		c.renderError(err, path)
+		return ExitError
+	}
+
+	w, err = flatten.Flatten(w, &flatten.DiskResolver{}, flatten.Options{})
+	if err != nil {
+		fmt.Fprintln(c.Stderr, err)
 		return ExitError
 	}
 
