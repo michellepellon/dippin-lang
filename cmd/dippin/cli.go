@@ -52,6 +52,7 @@ func (c *CLI) commandDispatch() map[string]func([]string) ExitCode {
 		"check":              c.CmdCheck,
 		"fmt":                c.CmdFmt,
 		"new":                c.CmdNew,
+		"export-dip":         c.CmdExportDIP,
 		"export-dot":         c.CmdExportDOT,
 		"migrate":            c.CmdMigrate,
 		"validate-migration": c.CmdValidateMigration,
@@ -174,6 +175,7 @@ func printGlobalUsage(w io.Writer) {
 	fmt.Fprintln(w, "                                    Generate a starter .dip file")
 	fmt.Fprintln(w, "                                    Templates: minimal, parallel, conditional,")
 	fmt.Fprintln(w, "                                               review-loop, human-gate")
+	fmt.Fprintln(w, "  export-dip <file>                 Export flattened workflow as .dip")
 	fmt.Fprintln(w, "  export-dot [--rankdir] [--prompts] <file>")
 	fmt.Fprintln(w, "                                    Export workflow to DOT format")
 	fmt.Fprintln(w, "  migrate [--output <file>] <file.dot>")
