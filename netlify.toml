@@ -1,0 +1,42 @@
+# ABOUTME: Netlify build configuration for the dippin-lang documentation site.
+# ABOUTME: Builds WASM playground, generates changelog, and runs Hugo to produce the static site.
+
+[build]
+  command = """
+    GOOS=js GOARCH=wasm go build -o site/static/dippin.wasm ./cmd/wasm/ && \
+    cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" site/static/wasm_exec.js && \
+    ./scripts/gen-changelog.sh && \
+    cd site && hugo --minify
+  """
+  publish = "site/public"
+
+[build.environment]
+  GO_VERSION = "1.25.4"
+  HUGO_VERSION = "0.147.5"
+
+[context.production]
+  command = """
+    GOOS=js GOARCH=wasm go build -o site/static/dippin.wasm ./cmd/wasm/ && \
+    cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" site/static/wasm_exec.js && \
+    ./scripts/gen-changelog.sh && \
+    cd site && hugo --minify --baseURL $URL
+  """
+
+[context.deploy-preview]
+  command = """
+    GOOS=js GOARCH=wasm go build -o site/static/dippin.wasm ./cmd/wasm/ && \
+    cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" site/static/wasm_exec.js && \
+    ./scripts/gen-changelog.sh && \
+    cd site && hugo --minify --baseURL $DEPLOY_PRIME_URL
+  """
+
+[[headers]]
+  for = "/dippin.wasm"
+  [headers.values]
+    Content-Type = "application/wasm"
+    Cache-Control = "public, max-age=3600"
+
+[[headers]]
+  for = "/llms.txt"
+  [headers.values]
+    Content-Type = "text/plain; charset=utf-8"
