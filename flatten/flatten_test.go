@@ -4,6 +4,8 @@ package flatten
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -510,5 +512,35 @@ func TestFlattenNested(t *testing.T) {
 	}
 	for key := range wantEdges {
 		t.Errorf("missing edge %s", key)
+	}
+}
+
+func TestDiskResolverResolve(t *testing.T) {
+	dir := t.TempDir()
+	dipContent := `workflow child
+  start: A
+  exit: B
+  agent A
+    label: A
+  agent B
+    label: B
+  edges
+    A -> B
+`
+	path := filepath.Join(dir, "child.dip")
+	if err := os.WriteFile(path, []byte(dipContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	resolver := &DiskResolver{}
+	w, err := resolver.Resolve("child.dip", filepath.Join(dir, "parent.dip"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if w.Name != "child" {
+		t.Errorf("Name = %q, want %q", w.Name, "child")
+	}
+	if w.Start != "A" {
+		t.Errorf("Start = %q, want %q", w.Start, "A")
 	}
 }
