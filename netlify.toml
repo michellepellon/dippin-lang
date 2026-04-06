@@ -3,6 +3,7 @@
 
 [build]
   command = """
+    mkdir -p site/public && \
     GOOS=js GOARCH=wasm go build -o site/static/dippin.wasm ./cmd/wasm/ && \
     cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" site/static/wasm_exec.js && \
     ./scripts/gen-changelog.sh && \
@@ -16,6 +17,7 @@
 
 [context.production]
   command = """
+    mkdir -p site/public && \
     GOOS=js GOARCH=wasm go build -o site/static/dippin.wasm ./cmd/wasm/ && \
     cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" site/static/wasm_exec.js && \
     ./scripts/gen-changelog.sh && \
@@ -24,6 +26,7 @@
 
 [context.deploy-preview]
   command = """
+    mkdir -p site/public && \
     GOOS=js GOARCH=wasm go build -o site/static/dippin.wasm ./cmd/wasm/ && \
     cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" site/static/wasm_exec.js && \
     ./scripts/gen-changelog.sh && \
