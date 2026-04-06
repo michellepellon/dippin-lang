@@ -429,3 +429,86 @@ func TestFlattenMissingStartExit(t *testing.T) {
 		t.Errorf("error = %q, want it to contain %q", err.Error(), "no start node")
 	}
 }
+
+func TestFlattenNested(t *testing.T) {
+	inner := &ir.Workflow{
+		Name:  "inner",
+		Start: "P",
+		Exit:  "Q",
+		Nodes: []*ir.Node{
+			{ID: "P", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "p."}},
+			{ID: "Q", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "q."}},
+		},
+		Edges: []*ir.Edge{
+			{From: "P", To: "Q"},
+		},
+	}
+	middle := &ir.Workflow{
+		Name:  "middle",
+		Start: "M",
+		Exit:  "Sub",
+		Nodes: []*ir.Node{
+			{ID: "M", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "m."}},
+			{ID: "Sub", Kind: ir.NodeSubgraph, Config: ir.SubgraphConfig{Ref: "inner.dip"}},
+		},
+		Edges: []*ir.Edge{
+			{From: "M", To: "Sub"},
+		},
+	}
+	resolver := &MapResolver{Workflows: map[string]*ir.Workflow{
+		"middle.dip": middle,
+		"inner.dip":  inner,
+	}}
+
+	root := &ir.Workflow{
+		Name:  "root",
+		Start: "A",
+		Exit:  "Outer",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "a."}},
+			{ID: "Outer", Kind: ir.NodeSubgraph, Config: ir.SubgraphConfig{Ref: "middle.dip"}},
+		},
+		Edges: []*ir.Edge{
+			{From: "A", To: "Outer"},
+		},
+	}
+
+	got, err := Flatten(root, resolver, Options{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Expect 4 nodes: A, Outer_M, Outer_Sub_P, Outer_Sub_Q
+	if len(got.Nodes) != 4 {
+		t.Fatalf("len(Nodes) = %d, want 4; nodes: %v", len(got.Nodes), nodeIDs(got))
+	}
+
+	wantIDs := map[string]bool{
+		"A": true, "Outer_M": true, "Outer_Sub_P": true, "Outer_Sub_Q": true,
+	}
+	for _, n := range got.Nodes {
+		if !wantIDs[n.ID] {
+			t.Errorf("unexpected node %q", n.ID)
+		}
+		delete(wantIDs, n.ID)
+	}
+	for id := range wantIDs {
+		t.Errorf("missing node %q", id)
+	}
+
+	wantEdges := map[string]bool{
+		"A->Outer_M":               true,
+		"Outer_M->Outer_Sub_P":     true,
+		"Outer_Sub_P->Outer_Sub_Q": true,
+	}
+	for _, e := range got.Edges {
+		key := e.From + "->" + e.To
+		if !wantEdges[key] {
+			t.Errorf("unexpected edge %s", key)
+		}
+		delete(wantEdges, key)
+	}
+	for key := range wantEdges {
+		t.Errorf("missing edge %s", key)
+	}
+}
