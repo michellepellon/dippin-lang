@@ -26,3 +26,4 @@ site/static/wasm_exec.js
 .ai/
 .DS_Store
 .worktrees/
+site/.hugo_build.lock

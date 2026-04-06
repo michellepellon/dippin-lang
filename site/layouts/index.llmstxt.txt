@@ -5,17 +5,10 @@
 Dippin files use the `.dip` extension and define directed graphs of agent steps, human gates, tool calls, and control-flow constructs. The `dippin` CLI parses, validates, lints, formats, exports, simulates, and analyzes these workflows.
 
 ## Documentation
-
-- [Language Syntax Reference](https://2389-research.github.io/dippin-lang/language.html): Complete syntax for .dip files — workflow structure, indentation, header fields, defaults, node definitions, edge syntax, conditions, and comments.
-- [Node Reference](https://2389-research.github.io/dippin-lang/language.html): Six node kinds — agent (LLM), human (decision gate), tool (shell command), parallel (fan-out), fan_in (join), subgraph (sub-pipeline). Common and kind-specific fields.
-- [CLI Reference](https://2389-research.github.io/dippin-lang/cli.html): All commands — parse, validate, lint, check, fmt, new, export-dot, export-dip, migrate, validate-migration, simulate, cost, coverage, doctor, optimize, diff, feedback, explain, unused, graph, test, watch, lsp.
-- [Validation and Linting](https://2389-research.github.io/dippin-lang/validation.html): 39 diagnostic codes (DIP001-DIP009 structural errors, DIP101-DIP133 semantic warnings). Exhaustive condition detection, model catalog validation, IO contract checks.
-- [Architecture Guide](https://2389-research.github.io/dippin-lang/architecture.html): Internal package structure, IR data flow, compiler pipeline stages. Everything flows through ir.Workflow.
-- [Scenario Testing](https://2389-research.github.io/dippin-lang/testing.html): Test-driven workflow verification with .test.json files, scenario injection, path assertions.
-- [Editor Setup](https://2389-research.github.io/dippin-lang/editors.html): LSP server integration, VS Code and JetBrains configuration.
-- [Analysis Tools](https://2389-research.github.io/dippin-lang/analysis.html): Cost estimation, coverage analysis, optimization suggestions, doctor health reports.
-- [Changelog](https://2389-research.github.io/dippin-lang/changelog.html): Version history and release notes.
-- [Blog](https://2389-research.github.io/dippin-lang/blog/): Tutorials on getting started, conditional edges, cost estimation, scenario testing, CI integration, editor setup, migrating from DOT, multi-line prompts.
+{{ range where .Site.RegularPages "Section" "" }}{{ if ne .File.LogicalName "_index.md" }}
+- [{{ .Title }}]({{ .Permalink }}): {{ .Description }}{{ end }}{{ end }}
+{{ range where .Site.RegularPages "Section" "blog" }}
+- [{{ .Title }}]({{ .Permalink }}): {{ .Description }}{{ end }}
 
 ## Source
 

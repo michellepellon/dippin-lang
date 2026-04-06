@@ -12,5 +12,17 @@ disableKinds = ["taxonomy", "term"]
   [markup.highlight]
     codeFences = false
 
+[mediaTypes."text/plain"]
+  suffixes = ["txt"]
+
+[outputFormats.llmstxt]
+  mediaType = "text/plain"
+  baseName = "llms"
+  isPlainText = true
+  notAlternative = true
+
+[outputs]
+  home = ["HTML", "llmstxt"]
+
 [params]
   description = "A language for AI pipeline workflows"
