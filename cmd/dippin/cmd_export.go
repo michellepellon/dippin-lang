@@ -1,3 +1,5 @@
+// ABOUTME: CLI command for exporting workflows to DOT graph format.
+// ABOUTME: Flattens subgraph refs before export so output is always valid DOT.
 package main
 
 import (

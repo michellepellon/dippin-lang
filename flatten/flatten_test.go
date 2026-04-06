@@ -545,7 +545,7 @@ func TestDiskResolverResolve(t *testing.T) {
 	}
 }
 
-func TestFlattenPreservesParams(t *testing.T) {
+func TestFlattenSubgraphWithParams(t *testing.T) {
 	child := &ir.Workflow{
 		Name: "child", Start: "X", Exit: "Y",
 		Nodes: []*ir.Node{
