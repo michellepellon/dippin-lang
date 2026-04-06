@@ -1,0 +1,10 @@
+{{ with .Params.related }}
+<div class="next-posts">
+  {{ range . }}
+  <a href="{{ .url }}" class="next-post">
+    <h4>{{ .title }}</h4>
+    <p>{{ .summary }}</p>
+  </a>
+  {{ end }}
+</div>
+{{ end }}
