@@ -1,0 +1,28 @@
+workflow CodeReview
+  goal: "Review code for correctness and style."
+  start: Analyze
+  exit: Verdict
+
+  defaults
+    model: claude-sonnet-4-6
+    provider: anthropic
+
+  agent Analyze
+    label: "Analyze code"
+    prompt:
+      Review the code changes for correctness, readability,
+      and adherence to project conventions.
+      List any issues found.
+
+  agent Verdict
+    label: "Summarize review"
+    auto_status: true
+    reads: analysis
+    writes: review_result
+    prompt:
+      Summarize the code review findings.
+      If there are blocking issues, STATUS: fail.
+      If the code is acceptable, STATUS: success.
+
+  edges
+    Analyze -> Verdict
