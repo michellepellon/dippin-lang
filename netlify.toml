@@ -46,6 +46,6 @@
     Content-Type = "text/plain; charset=utf-8"
 
 [[headers]]
-  for = "/claude-skill.md"
+  for = "/skill.md"
   [headers.values]
     Content-Type = "text/plain; charset=utf-8"

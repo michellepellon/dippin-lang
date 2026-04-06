@@ -12,7 +12,7 @@ Dippin files use the `.dip` extension and define directed graphs of agent steps,
 
 ## Claude Code Skill
 
-- [dippin-lang skill]({{ .Site.BaseURL }}claude-skill.md): Instruction file for Claude Code to author, validate, and debug .dip workflow files. Add to CLAUDE.md: `@{{ .Site.BaseURL }}claude-skill.md`
+- [dippin-lang skill]({{ .Site.BaseURL }}skill.md): Instruction file for Claude Code to author, validate, and debug .dip workflow files. Add to CLAUDE.md: `@{{ .Site.BaseURL }}skill.md`
 
 ## Source
 

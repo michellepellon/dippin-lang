@@ -9,7 +9,7 @@ dippin-lang is a DSL and toolchain for authoring AI pipeline workflows. It repla
 A hosted skill teaches Claude Code to author, validate, and debug .dip files. Add to any project's CLAUDE.md:
 
 ```
-@https://2389-research.github.io/dippin-lang/claude-skill.md
+@https://2389-research.github.io/dippin-lang/skill.md
 ```
 
 ## Build & Test — always use `just`
