@@ -13,6 +13,9 @@ paths.jsonl
 # Temp site files
 site/*.tmp
 
+# Hugo build output
+site/public/
+
 # WASM build output
 site/dippin.wasm
 site/wasm_exec.js

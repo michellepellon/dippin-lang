@@ -1,0 +1,64 @@
+# Dippin
+
+> A domain-specific language and toolchain for authoring AI pipeline workflows. Replaces Graphviz DOT as the authoring format with first-class syntax for prompts, tools, conditions, parallel execution, and subgraph composition.
+
+Dippin files use the `.dip` extension and define directed graphs of agent steps, human gates, tool calls, and control-flow constructs. The `dippin` CLI parses, validates, lints, formats, exports, simulates, and analyzes these workflows.
+
+## Documentation
+
+- [Language Syntax Reference](https://2389-research.github.io/dippin-lang/language.html): Complete syntax for .dip files — workflow structure, indentation, header fields, defaults, node definitions, edge syntax, conditions, and comments.
+- [Node Reference](https://2389-research.github.io/dippin-lang/language.html): Six node kinds — agent (LLM), human (decision gate), tool (shell command), parallel (fan-out), fan_in (join), subgraph (sub-pipeline). Common and kind-specific fields.
+- [CLI Reference](https://2389-research.github.io/dippin-lang/cli.html): All commands — parse, validate, lint, check, fmt, new, export-dot, export-dip, migrate, validate-migration, simulate, cost, coverage, doctor, optimize, diff, feedback, explain, unused, graph, test, watch, lsp.
+- [Validation and Linting](https://2389-research.github.io/dippin-lang/validation.html): 39 diagnostic codes (DIP001-DIP009 structural errors, DIP101-DIP133 semantic warnings). Exhaustive condition detection, model catalog validation, IO contract checks.
+- [Architecture Guide](https://2389-research.github.io/dippin-lang/architecture.html): Internal package structure, IR data flow, compiler pipeline stages. Everything flows through ir.Workflow.
+- [Scenario Testing](https://2389-research.github.io/dippin-lang/testing.html): Test-driven workflow verification with .test.json files, scenario injection, path assertions.
+- [Editor Setup](https://2389-research.github.io/dippin-lang/editors.html): LSP server integration, VS Code and JetBrains configuration.
+- [Analysis Tools](https://2389-research.github.io/dippin-lang/analysis.html): Cost estimation, coverage analysis, optimization suggestions, doctor health reports.
+- [Changelog](https://2389-research.github.io/dippin-lang/changelog.html): Version history and release notes.
+- [Blog](https://2389-research.github.io/dippin-lang/blog/): Tutorials on getting started, conditional edges, cost estimation, scenario testing, CI integration, editor setup, migrating from DOT, multi-line prompts.
+
+## Source
+
+- [GitHub Repository](https://github.com/2389-research/dippin-lang)
+
+## Quick Example
+
+```
+workflow AskAndDo
+  goal: "Ask a question and act on it."
+  start: Ask
+  exit: Done
+
+  defaults
+    model: claude-sonnet-4-6
+    provider: anthropic
+
+  human Ask
+    mode: freeform
+
+  agent Done
+    prompt:
+      Complete the task based on the user's input.
+
+  edges
+    Ask -> Done
+```
+
+## Key Concepts
+
+- **Workflow**: A directed graph of nodes and edges. One per .dip file. Has a name, goal, start node, and exit node.
+- **Nodes**: Steps in the pipeline. Agent nodes call LLMs, human nodes gate on user input, tool nodes run shell commands, parallel/fan_in manage concurrency, subgraph nodes embed other workflows.
+- **Edges**: Connections between nodes with optional conditions (`when ctx.outcome = success`), labels, weights, and restart flags.
+- **Defaults**: Workflow-wide settings (model, provider, retry policy, fidelity) inherited by all nodes unless overridden.
+- **Subgraph composition**: Embed reusable workflows via `subgraph` nodes with `ref:` pointing to another .dip file. The `flatten` package resolves refs into a single flat workflow for export.
+- **Conditions**: Edge conditions use `ctx.<field> = <value>` syntax with operators: `=`, `!=`, `contains`, `not contains`. Exhaustive condition pairs (success/fail, contains/not-contains) are detected automatically.
+
+## Installation
+
+```
+go install github.com/2389-research/dippin-lang/cmd/dippin@latest
+```
+
+## Supported Providers
+
+Anthropic, OpenAI, Google/Gemini, DeepSeek, xAI/Grok, Mistral, Cohere. Model names and pricing are validated against official provider documentation.

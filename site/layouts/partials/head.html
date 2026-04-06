@@ -1,0 +1,19 @@
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ if .IsHome }}Dippin — A Language for AI Pipelines{{ else }}{{ .Title }} — Dippin{{ end }}</title>
+{{- $desc := .Description | default .Params.description | default .Site.Params.description -}}
+<meta name="description" content="{{ $desc }}">
+<meta property="og:title" content="{{ if .IsHome }}Dippin — A Language for AI Pipelines{{ else }}{{ .Title }} — Dippin{{ end }}">
+<meta property="og:description" content="{{ $desc }}">
+<meta property="og:type" content="{{ if eq .Kind "page" }}article{{ else }}website{{ end }}">
+<meta property="og:url" content="{{ .Permalink }}">
+<meta property="og:site_name" content="Dippin">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="{{ if .IsHome }}Dippin — A Language for AI Pipelines{{ else }}{{ .Title }}{{ end }}">
+<meta name="twitter:description" content="{{ $desc }}">
+<link rel="canonical" href="{{ .Permalink }}">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;0,9..144,700;1,9..144,400&family=IBM+Plex+Mono:wght@400;500;600&family=Nunito:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ "style.css" | relURL }}">
+</head>
