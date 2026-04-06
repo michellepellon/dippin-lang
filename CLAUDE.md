@@ -4,6 +4,14 @@
 
 dippin-lang is a DSL and toolchain for authoring AI pipeline workflows. It replaces Graphviz DOT as the authoring format for Tracker pipelines.
 
+## Claude Code Skill
+
+A hosted skill teaches Claude Code to author, validate, and debug .dip files. Add to any project's CLAUDE.md:
+
+```
+@https://2389-research.github.io/dippin-lang/claude-skill.md
+```
+
 ## Build & Test — always use `just`
 
 All common operations go through the justfile. Never run raw `go build`, `go test`, `gocyclo`, etc. directly — use the corresponding `just` recipe. If you find yourself running a command repeatedly that isn't in the justfile, add a recipe for it first.
