@@ -1,0 +1,270 @@
+---
+title: "Language Reference"
+description: "Full syntax reference for .dip workflow files: nodes, edges, conditions, multiline prompts, parallel execution, and stylesheets."
+section_label: "Syntax"
+subtitle: "Complete syntax for .dip workflow files."
+navActive: "language"
+---
+
+## File Structure
+
+Every `.dip` file contains exactly one workflow. The top-level structure has four sections that must appear in order:
+
+<div class="flow-diagram">
+  <div class="flow-step">workflow &lt;name&gt;</div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-step">Header<br>goal, start, exit</div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-step">Defaults (optional)<br>model, provider, ...</div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-step">Node Definitions<br>agent, human, tool, ...</div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-step">Edges (optional)<br>A -&gt; B when ...</div>
+</div>
+
+Dippin uses indentation-sensitive syntax (like Python). Use 2 spaces or tabs consistently. The canonical formatter always outputs 2-space indentation.
+
+## Workflow Header
+
+The workflow declaration is the first line, followed by required and optional header fields:
+
+```
+workflow my_pipeline
+  goal: "Ask user for a task, implement it, review, ship"
+  start: AskUser
+  exit: Done
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `workflow <name>` | Yes | Declares the workflow and its identifier |
+| `goal: <text>` | No | Human-readable objective for this pipeline |
+| `start: <NodeID>` | Yes | Entry point node — execution begins here |
+| `exit: <NodeID>` | Yes | Terminal node — execution ends here |
+
+## Defaults Block
+
+The optional `defaults` block sets graph-level configuration that applies to all nodes unless overridden at the node level.
+
+```
+  defaults
+    model: claude-opus-4-6
+    provider: anthropic
+    retry_policy: standard
+    max_retries: 3
+    fidelity: high
+    max_restarts: 5
+    cache_tools: true
+    compaction: summary
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `model` | String | Default LLM model for all agent nodes |
+| `provider` | String | Default LLM provider (e.g., "openai", "anthropic") |
+| `retry_policy` | String | Default retry strategy name |
+| `max_retries` | Integer | Default max retry attempts per node |
+| `fidelity` | String | Default checkpoint fidelity level |
+| `max_restarts` | Integer | Max loop restarts before pipeline failure (default: 5) |
+| `cache_tools` | Boolean | Whether to cache tool call results |
+| `compaction` | String | Context compaction mode for long pipelines |
+
+## Node Kinds
+
+There are 6 node kinds, each with its own syntax and configuration:
+
+<div class="flow-diagram">
+  <div class="pipeline-box lavender">agent<br>LLM interaction</div>
+  <div class="pipeline-box green">human<br>Decision gate</div>
+  <div class="pipeline-box yellow">tool<br>Shell command</div>
+  <div class="pipeline-box lavender">parallel<br>Fan-out</div>
+  <div class="pipeline-box green">fan_in<br>Join</div>
+  <div class="pipeline-box yellow">subgraph<br>Sub-pipeline</div>
+</div>
+
+### agent
+
+Agent nodes invoke an LLM. They are the most configurable node kind. Key fields include `model`, `provider`, `prompt`, `system_prompt`, `max_turns`, `auto_status`, and `goal_gate`.
+
+```
+  agent Analyze
+    label: "Analyze the request"
+    model: claude-opus-4-6
+    provider: anthropic
+    goal_gate: true
+    auto_status: true
+    reads: human_response
+    writes: analysis
+    prompt:
+      You are a senior software architect.
+      Analyze the following request carefully.
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `model` | String | LLM model to use (overrides defaults) |
+| `provider` | String | LLM provider (e.g., "anthropic", "openai") |
+| `prompt` | Block | Multiline prompt text sent to the model |
+| `system_prompt` | Block | System-level instructions prepended before the prompt |
+| `max_turns` | Integer | Maximum conversation turns before the node exits |
+| `auto_status` | Boolean | Automatically extract `STATUS: success/fail` from model output into `ctx.outcome` |
+| `goal_gate` | Boolean | Marks this node as a goal gate — requires `retry_target` or `fallback_target` for recovery |
+| `reads` | String | Context key this node reads as input (advisory metadata) |
+| `writes` | String | Context key this node writes as output (advisory metadata) |
+| `response_format` | String | Structured output mode: `json_object` or `json_schema`. Instructs the model to return valid JSON. |
+| `response_schema` | Block | JSON Schema definition enforced when `response_format: json_schema` is set. Must be valid JSON. |
+| `params` | Block | Arbitrary key-value pairs forwarded to the provider API. Keys must not duplicate first-class fields (see DIP133). |
+| `cmd_timeout` | Duration | Maximum wall-clock time for this agent call before the runtime cancels and errors (e.g., `30s`, `2m`). |
+
+### human
+
+Human nodes pause execution and wait for human input. Two modes: `choice` (predefined options from edge labels) and `freeform` (open text input).
+
+```
+  human Approve
+    label: "Ship it?"
+    mode: choice
+    default: "yes"
+```
+
+### tool
+
+Tool nodes execute shell commands. The command's stdout is captured as `ctx.tool_stdout` and stderr as `ctx.tool_stderr`. Always include a `timeout`.
+
+```
+  tool RunTests
+    label: "Run test suite"
+    timeout: 60s
+    command:
+      #!/bin/sh
+      set -eu
+      pytest --tb=short 2>&1
+```
+
+### parallel
+
+Parallel nodes fan execution out to multiple branches that run concurrently. Every `parallel` must have a matching `fan_in`.
+
+```
+  parallel FanOut -> TaskA, TaskB, TaskC
+```
+
+### fan_in
+
+Fan-in nodes join concurrent branches back together. Sources must match the targets of a corresponding `parallel` node.
+
+```
+  fan_in Join <- TaskA, TaskB, TaskC
+```
+
+### subgraph
+
+Subgraph nodes embed another workflow as a single step. Parameters are passed via the `params.*` namespace.
+
+```
+  subgraph ReviewProcess
+    ref: review_pipeline
+    params:
+      strict: true
+      model: gpt-5.4
+```
+
+## Edges
+
+The `edges` block defines connections between nodes. Each edge is a single line:
+
+```
+<FromID> -> <ToID> [when <condition>] [label: <text>] [weight: <int>] [restart: true]
+```
+
+### Basic and Conditional Edges
+
+```
+  edges
+    AskUser -> Interpret
+    Interpret -> Validate
+    Validate -> Approve   when ctx.outcome = success
+    Validate -> Retry     when ctx.outcome = fail
+```
+
+### Edge Attributes
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `when <expr>` | Condition | Boolean guard — edge only traversed if true |
+| `label: <text>` | String | Human-readable label (used for human gate choices) |
+| `weight: <int>` | Integer | Priority hint — higher wins among competing edges |
+| `restart: true` | Boolean | Marks this as a back-edge (loop restart) |
+
+### Restart Edges
+
+Restart edges create controlled loops. When followed, the engine increments a restart counter (max controlled by `max_restarts`), clears downstream nodes, resets retry budgets, and resumes from the target.
+
+```
+    Task -> Start when ctx.outcome = fail label: "retry" restart: true
+```
+
+## Conditions
+
+Conditions appear on edges after the `when` keyword. All operators perform string comparison.
+
+### Comparison Operators
+
+| Operator | Meaning | Example |
+|----------|---------|---------|
+| `=`, `==` | String equality | `ctx.outcome = success` |
+| `!=` | String inequality | `ctx.outcome != fail` |
+| `contains` | Substring match | `ctx.response contains "approved"` |
+| `not contains` | Negated substring | `ctx.tool_stdout not contains all-done` |
+| `startswith` | Prefix match | `ctx.response startswith "yes"` |
+| `endswith` | Suffix match | `ctx.response endswith "done"` |
+| `in` | Value in list | `ctx.status in "pass,fail,skip"` |
+
+### Logical Operators
+
+| Operator | Meaning | Precedence |
+|----------|---------|------------|
+| `not` | Logical negation | Highest |
+| `and` | Logical AND | Medium |
+| `or` | Logical OR | Lowest |
+
+Parentheses control precedence:
+
+```
+    A -> B when ctx.outcome = success and ctx.score = high
+    A -> C when ctx.outcome = fail or ctx.status = blocked
+    A -> D when (ctx.x = 1 or ctx.y = 2) and ctx.z = 3
+```
+
+## Multiline Blocks
+
+Fields like `prompt` and `command` support multiline content. Write the key followed by `:`, then indent the content on subsequent lines:
+
+```
+  agent MyAgent
+    prompt:
+      You are a code reviewer.
+
+      ## Rules
+      - Check for bugs
+      - Check for security issues
+
+      ## Context
+      ${ctx.last_response}
+```
+
+The first content line's indentation sets the baseline. All content is de-indented by that amount. Empty lines are preserved. The block ends when indentation returns to or above the field's level. No quoting or escaping needed.
+
+```
+  tool RunTests
+    timeout: 60s
+    command:
+      #!/bin/sh
+      set -eu
+      if pytest --tb=short 2>&1; then
+        printf 'pass'
+      else
+        printf 'fail'
+        exit 1
+      fi
+```

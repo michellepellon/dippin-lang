@@ -1,0 +1,28 @@
+baseURL = "https://2389-research.github.io/dippin-lang/"
+languageCode = "en-us"
+title = "Dippin"
+uglyURLs = true
+disableHugoGeneratorInject = true
+disableKinds = ["taxonomy", "term"]
+
+[markup]
+  [markup.goldmark]
+    [markup.goldmark.renderer]
+      unsafe = true
+  [markup.highlight]
+    codeFences = false
+
+[mediaTypes."text/plain"]
+  suffixes = ["txt"]
+
+[outputFormats.llmstxt]
+  mediaType = "text/plain"
+  baseName = "llms"
+  isPlainText = true
+  notAlternative = true
+
+[outputs]
+  home = ["HTML", "llmstxt"]
+
+[params]
+  description = "A language for AI pipeline workflows"

@@ -106,22 +106,27 @@ release tag msg:
     git tag -a {{tag}} -m "{{msg}}"
     git push origin {{tag}}
 
-# Sync nav across all site pages from site/_layout/nav.html
-sync-nav:
-    ./scripts/sync-nav.sh
+# Start Hugo dev server (builds WASM and changelog first)
+site-serve: build wasm changelog-md
+    cd site && hugo serve
 
-# Regenerate site/changelog.html from CHANGELOG.md
-changelog:
-    ./scripts/gen-changelog-html.sh
-    @echo "Generated site/changelog.html"
+# Regenerate site/content/changelog.md from CHANGELOG.md
+changelog-md:
+    ./scripts/gen-changelog.sh
+    @echo "Generated site/content/changelog.md"
+
+# Build the Hugo site for production
+site-build: build wasm changelog-md
+    cd site && hugo --minify
 
 # Build WASM binary for the browser playground
 wasm:
-    GOOS=js GOARCH=wasm go build -o site/dippin.wasm ./cmd/wasm/
-    cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" site/wasm_exec.js
-    @echo "WASM built: site/dippin.wasm"
+    GOOS=js GOARCH=wasm go build -o site/static/dippin.wasm ./cmd/wasm/
+    cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" site/static/wasm_exec.js
+    @echo "WASM built: site/static/dippin.wasm"
 
 # Clean build artifacts
 clean:
-    rm -f dippin cover.out cover_filtered.out cover_check.out site/dippin.wasm site/wasm_exec.js
+    rm -f dippin cover.out cover_filtered.out cover_check.out site/static/dippin.wasm site/static/wasm_exec.js
+    rm -rf site/public
     @echo "Cleaned."

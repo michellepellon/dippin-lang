@@ -13,12 +13,17 @@ paths.jsonl
 # Temp site files
 site/*.tmp
 
+# Hugo build output
+site/public/
+site/resources/
+
 # WASM build output
-site/dippin.wasm
-site/wasm_exec.js
+site/static/dippin.wasm
+site/static/wasm_exec.js
 
 # Tracker build artifacts
 .tracker/
 .ai/
 .DS_Store
 .worktrees/
+site/.hugo_build.lock

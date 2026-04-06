@@ -1,0 +1,57 @@
+# Dippin
+
+> A domain-specific language and toolchain for authoring AI pipeline workflows. Replaces Graphviz DOT as the authoring format with first-class syntax for prompts, tools, conditions, parallel execution, and subgraph composition.
+
+Dippin files use the `.dip` extension and define directed graphs of agent steps, human gates, tool calls, and control-flow constructs. The `dippin` CLI parses, validates, lints, formats, exports, simulates, and analyzes these workflows.
+
+## Documentation
+{{ range where .Site.RegularPages "Section" "" }}{{ if ne .File.LogicalName "_index.md" }}
+- [{{ .Title }}]({{ .Permalink }}): {{ .Description }}{{ end }}{{ end }}
+{{ range where .Site.RegularPages "Section" "blog" }}
+- [{{ .Title }}]({{ .Permalink }}): {{ .Description }}{{ end }}
+
+## Source
+
+- [GitHub Repository](https://github.com/2389-research/dippin-lang)
+
+## Quick Example
+
+```
+workflow AskAndDo
+  goal: "Ask a question and act on it."
+  start: Ask
+  exit: Done
+
+  defaults
+    model: claude-sonnet-4-6
+    provider: anthropic
+
+  human Ask
+    mode: freeform
+
+  agent Done
+    prompt:
+      Complete the task based on the user's input.
+
+  edges
+    Ask -> Done
+```
+
+## Key Concepts
+
+- **Workflow**: A directed graph of nodes and edges. One per .dip file. Has a name, goal, start node, and exit node.
+- **Nodes**: Steps in the pipeline. Agent nodes call LLMs, human nodes gate on user input, tool nodes run shell commands, parallel/fan_in manage concurrency, subgraph nodes embed other workflows.
+- **Edges**: Connections between nodes with optional conditions (`when ctx.outcome = success`), labels, weights, and restart flags.
+- **Defaults**: Workflow-wide settings (model, provider, retry policy, fidelity) inherited by all nodes unless overridden.
+- **Subgraph composition**: Embed reusable workflows via `subgraph` nodes with `ref:` pointing to another .dip file. The `flatten` package resolves refs into a single flat workflow for export.
+- **Conditions**: Edge conditions use `ctx.<field> = <value>` syntax with operators: `=`, `!=`, `contains`, `not contains`. Exhaustive condition pairs (success/fail, contains/not-contains) are detected automatically.
+
+## Installation
+
+```
+go install github.com/2389-research/dippin-lang/cmd/dippin@latest
+```
+
+## Supported Providers
+
+Anthropic, OpenAI, Google/Gemini, DeepSeek, xAI/Grok, Mistral, Cohere. Model names and pricing are validated against official provider documentation.

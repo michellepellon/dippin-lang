@@ -1,0 +1,14 @@
+{{ define "main" }}
+<section class="doc">
+<div class="container">
+  <div class="post-header">
+    <h1>{{ .Title }}</h1>
+    {{ partial "blog-meta.html" . }}
+  </div>
+  <div class="doc-body">
+    {{ .Content }}
+    {{ partial "next-posts.html" . }}
+  </div>
+</div>
+</section>
+{{ end }}

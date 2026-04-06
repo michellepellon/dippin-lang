@@ -234,11 +234,33 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Set up Hugo
+        uses: peaceiris/actions-hugo@v3
+        with:
+          hugo-version: latest
+          extended: true
+
+      - name: Build WASM
+        run: |
+          GOOS=js GOARCH=wasm go build -o site/static/dippin.wasm ./cmd/wasm/
+          cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" site/static/wasm_exec.js
+
+      - name: Generate changelog
+        run: ./scripts/gen-changelog.sh
+
+      - name: Build site
+        run: cd site && hugo --minify
+
       - name: Deploy to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./site
+          publish_dir: ./site/public
           keep_files: true
 
   dippin-lint:
