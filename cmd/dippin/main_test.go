@@ -594,6 +594,33 @@ func TestCmdExportDOT_MissingArg(t *testing.T) {
 	}
 }
 
+// --- Export-DIP Command ---
+
+func TestCmdExportDIP_Basic(t *testing.T) {
+	stdout, stderr, code := runCLI(t, "export-dip", testdata("valid_minimal.dip"))
+
+	if code != ExitOK {
+		t.Fatalf("expected exit 0, got %d; stderr: %s", code, stderr)
+	}
+	if !strings.Contains(stdout, "workflow Minimal") {
+		t.Errorf("expected 'workflow Minimal' in output, got: %s", stdout)
+	}
+	if !strings.Contains(stdout, "Ask -> Done") {
+		t.Errorf("expected edge 'Ask -> Done' in output")
+	}
+}
+
+func TestCmdExportDIP_MissingArg(t *testing.T) {
+	_, stderr, code := runCLI(t, "export-dip")
+
+	if code != ExitUsageError {
+		t.Fatalf("expected exit 2, got %d", code)
+	}
+	if !strings.Contains(stderr, "usage:") {
+		t.Errorf("expected usage message, got: %s", stderr)
+	}
+}
+
 // --- Migrate Command ---
 
 func TestCmdMigrate_Basic(t *testing.T) {

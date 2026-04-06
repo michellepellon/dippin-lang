@@ -1,3 +1,5 @@
+// ABOUTME: CLI command for exporting workflows to DOT graph format.
+// ABOUTME: Flattens subgraph refs before export so output is always valid DOT.
 package main
 
 import (
@@ -5,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/2389-research/dippin-lang/export"
+	"github.com/2389-research/dippin-lang/flatten"
 )
 
 // CmdExportDOT exports a workflow to DOT graph format.
@@ -25,6 +28,12 @@ func (c *CLI) CmdExportDOT(args []string) ExitCode {
 
 	path := fs.Arg(0)
 	w, err := loadWorkflow(path)
+	if err != nil {
+		c.renderError(err, path)
+		return ExitError
+	}
+
+	w, err = flatten.Flatten(w, &flatten.DiskResolver{}, flatten.Options{})
 	if err != nil {
 		c.renderError(err, path)
 		return ExitError

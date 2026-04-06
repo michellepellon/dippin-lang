@@ -17,6 +17,11 @@ func TestLintExamples(t *testing.T) {
 	if err != nil {
 		t.Fatalf("glob examples: %v", err)
 	}
+	subExamples, err := filepath.Glob("../examples/*/*.dip")
+	if err != nil {
+		t.Fatalf("glob sub-examples: %v", err)
+	}
+	examples = append(examples, subExamples...)
 	if len(examples) == 0 {
 		t.Fatal("no .dip files found in examples/")
 	}

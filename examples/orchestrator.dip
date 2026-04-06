@@ -1,0 +1,36 @@
+workflow Orchestrator
+  goal: "Build, review, and ship a feature."
+  start: Plan
+  exit: Done
+
+  defaults
+    model: claude-sonnet-4-6
+    provider: anthropic
+
+  agent Plan
+    label: "Plan the work"
+    writes: plan
+    prompt:
+      Read the feature request and produce an implementation plan.
+
+  agent Build
+    label: "Implement the feature"
+    reads: plan
+    writes: implementation
+    prompt:
+      Follow the plan and implement the feature.
+
+  subgraph Review
+    label: "Code review"
+    ref: phases/code_review.dip
+
+  agent Done
+    label: "Ship it"
+    reads: review_result
+    prompt:
+      Package and ship the implementation.
+
+  edges
+    Plan -> Build
+    Build -> Review
+    Review -> Done
