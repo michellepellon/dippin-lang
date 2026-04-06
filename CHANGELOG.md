@@ -2,6 +2,20 @@
 
 All notable changes to dippin-lang are documented here. Versions follow [semver](https://semver.org/).
 
+## [v0.18.0] — 2026-04-06
+
+### Added
+- **`flatten` package** for resolving subgraph refs into flat workflows. Recursive resolution with cycle detection and configurable depth limit (default 10). Underscore-prefixed node IDs (`Parent_Child`).
+- **`dippin export-dip`** command — exports a flattened workflow as canonical `.dip` text with all subgraph refs inlined.
+- **`dippin export-dot`** now automatically flattens subgraph refs before export, producing valid DOT without external references.
+- **Example workflows** — `orchestrator.dip` (parent with subgraph ref) and `phases/code_review.dip` (child workflow).
+- **`TestLintExamples`** now recurses into `examples/*/` subdirectories.
+
+### Fixed
+- **Start/Exit rewrite** — workflow `Start`/`Exit` fields are now correctly remapped when they point to inlined subgraph nodes.
+- **Nil resolver guard** — `flatten.Flatten` returns a clear error instead of panicking when the resolver is nil but subgraph refs are present.
+- **`export-dot` error rendering** — flatten errors now use `renderError` for JSON output consistency.
+
 ## [v0.17.0] — 2026-04-03
 
 ### Added
