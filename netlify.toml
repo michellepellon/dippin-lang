@@ -2,6 +2,7 @@
 # ABOUTME: Builds WASM playground, generates changelog, and runs Hugo to produce the static site.
 
 [build]
+  base = "/"
   command = """
     mkdir -p site/public && \
     GOOS=js GOARCH=wasm go build -o site/static/dippin.wasm ./cmd/wasm/ && \
