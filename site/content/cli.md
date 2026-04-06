@@ -1,0 +1,129 @@
+---
+title: "CLI Reference"
+description: "Complete command reference for the Dippin toolchain: parse, validate, lint, format, simulate, cost, test, and 15 more commands."
+section_label: "Reference"
+subtitle: "Every command in the dippin toolchain — authoring, export, and analysis."
+navActive: "cli"
+---
+
+## Global Usage
+
+```
+dippin [--format text|json] <command> [args]
+```
+
+### Global Flags
+
+| Flag | Values | Default | Description |
+|------|--------|---------|-------------|
+| `--format` | `text`, `json` | `text` | Output format for diagnostics. `text` produces human-readable output. `json` produces machine-readable arrays for CI/tooling integration. |
+
+### Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Success — no issues found, operation completed |
+| `1` | Error — validation failures, parse errors, check-mode drift, parity mismatches |
+| `2` | Usage error — bad flags, missing arguments, unknown command |
+
+## Authoring Commands
+
+<div class="group-badge lavender">Authoring</div>
+
+<div class="cmd-card">
+  <h3>parse</h3>
+  <div class="cmd-usage">dippin parse &lt;file&gt;</div>
+  <p>Parse a workflow file and output the intermediate representation (IR) as JSON. Useful for debugging, tooling integration, and inspecting how the parser interprets your workflow. Accepts <code>.dip</code> or <code>.dot</code> files (auto-detected by extension).</p>
+</div>
+
+<div class="cmd-card">
+  <h3>validate</h3>
+  <div class="cmd-usage">dippin validate &lt;file&gt;</div>
+  <p>Run structural validation checks (DIP001-DIP009) on a workflow. Outputs "validation passed" or diagnostic messages. Exit code 1 if any errors found.</p>
+</div>
+
+<div class="cmd-card">
+  <h3>lint</h3>
+  <div class="cmd-usage">dippin lint &lt;file&gt;</div>
+  <p>Run both structural validation and semantic linting (DIP001-DIP009 + DIP101-DIP133). All 39 diagnostic rules. Errors cause exit code 1; warnings alone exit 0.</p>
+</div>
+
+<div class="cmd-card">
+  <h3>check</h3>
+  <div class="cmd-usage">dippin check [--format json|text] &lt;file&gt;</div>
+  <p>Parse, validate, and lint in one shot. Designed for LLM tool-calling loops and CI. Defaults to JSON output with <code>valid</code>, <code>errors</code>, <code>warnings</code>, <code>diagnostics</code>, and <code>suggested_actions</code> fields.</p>
+</div>
+
+<div class="cmd-card">
+  <h3>fmt</h3>
+  <div class="cmd-usage">dippin fmt [--check] [--write] &lt;file&gt;</div>
+  <p>Format a <code>.dip</code> file to canonical form. 2-space indentation, standard field ordering, deterministic and idempotent output. Use <code>--check</code> for CI (exit 1 if unformatted) or <code>--write</code> for in-place formatting.</p>
+</div>
+
+<div class="cmd-card">
+  <h3>new</h3>
+  <div class="cmd-usage">dippin new [--name &lt;name&gt;] [--write &lt;file&gt;] &lt;template&gt;</div>
+  <p>Generate a starter <code>.dip</code> file from a built-in template. Available templates: <code>minimal</code>, <code>parallel</code>, <code>conditional</code>, <code>review-loop</code>, <code>human-gate</code>. Output always passes <code>dippin validate</code>.</p>
+</div>
+
+## Export Commands
+
+<div class="group-badge green">Export</div>
+
+<div class="cmd-card">
+  <h3>export-dot</h3>
+  <div class="cmd-usage">dippin export-dot [--rankdir=LR|TB] [--prompts] &lt;file&gt;</div>
+  <p>Export a workflow to Graphviz DOT format for visualization. Maps node kinds to DOT shapes (agent=box, human=hexagon, tool=parallelogram). Goal gate nodes get red background; restart edges are dashed.</p>
+</div>
+
+<div class="cmd-card">
+  <h3>migrate</h3>
+  <div class="cmd-usage">dippin migrate [--output &lt;file&gt;] &lt;file.dot&gt;</div>
+  <p>Convert a DOT file to <code>.dip</code> source format. Maps DOT shapes to Dippin node kinds, extracts graph attributes, unescapes prompts, and prefixes bare condition variables with <code>ctx.</code>.</p>
+</div>
+
+<div class="cmd-card">
+  <h3>validate-migration</h3>
+  <div class="cmd-usage">dippin validate-migration &lt;old.dot&gt; &lt;new.dip&gt;</div>
+  <p>Check structural parity between a DOT file and a <code>.dip</code> file to verify migration correctness. Reports missing nodes, different edges, and changed conditions.</p>
+</div>
+
+## Analysis Commands
+
+<div class="group-badge yellow">Analysis</div>
+
+<div class="cmd-card">
+  <h3>simulate</h3>
+  <div class="cmd-usage">dippin simulate [--scenario key=val] [--interactive] [--all-paths] &lt;file&gt;</div>
+  <p>Dry-run a workflow's execution graph without calling LLMs or running commands. Emits JSONL events (pipeline_start, node_enter, node_exit, edge_traverse, pipeline_end). Use <code>--scenario</code> to inject context values and <code>--all-paths</code> to enumerate all possible paths.</p>
+</div>
+
+<div class="cmd-card">
+  <h3>cost</h3>
+  <div class="cmd-usage">dippin cost &lt;file&gt;</div>
+  <p>Estimate workflow execution cost based on model pricing tables. Per-node cost breakdown with turn and token heuristics.</p>
+</div>
+
+<div class="cmd-card">
+  <h3>coverage</h3>
+  <div class="cmd-usage">dippin coverage &lt;file&gt;</div>
+  <p>Analyze edge coverage and reachability. Reports tool output extraction, edge condition matching, and termination analysis.</p>
+</div>
+
+<div class="cmd-card">
+  <h3>doctor</h3>
+  <div class="cmd-usage">dippin doctor &lt;file&gt;</div>
+  <p>Health report card aggregating lint, coverage, and cost into a letter grade (A-F). Generates actionable suggestions.</p>
+</div>
+
+<div class="cmd-card">
+  <h3>test</h3>
+  <div class="cmd-usage">dippin test [--verbose] [--coverage] &lt;file.dip&gt;</div>
+  <p>Run scenario tests defined in <code>.test.json</code> files against a workflow. Auto-discovers the test file from the workflow path. Use <code>--verbose</code> to show execution paths. Use <code>--coverage</code> to report node and edge coverage across all test scenarios.</p>
+</div>
+
+<div class="cmd-card">
+  <h3>watch</h3>
+  <div class="cmd-usage">dippin watch [--lint] [--test] &lt;file.dip&gt;</div>
+  <p>Watch a workflow file for changes and re-run validation automatically. Use <code>--lint</code> to include semantic linting on each change, or <code>--test</code> to re-run scenario tests. Debounces rapid saves.</p>
+</div>

@@ -2,6 +2,7 @@ baseURL = "https://2389-research.github.io/dippin-lang/"
 languageCode = "en-us"
 title = "Dippin"
 uglyURLs = true
+disableHugoGeneratorInject = true
 disableKinds = ["taxonomy", "term"]
 
 [markup]
