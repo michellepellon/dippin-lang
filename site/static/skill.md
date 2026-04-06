@@ -69,7 +69,7 @@ Indentation: 2 spaces. Comments: `#` line comments (literal inside multiline blo
 | `response_format` | string | `json_object` or `json_schema` (DIP130) |
 | `response_schema` | multiline JSON | Must be valid JSON (DIP132). Requires `response_format: json_schema` (DIP131) |
 | `reasoning_effort` | string | `low`, `medium`, `high` (DIP119) |
-| `fidelity` | string | `low`, `medium`, `high` (DIP114) |
+| `fidelity` | string | `full`, `summary:high`, `summary:medium`, `summary:low`, `compact`, `truncate` (DIP114) |
 | `cache_tools` | bool | Cache tool results |
 | `compaction` | string | Context compaction strategy |
 | `compaction_threshold` | float | 0.0-1.0 (DIP116) |
@@ -261,12 +261,19 @@ Use `dippin help` (not `--help`) to see all commands.
 
 | Command | Purpose |
 |---------|---------|
-| `dippin simulate <file>` | Dry-run (JSONL events). `--scenario key=val` to inject context |
+| `dippin simulate <file>` | Dry-run (JSONL events). `--scenario key=val` to inject context. `--all-paths` for exhaustive |
 | `dippin cost <file>` | Estimate execution cost by model/provider. Requires model/provider on nodes or in defaults |
 | `dippin coverage <file>` | Edge coverage and reachability |
 | `dippin doctor <file>` | Health report card (grade A-F) |
+| `dippin optimize <file>` | Suggest cheaper model substitutions |
+| `dippin diff <file1> <file2>` | Semantic diff between two workflows |
+| `dippin feedback <file>` | Compare predicted vs actual costs |
+| `dippin explain <code>` | Explain a diagnostic code (e.g. `dippin explain DIP005`) |
+| `dippin unused <file>` | Detect dead-branch nodes and wasted cost |
+| `dippin graph <file>` | Render ASCII DAG of the workflow |
 | `dippin test <file>` | Run `.test.json` scenario tests. `--verbose --coverage` for details |
 | `dippin watch <file>` | Watch for changes, re-validate on save |
+| `dippin lsp` | Start LSP server on stdio (for editor integration) |
 
 ## Validation Workflow
 
@@ -317,12 +324,16 @@ The primary loop for authoring .dip files:
 | DIP106 | Undefined variable in prompt | Check `${var}` references |
 | DIP107 | Written key never read downstream | Remove unused `writes` or add consumer node |
 | DIP108 | Unknown model/provider | Use valid model ID (see provider docs) |
+| DIP109 | Namespace collision in imports | Rename conflicting subgraph namespaces |
 | DIP110 | Empty agent prompt | Add `prompt:` content (start/exit nodes exempt) |
 | DIP111 | Tool without timeout | Add `timeout: 30s` (or appropriate duration) |
 | DIP112 | Reads key not written upstream | Add `writes:` to producing node |
 | DIP113 | Invalid retry policy | Use: `standard`, `aggressive`, `patient`, `linear`, `none` |
-| DIP114 | Invalid fidelity | Use: `low`, `medium`, `high` |
+| DIP114 | Invalid fidelity | Use: `full`, `summary:high`, `summary:medium`, `summary:low`, `compact`, `truncate` |
 | DIP115 | Goal gate without recovery | Add `retry_target` or `fallback_target` |
+| DIP116 | Invalid compaction threshold | Use float 0.0-1.0 |
+| DIP117 | Stylesheet class references undefined class | Fix class name in stylesheet block |
+| DIP118 | Stylesheet ID references unknown node | Fix node ID in stylesheet block |
 | DIP119 | Invalid reasoning_effort | Use: `low`, `medium`, `high` |
 | DIP120 | Condition var missing namespace | Prefix with `ctx.`, `params.`, or `graph.` |
 | DIP123 | Shell syntax error in command | Fix the shell command (checked via `bash -n`) |
@@ -388,12 +399,11 @@ The primary loop for authoring .dip files:
 
 | Variable | Source |
 |----------|--------|
-| `ctx.outcome` | `auto_status: true` on agent, or explicit agent output |
+| `ctx.outcome` | `auto_status: true` on agent, or tool exit status |
 | `ctx.human_response` | Freeform human input |
 | `ctx.tool_stdout` | Tool command stdout |
-| `ctx.tool_stderr` | Tool command stderr |
-| `ctx.last_response` | Previous node output |
-| `ctx.internal.loop_restart_count` | Current restart iteration |
+| `ctx.preferred_label` | Human choice selection (maps to edge label) |
+| `ctx.interview_answers` | Interview mode answers (via `answers_key`) |
 | `params.<key>` | Parent subgraph params |
 | `graph.<field>` | Workflow-level metadata |
 
