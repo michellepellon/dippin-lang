@@ -137,3 +137,163 @@ func nodeIDs(w *ir.Workflow) []string {
 	}
 	return ids
 }
+
+func TestFlattenMultipleSubgraphs(t *testing.T) {
+	lintChild := &ir.Workflow{
+		Name:  "lint",
+		Start: "Check",
+		Exit:  "Report",
+		Nodes: []*ir.Node{
+			{ID: "Check", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "check."}},
+			{ID: "Report", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "report."}},
+		},
+		Edges: []*ir.Edge{
+			{From: "Check", To: "Report"},
+		},
+	}
+	testChild := &ir.Workflow{
+		Name:  "test",
+		Start: "Run",
+		Exit:  "Summary",
+		Nodes: []*ir.Node{
+			{ID: "Run", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "run."}},
+			{ID: "Summary", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "summary."}},
+		},
+		Edges: []*ir.Edge{
+			{From: "Run", To: "Summary"},
+		},
+	}
+	resolver := &MapResolver{Workflows: map[string]*ir.Workflow{
+		"lint.dip": lintChild,
+		"test.dip": testChild,
+	}}
+
+	parent := &ir.Workflow{
+		Name:  "pipeline",
+		Start: "Start",
+		Exit:  "End",
+		Nodes: []*ir.Node{
+			{ID: "Start", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "start."}},
+			{ID: "Lint", Kind: ir.NodeSubgraph, Config: ir.SubgraphConfig{Ref: "lint.dip"}},
+			{ID: "Test", Kind: ir.NodeSubgraph, Config: ir.SubgraphConfig{Ref: "test.dip"}},
+			{ID: "End", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "end."}},
+		},
+		Edges: []*ir.Edge{
+			{From: "Start", To: "Lint"},
+			{From: "Lint", To: "Test"},
+			{From: "Test", To: "End"},
+		},
+	}
+
+	got, err := Flatten(parent, resolver, Options{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Start, Lint_Check, Lint_Report, Test_Run, Test_Summary, End
+	if len(got.Nodes) != 6 {
+		t.Fatalf("len(Nodes) = %d, want 6; nodes: %v", len(got.Nodes), nodeIDs(got))
+	}
+
+	wantIDs := map[string]bool{
+		"Start": true, "Lint_Check": true, "Lint_Report": true,
+		"Test_Run": true, "Test_Summary": true, "End": true,
+	}
+	for _, n := range got.Nodes {
+		if !wantIDs[n.ID] {
+			t.Errorf("unexpected node %q", n.ID)
+		}
+		delete(wantIDs, n.ID)
+	}
+	for id := range wantIDs {
+		t.Errorf("missing node %q", id)
+	}
+
+	wantEdges := map[string]bool{
+		"Start->Lint_Check":       true,
+		"Lint_Check->Lint_Report": true,
+		"Lint_Report->Test_Run":   true,
+		"Test_Run->Test_Summary":  true,
+		"Test_Summary->End":       true,
+	}
+	for _, e := range got.Edges {
+		key := e.From + "->" + e.To
+		if !wantEdges[key] {
+			t.Errorf("unexpected edge %s", key)
+		}
+		delete(wantEdges, key)
+	}
+	for key := range wantEdges {
+		t.Errorf("missing edge %s", key)
+	}
+}
+
+func TestFlattenPreservesEdgeConditions(t *testing.T) {
+	checkChild := &ir.Workflow{
+		Name:  "check",
+		Start: "Run",
+		Exit:  "Run",
+		Nodes: []*ir.Node{
+			{ID: "Run", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "run check."}},
+		},
+	}
+	resolver := &MapResolver{Workflows: map[string]*ir.Workflow{
+		"check.dip": checkChild,
+	}}
+
+	parent := &ir.Workflow{
+		Name:  "gated",
+		Start: "Gate",
+		Exit:  "Done",
+		Nodes: []*ir.Node{
+			{ID: "Gate", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "gate."}},
+			{ID: "Check", Kind: ir.NodeSubgraph, Config: ir.SubgraphConfig{Ref: "check.dip"}},
+			{ID: "Done", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done."}},
+		},
+		Edges: []*ir.Edge{
+			{
+				From:  "Gate",
+				To:    "Check",
+				Label: "approved",
+				Condition: &ir.Condition{
+					Raw: "ctx.outcome = success",
+				},
+			},
+			{From: "Check", To: "Done"},
+		},
+	}
+
+	got, err := Flatten(parent, resolver, Options{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Find the edge Gate->Check_Run and verify condition/label are preserved.
+	var found bool
+	for _, e := range got.Edges {
+		if e.From == "Gate" && e.To == "Check_Run" {
+			found = true
+			if e.Label != "approved" {
+				t.Errorf("Label = %q, want %q", e.Label, "approved")
+			}
+			if e.Condition == nil {
+				t.Fatal("Condition is nil, want non-nil")
+			}
+			if e.Condition.Raw != "ctx.outcome = success" {
+				t.Errorf("Condition.Raw = %q, want %q", e.Condition.Raw, "ctx.outcome = success")
+			}
+			break
+		}
+	}
+	if !found {
+		t.Errorf("edge Gate->Check_Run not found; edges: %v", edgeKeys(got))
+	}
+}
+
+func edgeKeys(w *ir.Workflow) []string {
+	var keys []string
+	for _, e := range w.Edges {
+		keys = append(keys, e.From+"->"+e.To)
+	}
+	return keys
+}
