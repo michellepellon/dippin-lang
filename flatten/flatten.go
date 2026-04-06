@@ -27,6 +27,9 @@ func Flatten(w *ir.Workflow, resolve Resolver, opts Options) (*ir.Workflow, erro
 	if !hasSubgraphRefs(w) {
 		return copyWorkflow(w), nil
 	}
+	if resolve == nil {
+		return nil, fmt.Errorf("flatten: resolver is nil but workflow has subgraph refs")
+	}
 	maxDepth := opts.MaxDepth
 	if maxDepth == 0 {
 		maxDepth = defaultMaxDepth
@@ -81,7 +84,18 @@ func flattenRecursive(w *ir.Workflow, resolve Resolver, maxDepth, depth int, see
 	}
 
 	rewireParentEdges(w.Edges, rewires, out)
+	rewriteStartExit(out, rewires)
 	return out, nil
+}
+
+// rewriteStartExit updates Start/Exit if they pointed to inlined subgraph nodes.
+func rewriteStartExit(out *ir.Workflow, rewires map[string]rewire) {
+	if r, ok := rewires[out.Start]; ok {
+		out.Start = r.start
+	}
+	if r, ok := rewires[out.Exit]; ok {
+		out.Exit = r.exit
+	}
 }
 
 // newOutputWorkflow creates a fresh Workflow copying w's metadata but no nodes/edges.

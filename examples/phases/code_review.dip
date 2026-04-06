@@ -9,6 +9,7 @@ workflow CodeReview
 
   agent Analyze
     label: "Analyze code"
+    writes: analysis
     prompt:
       Review the code changes for correctness, readability,
       and adherence to project conventions.

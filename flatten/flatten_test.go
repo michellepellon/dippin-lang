@@ -545,6 +545,54 @@ func TestDiskResolverResolve(t *testing.T) {
 	}
 }
 
+func TestFlattenStartExitRewrite(t *testing.T) {
+	child := &ir.Workflow{
+		Name: "child", Start: "X", Exit: "Y",
+		Nodes: []*ir.Node{
+			{ID: "X", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "x."}},
+			{ID: "Y", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "y."}},
+		},
+		Edges: []*ir.Edge{{From: "X", To: "Y"}},
+	}
+	resolver := &MapResolver{Workflows: map[string]*ir.Workflow{"child.dip": child}}
+
+	// Start and Exit are both subgraph nodes — they must be rewritten.
+	parent := &ir.Workflow{
+		Name: "main", Start: "S", Exit: "S",
+		Nodes: []*ir.Node{
+			{ID: "S", Kind: ir.NodeSubgraph, Config: ir.SubgraphConfig{Ref: "child.dip"}},
+		},
+	}
+
+	got, err := Flatten(parent, resolver, Options{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Start != "S_X" {
+		t.Errorf("Start = %q, want %q", got.Start, "S_X")
+	}
+	if got.Exit != "S_Y" {
+		t.Errorf("Exit = %q, want %q", got.Exit, "S_Y")
+	}
+}
+
+func TestFlattenNilResolver(t *testing.T) {
+	w := &ir.Workflow{
+		Name: "main", Start: "A", Exit: "A",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeSubgraph, Config: ir.SubgraphConfig{Ref: "child.dip"}},
+		},
+	}
+
+	_, err := Flatten(w, nil, Options{})
+	if err == nil {
+		t.Fatal("expected error for nil resolver with subgraph refs, got nil")
+	}
+	if !strings.Contains(err.Error(), "resolver") {
+		t.Errorf("error = %q, want it to contain %q", err.Error(), "resolver")
+	}
+}
+
 func TestFlattenSubgraphWithParams(t *testing.T) {
 	child := &ir.Workflow{
 		Name: "child", Start: "X", Exit: "Y",

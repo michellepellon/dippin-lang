@@ -35,7 +35,7 @@ func (c *CLI) CmdExportDOT(args []string) ExitCode {
 
 	w, err = flatten.Flatten(w, &flatten.DiskResolver{}, flatten.Options{})
 	if err != nil {
-		fmt.Fprintln(c.Stderr, err)
+		c.renderError(err, path)
 		return ExitError
 	}
 
