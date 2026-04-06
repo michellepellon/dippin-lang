@@ -348,6 +348,10 @@ func TestExportDOTHumanConfig(t *testing.T) {
 }
 
 func TestExportDOTSubgraphConfig(t *testing.T) {
+	// Tests the export package's handling of un-flattened subgraph nodes.
+	// In production, the CLI calls flatten.Flatten before ExportDOT,
+	// so subgraph nodes should not appear in normal export-dot output.
+	// This test verifies the fallback rendering for direct ExportDOT calls.
 	out := ExportDOT(subgraphWorkflow(), ExportOptions{IncludePrompts: true})
 	assertContains(t, out, `ref="./review.dip"`)
 	assertContains(t, out, `shape="tab"`)
