@@ -4,6 +4,7 @@ date: "2026-03-31"
 description: "DOT's escaped strings are unreadable. Dippin's indentation-based blocks let you write prompts with markdown, JSON, and code blocks — no escaping required."
 tagStyle: "deep-dive"
 tagLabel: "DEEP DIVE"
+category: "Language"
 readTime: "6 min read"
 related:
   - url: "conditional-edges.html"

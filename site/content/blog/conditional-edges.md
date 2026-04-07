@@ -4,6 +4,7 @@ date: "2026-03-31"
 description: "Build branching AI pipelines that route based on LLM output. Learn Dippin's condition syntax, operators, and exhaustive detection."
 tagStyle: "tutorial"
 tagLabel: "TUTORIAL"
+category: "Authoring"
 readTime: "10 min read"
 related:
   - url: "cost-estimation.html"

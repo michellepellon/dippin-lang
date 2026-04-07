@@ -4,6 +4,7 @@ date: "2026-03-27"
 description: "Install Dippin, write your first AI pipeline workflow, and validate it in under 10 minutes. A step-by-step guide from zero to a working .dip file."
 tagStyle: "guide"
 tagLabel: "GUIDE"
+category: "Authoring"
 readTime: "8 min read"
 related:
   - url: "scenario-testing.html"

@@ -4,6 +4,7 @@ date: "2026-03-27"
 description: "Convert Graphviz DOT pipeline files to Dippin with automated migration and structural parity verification. Step-by-step with real examples."
 tagStyle: "guide"
 tagLabel: "GUIDE"
+category: "Migration"
 readTime: "12 min read"
 related:
   - url: "scenario-testing.html"

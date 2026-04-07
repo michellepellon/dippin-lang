@@ -4,6 +4,7 @@ date: "2026-03-27"
 description: "Write deterministic tests for non-deterministic AI pipelines. Inject context values, assert on execution paths, and measure edge coverage."
 tagStyle: "guide"
 tagLabel: "GUIDE"
+category: "Testing"
 readTime: "10 min read"
 related:
   - url: "ci-integration.html"

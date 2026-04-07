@@ -4,6 +4,7 @@ date: "2026-03-27"
 description: "Set up real-time Dippin diagnostics, hover docs, and syntax highlighting in VS Code, Neovim, Helix, or any editor with LSP support."
 tagStyle: "guide"
 tagLabel: "GUIDE"
+category: "Tooling"
 readTime: "10 min read"
 related:
   - url: "getting-started.html"

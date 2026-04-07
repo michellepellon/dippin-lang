@@ -4,6 +4,7 @@ date: "2026-03-31"
 description: "Estimate per-run pipeline costs before spending real money on LLM calls. Use dippin cost and dippin optimize to find savings."
 tagStyle: "tutorial"
 tagLabel: "TUTORIAL"
+category: "Analysis"
 readTime: "6 min read"
 related:
   - url: "multi-line-prompts.html"

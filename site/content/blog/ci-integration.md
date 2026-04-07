@@ -4,6 +4,7 @@ date: "2026-03-27"
 description: "Set up GitHub Actions to validate, lint, test, and format-check your Dippin workflow files on every push and pull request."
 tagStyle: "guide"
 tagLabel: "GUIDE"
+category: "Integration"
 readTime: "11 min read"
 related:
   - url: "scenario-testing.html"
