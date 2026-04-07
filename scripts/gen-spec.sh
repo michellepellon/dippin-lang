@@ -54,4 +54,7 @@ sed -n '/^## Grammar/,$ p' "$LLM_REF" >> "$OUTPUT"
   echo "- [GitHub](https://github.com/2389-research/dippin-lang)"
 } >> "$OUTPUT"
 
+# Copy into cmd/dippin/ so go:embed can reach it (go:embed forbids ".." paths)
+cp "$OUTPUT" "cmd/dippin/generated-spec.md"
+
 echo "gen-spec: wrote $OUTPUT"

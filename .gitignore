@@ -15,6 +15,7 @@ site/*.tmp
 
 # Generated spec (build artifact)
 docs/generated-spec.md
+cmd/dippin/generated-spec.md
 
 # Hugo build output
 site/public/

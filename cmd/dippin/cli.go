@@ -69,6 +69,7 @@ func (c *CLI) commandDispatch() map[string]func([]string) ExitCode {
 		"test":               c.CmdTest,
 		"watch":              c.CmdWatch,
 		"lsp":                c.CmdLSP,
+		"spec":               c.CmdSpec,
 	}
 }
 
@@ -198,6 +199,7 @@ func printGlobalUsage(w io.Writer) {
 	fmt.Fprintln(w, "  unused <file>                     Detect dead-branch nodes and wasted cost")
 	fmt.Fprintln(w, "  watch <file-or-dir> [...]          Watch .dip files and re-lint on change")
 	fmt.Fprintln(w, "  lsp                               Start LSP server on stdio")
+	fmt.Fprintln(w, "  spec                              Print full language specification")
 	fmt.Fprintln(w, "  version                           Show version info")
 	fmt.Fprintln(w, "  help                              Show this help")
 }
