@@ -38,25 +38,25 @@ generate_body() {
     if (idx > 0) dt = substr(dt, idx+4)
     else { idx = index(dt, "- "); if (idx > 0) dt = substr(dt, idx+2); else dt = "" }
 
-    printf "    <div class=\"version-card\">\n"
-    printf "      <div class=\"version-header\">\n"
-    printf "        <span class=\"version-tag\">%s</span>\n", ver
-    printf "        <span class=\"version-date\">%s</span>\n", dt
-    printf "      </div>\n"
+    printf "<div class=\"version-card\">\n"
+    printf "<div class=\"version-header\">\n"
+    printf "<span class=\"version-tag\">%s</span>\n", ver
+    printf "<span class=\"version-date\">%s</span>\n", dt
+    printf "</div>\n"
     inv = 1
     next
   }
 
   /^### / && inv {
-    if (inl) { printf "      </ul>\n"; inl = 0 }
+    if (inl) { printf "</ul>\n"; inl = 0 }
     section = substr($0, 5)
-    printf "      <h4>%s</h4>\n", section
+    printf "<h4>%s</h4>\n", section
     ins = 1
     next
   }
 
   /^- / && inv {
-    if (!inl) { printf "      <ul>\n"; inl = 1 }
+    if (!inl) { printf "<ul>\n"; inl = 1 }
     line = substr($0, 3)
     gsub(/</, "\\&lt;", line)
     gsub(/>/, "\\&gt;", line)
@@ -81,18 +81,18 @@ generate_body() {
       post = substr(line, RSTART+RLENGTH)
       line = pre "<code>" tok "</code>" post
     }
-    printf "        <li>%s</li>\n", line
+    printf "<li>%s</li>\n", line
     next
   }
 
   { next }
 
   function close_all() {
-    if (inl) { printf "      </ul>\n"; inl = 0 }
+    if (inl) { printf "</ul>\n"; inl = 0 }
     ins = 0
     if (inv) {
-      printf "      <a class=\"gh-link\" href=\"https://github.com/2389-research/dippin-lang/releases/tag/%s\">View on GitHub &rarr;</a>\n", ver
-      printf "    </div>\n\n"
+      printf "<a class=\"gh-link\" href=\"https://github.com/2389-research/dippin-lang/releases/tag/%s\">View on GitHub &rarr;</a>\n", ver
+      printf "</div>\n\n"
       inv = 0
     }
   }
