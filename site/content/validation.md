@@ -3,7 +3,6 @@ title: "Validation & Linting"
 description: "39 diagnostic checks for AI pipeline workflows. 9 structural errors and 30 semantic warnings catch bugs before runtime."
 section_label: "Diagnostics"
 subtitle: "39 diagnostic checks — 9 structural errors and 30 semantic warnings — to catch problems before runtime."
-navActive: "validation"
 ---
 
 ## Overview

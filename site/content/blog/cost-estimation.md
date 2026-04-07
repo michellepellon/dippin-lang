@@ -5,7 +5,6 @@ description: "Estimate per-run pipeline costs before spending real money on LLM 
 tagStyle: "tutorial"
 tagLabel: "TUTORIAL"
 readTime: "6 min read"
-navActive: "blog"
 related:
   - url: "multi-line-prompts.html"
     title: "Multi-line Prompts"

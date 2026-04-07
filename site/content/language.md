@@ -3,7 +3,6 @@ title: "Language Reference"
 description: "Full syntax reference for .dip workflow files: nodes, edges, conditions, multiline prompts, parallel execution, and stylesheets."
 section_label: "Syntax"
 subtitle: "Complete syntax for .dip workflow files."
-navActive: "language"
 ---
 
 ## File Structure

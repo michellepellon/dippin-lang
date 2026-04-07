@@ -3,7 +3,6 @@ title: "Architecture"
 description: "How the Dippin toolchain is organized: IR-centric design, package dependencies, and the parser-to-execution pipeline."
 section_label: "Internals"
 subtitle: "How the dippin toolchain is organized — packages, data flow, and design decisions."
-navActive: "architecture"
 ---
 
 ## Compiler Pipeline

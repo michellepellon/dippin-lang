@@ -5,7 +5,6 @@ description: "Convert Graphviz DOT pipeline files to Dippin with automated migra
 tagStyle: "guide"
 tagLabel: "GUIDE"
 readTime: "12 min read"
-navActive: "blog"
 related:
   - url: "scenario-testing.html"
     title: "Scenario Testing"

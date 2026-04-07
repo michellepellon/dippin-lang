@@ -5,7 +5,6 @@ description: "Build branching AI pipelines that route based on LLM output. Learn
 tagStyle: "tutorial"
 tagLabel: "TUTORIAL"
 readTime: "10 min read"
-navActive: "blog"
 related:
   - url: "cost-estimation.html"
     title: "Cost Estimation"

@@ -3,7 +3,6 @@ title: "Scenario Testing"
 description: "Write deterministic tests for AI pipelines with .test.json files. Inject context, assert on paths, check edge coverage."
 section_label: "Testing"
 subtitle: "Inject context values, simulate execution paths, and assert outcomes — all without calling LLMs."
-navActive: "testing"
 ---
 
 ## How It Works

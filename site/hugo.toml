@@ -26,3 +26,69 @@ disableKinds = ["taxonomy", "term"]
 
 [params]
   description = "A language for AI pipeline workflows"
+
+# Primary nav (top row)
+[[menus.main]]
+  name = "Docs"
+  pageRef = "/language"
+  weight = 1
+  [menus.main.params]
+    highlightDocs = true
+
+[[menus.main]]
+  name = "Playground"
+  pageRef = "/playground"
+  weight = 2
+
+[[menus.main]]
+  name = "Blog"
+  url = "/blog/index.html"
+  weight = 3
+
+[[menus.main]]
+  name = "GitHub"
+  url = "https://github.com/2389-research/dippin-lang"
+  weight = 4
+  [menus.main.params]
+    external = true
+
+# Docs sub-nav (second row)
+[[menus.docs]]
+  name = "CLI"
+  pageRef = "/cli"
+  weight = 1
+
+[[menus.docs]]
+  name = "Language"
+  pageRef = "/language"
+  weight = 2
+
+[[menus.docs]]
+  name = "Testing"
+  pageRef = "/testing"
+  weight = 3
+
+[[menus.docs]]
+  name = "Validation"
+  pageRef = "/validation"
+  weight = 4
+
+[[menus.docs]]
+  name = "Analysis"
+  pageRef = "/analysis"
+  weight = 5
+
+[[menus.docs]]
+  name = "Architecture"
+  pageRef = "/architecture"
+  weight = 6
+
+[[menus.docs]]
+  name = "Editors"
+  pageRef = "/editors"
+  weight = 7
+
+[[menus.docs]]
+  name = "Changelog"
+  pageRef = "/changelog"
+  weight = 8

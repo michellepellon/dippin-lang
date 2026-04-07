@@ -5,7 +5,6 @@ description: "Set up real-time Dippin diagnostics, hover docs, and syntax highli
 tagStyle: "guide"
 tagLabel: "GUIDE"
 readTime: "10 min read"
-navActive: "blog"
 related:
   - url: "getting-started.html"
     title: "Getting Started"

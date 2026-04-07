@@ -3,7 +3,6 @@ title: "Analysis Tools"
 description: "Cost estimation, health reports, edge coverage, dead branch detection, semantic diff, and optimization for AI pipelines."
 section_label: "Analysis"
 subtitle: "Cost, coverage, health, optimization, and change tracking."
-navActive: "analysis"
 ---
 
 ## Overview

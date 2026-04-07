@@ -3,7 +3,6 @@ title: "CLI Reference"
 description: "Complete command reference for the Dippin toolchain: parse, validate, lint, format, simulate, cost, test, and 15 more commands."
 section_label: "Reference"
 subtitle: "Every command in the dippin toolchain — authoring, export, and analysis."
-navActive: "cli"
 ---
 
 ## Global Usage

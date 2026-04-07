@@ -3,7 +3,6 @@ title: "Editor Setup"
 description: "Set up syntax highlighting, LSP diagnostics, hover docs, and go-to-definition for .dip files in VS Code, Neovim, and more."
 section_label: "Editor Integration"
 subtitle: "LSP server, VS Code syntax, Neovim, and more."
-navActive: "editors"
 ---
 
 ## LSP Features

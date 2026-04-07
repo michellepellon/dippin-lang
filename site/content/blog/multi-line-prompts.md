@@ -5,7 +5,6 @@ description: "DOT's escaped strings are unreadable. Dippin's indentation-based b
 tagStyle: "deep-dive"
 tagLabel: "DEEP DIVE"
 readTime: "6 min read"
-navActive: "blog"
 related:
   - url: "conditional-edges.html"
     title: "Conditional Edges"

@@ -5,7 +5,6 @@ description: "Write deterministic tests for non-deterministic AI pipelines. Inje
 tagStyle: "guide"
 tagLabel: "GUIDE"
 readTime: "10 min read"
-navActive: "blog"
 related:
   - url: "ci-integration.html"
     title: "CI Integration"

@@ -1,42 +1,49 @@
 <nav class="nav">
+{{- $isDocsPage := false }}
+{{- range .Site.Menus.docs }}{{ if eq $.RelPermalink .URL }}{{ $isDocsPage = true }}{{ end }}{{ end }}
 <div class="nav-top">
-  <a href="{{ "index.html" | relURL }}" class="nav-brand">Dippin</a>
+  <a href="{{ "/" | relURL }}" class="nav-brand">Dippin</a>
   <button class="nav-toggle" onclick="document.querySelector('.nav-mobile').classList.toggle('open')" aria-label="Menu">
     <span></span><span></span><span></span>
   </button>
   <div class="nav-primary">
-    <a href="{{ "language.html" | relURL }}"{{ if eq .Params.navActive "docs" }} class="active"{{ end }}>Docs</a>
-    <a href="{{ "playground.html" | relURL }}"{{ if eq .Params.navActive "playground" }} class="active"{{ end }}>Playground</a>
-    <a href="{{ "blog/index.html" | relURL }}"{{ if eq .Params.navActive "blog" }} class="active"{{ end }}>Blog</a>
-    <a href="https://github.com/2389-research/dippin-lang" class="nav-gh">GitHub</a>
+    {{ range .Site.Menus.main }}
+      {{ if .Params.external }}
+        <a href="{{ .URL }}" class="nav-gh">{{ .Name }}</a>
+      {{ else if .Params.highlightDocs }}
+        <a href="{{ .URL }}"{{ if $isDocsPage }} class="active"{{ end }}>{{ .Name }}</a>
+      {{ else }}
+        <a href="{{ .URL }}"{{ if eq $.RelPermalink .URL }} class="active"{{ end }}>{{ .Name }}</a>
+      {{ end }}
+    {{ end }}
   </div>
 </div>
 <div class="nav-sub">
   <div class="nav-sub-inner">
-    <a href="{{ "cli.html" | relURL }}"{{ if eq .Params.navActive "cli" }} class="active"{{ end }}>CLI</a>
-    <a href="{{ "language.html" | relURL }}"{{ if eq .Params.navActive "language" }} class="active"{{ end }}>Language</a>
-    <a href="{{ "testing.html" | relURL }}"{{ if eq .Params.navActive "testing" }} class="active"{{ end }}>Testing</a>
-    <a href="{{ "validation.html" | relURL }}"{{ if eq .Params.navActive "validation" }} class="active"{{ end }}>Validation</a>
-    <a href="{{ "analysis.html" | relURL }}"{{ if eq .Params.navActive "analysis" }} class="active"{{ end }}>Analysis</a>
-    <a href="{{ "architecture.html" | relURL }}"{{ if eq .Params.navActive "architecture" }} class="active"{{ end }}>Architecture</a>
-    <a href="{{ "editors.html" | relURL }}"{{ if eq .Params.navActive "editors" }} class="active"{{ end }}>Editors</a>
-    <a href="{{ "changelog.html" | relURL }}"{{ if eq .Params.navActive "changelog" }} class="active"{{ end }}>Changelog</a>
+    {{ range .Site.Menus.docs }}
+      <a href="{{ .URL }}"{{ if eq $.RelPermalink .URL }} class="active"{{ end }}>{{ .Name }}</a>
+    {{ end }}
   </div>
 </div>
 <div class="nav-mobile">
-  <a href="{{ "language.html" | relURL }}"{{ if eq .Params.navActive "docs" }} class="active"{{ end }}>Docs</a>
-  <a href="{{ "playground.html" | relURL }}"{{ if eq .Params.navActive "playground" }} class="active"{{ end }}>Playground</a>
-  <a href="{{ "blog/index.html" | relURL }}"{{ if eq .Params.navActive "blog" }} class="active"{{ end }}>Blog</a>
+  {{ range .Site.Menus.main }}
+    {{ if not .Params.external }}
+      {{ if .Params.highlightDocs }}
+        <a href="{{ .URL }}"{{ if $isDocsPage }} class="active"{{ end }}>{{ .Name }}</a>
+      {{ else }}
+        <a href="{{ .URL }}"{{ if eq $.RelPermalink .URL }} class="active"{{ end }}>{{ .Name }}</a>
+      {{ end }}
+    {{ end }}
+  {{ end }}
   <div class="nav-divider"></div>
-  <a href="{{ "cli.html" | relURL }}"{{ if eq .Params.navActive "cli" }} class="active"{{ end }}>CLI</a>
-  <a href="{{ "language.html" | relURL }}"{{ if eq .Params.navActive "language" }} class="active"{{ end }}>Language</a>
-  <a href="{{ "testing.html" | relURL }}"{{ if eq .Params.navActive "testing" }} class="active"{{ end }}>Testing</a>
-  <a href="{{ "validation.html" | relURL }}"{{ if eq .Params.navActive "validation" }} class="active"{{ end }}>Validation</a>
-  <a href="{{ "analysis.html" | relURL }}"{{ if eq .Params.navActive "analysis" }} class="active"{{ end }}>Analysis</a>
-  <a href="{{ "architecture.html" | relURL }}"{{ if eq .Params.navActive "architecture" }} class="active"{{ end }}>Architecture</a>
-  <a href="{{ "editors.html" | relURL }}"{{ if eq .Params.navActive "editors" }} class="active"{{ end }}>Editors</a>
-  <a href="{{ "changelog.html" | relURL }}"{{ if eq .Params.navActive "changelog" }} class="active"{{ end }}>Changelog</a>
+  {{ range .Site.Menus.docs }}
+    <a href="{{ .URL }}"{{ if eq $.RelPermalink .URL }} class="active"{{ end }}>{{ .Name }}</a>
+  {{ end }}
   <div class="nav-divider"></div>
-  <a href="https://github.com/2389-research/dippin-lang">GitHub</a>
+  {{ range .Site.Menus.main }}
+    {{ if .Params.external }}
+      <a href="{{ .URL }}">{{ .Name }}</a>
+    {{ end }}
+  {{ end }}
 </div>
 </nav>

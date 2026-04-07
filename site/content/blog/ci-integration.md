@@ -5,7 +5,6 @@ description: "Set up GitHub Actions to validate, lint, test, and format-check yo
 tagStyle: "guide"
 tagLabel: "GUIDE"
 readTime: "11 min read"
-navActive: "blog"
 related:
   - url: "scenario-testing.html"
     title: "Scenario Testing"

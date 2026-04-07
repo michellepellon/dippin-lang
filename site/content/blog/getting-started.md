@@ -5,7 +5,6 @@ description: "Install Dippin, write your first AI pipeline workflow, and validat
 tagStyle: "guide"
 tagLabel: "GUIDE"
 readTime: "8 min read"
-navActive: "blog"
 related:
   - url: "scenario-testing.html"
     title: "Scenario Testing with .test.json"
