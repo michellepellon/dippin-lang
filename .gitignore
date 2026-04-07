@@ -13,6 +13,9 @@ paths.jsonl
 # Temp site files
 site/*.tmp
 
+# Generated spec (build artifact)
+docs/generated-spec.md
+
 # Hugo build output
 site/public/
 site/resources/
