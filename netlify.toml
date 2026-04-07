@@ -8,6 +8,8 @@
     GOOS=js GOARCH=wasm go build -o site/static/dippin.wasm ./cmd/wasm/ && \
     cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" site/static/wasm_exec.js && \
     ./scripts/gen-changelog.sh && \
+    ./scripts/gen-spec.sh && \
+    cp docs/generated-spec.md site/static/llms-full.txt && \
     cd site && hugo --minify
   """
   publish = "site/public"
@@ -22,6 +24,8 @@
     GOOS=js GOARCH=wasm go build -o site/static/dippin.wasm ./cmd/wasm/ && \
     cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" site/static/wasm_exec.js && \
     ./scripts/gen-changelog.sh && \
+    ./scripts/gen-spec.sh && \
+    cp docs/generated-spec.md site/static/llms-full.txt && \
     cd site && hugo --minify --baseURL $URL
   """
 
@@ -31,6 +35,8 @@
     GOOS=js GOARCH=wasm go build -o site/static/dippin.wasm ./cmd/wasm/ && \
     cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" site/static/wasm_exec.js && \
     ./scripts/gen-changelog.sh && \
+    ./scripts/gen-spec.sh && \
+    cp docs/generated-spec.md site/static/llms-full.txt && \
     cd site && hugo --minify --baseURL $DEPLOY_PRIME_URL
   """
 
@@ -55,5 +61,10 @@
 
 [[headers]]
   for = "/skill.md"
+  [headers.values]
+    Content-Type = "text/plain; charset=utf-8"
+
+[[headers]]
+  for = "/llms-full.txt"
   [headers.values]
     Content-Type = "text/plain; charset=utf-8"
