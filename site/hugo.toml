@@ -42,7 +42,7 @@ disableKinds = ["taxonomy", "term"]
 
 [[menus.main]]
   name = "Blog"
-  url = "/blog/index.html"
+  pageRef = "/blog"
   weight = 3
 
 [[menus.main]]
