@@ -1,0 +1,103 @@
+{{/* ABOUTME: Generates a unique 1200x630 OG image per page at build time. */}}
+{{/* ABOUTME: Overlays page title and branding onto base PNGs using Hugo images.Text. */}}
+
+{{- $font := resources.Get "fonts/Nunito-Bold.ttf" -}}
+
+{{- if .IsHome -}}
+  {{- with resources.Get "og-home.png" -}}
+    {{- $filters := slice
+      (images.Text "Dippin" (dict
+        "color" "#FAFAF7"
+        "size" 80
+        "x" 80
+        "y" 180
+        "font" $font
+        "linespacing" 8
+      ))
+      (images.Text "A language for AI pipelines" (dict
+        "color" "#DDD6F3"
+        "size" 32
+        "x" 80
+        "y" 310
+        "font" $font
+        "linespacing" 6
+      ))
+      (images.Text "dippin.org" (dict
+        "color" "#8FD5A6"
+        "size" 22
+        "x" 80
+        "y" 550
+        "font" $font
+        "linespacing" 4
+      ))
+    -}}
+    {{- $img := . | images.Filter $filters -}}
+    {{- $img = resources.Copy "og/home.png" $img -}}
+    <meta property="og:image" content="{{ $img.Permalink }}">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta name="twitter:image" content="{{ $img.Permalink }}">
+  {{- end -}}
+
+{{- else -}}
+  {{- with resources.Get "og-base.png" -}}
+
+    {{- $title := $.Title -}}
+
+    {{/* Section label */}}
+    {{- $label := "Dippin Docs" -}}
+    {{- if eq $.Section "blog" -}}
+      {{- $label = "Dippin Blog" -}}
+    {{- end -}}
+
+    {{/* Adaptive font size */}}
+    {{- $titleSize := 56 -}}
+    {{- if gt (len $title) 30 -}}
+      {{- $titleSize = 46 -}}
+    {{- end -}}
+    {{- if gt (len $title) 45 -}}
+      {{- $titleSize = 38 -}}
+    {{- end -}}
+
+    {{- $filters := slice
+      (images.Text $label (dict
+        "color" "#5CB87A"
+        "size" 22
+        "x" 60
+        "y" 60
+        "font" $font
+        "linespacing" 4
+      ))
+      (images.Text $title (dict
+        "color" "#1A1A1A"
+        "size" $titleSize
+        "x" 60
+        "y" 200
+        "font" $font
+        "linespacing" 10
+      ))
+      (images.Text "dippin.org" (dict
+        "color" "#999999"
+        "size" 20
+        "x" 60
+        "y" 550
+        "font" $font
+        "linespacing" 4
+      ))
+    -}}
+    {{- $img := . | images.Filter $filters -}}
+
+    {{- $slug := $.RelPermalink | replaceRE `\.html$` "" -}}
+    {{- if eq $slug "/" -}}
+      {{- $slug = "/index" -}}
+    {{- end -}}
+    {{- $targetPath := printf "og%s.png" $slug -}}
+    {{- $img = resources.Copy $targetPath $img -}}
+
+    <meta property="og:image" content="{{ $img.Permalink }}">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta name="twitter:image" content="{{ $img.Permalink }}">
+  {{- end -}}
+
+{{- end -}}

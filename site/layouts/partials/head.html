@@ -9,11 +9,79 @@
 <meta property="og:type" content="{{ if eq .Kind "page" }}article{{ else }}website{{ end }}">
 <meta property="og:url" content="{{ .Permalink }}">
 <meta property="og:site_name" content="Dippin">
-<meta name="twitter:card" content="summary">
+{{ partial "og-image.html" . }}
+<meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="{{ if .IsHome }}Dippin — A Language for AI Pipelines{{ else }}{{ .Title }}{{ end }}">
 <meta name="twitter:description" content="{{ $desc }}">
 <link rel="canonical" href="{{ .Permalink }}">
+{{- if .IsHome }}
+<link rel="alternate" type="text/plain" href="{{ "llms.txt" | absURL }}">
+{{- end }}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;0,9..144,700;1,9..144,400&family=IBM+Plex+Mono:wght@400;500;600&family=Nunito:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{{ "style.css" | relURL }}">
+{{- if .IsHome }}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": "{{ .Site.BaseURL }}#website",
+      "name": "Dippin",
+      "url": "{{ .Site.BaseURL }}",
+      "description": "{{ .Site.Params.description }}",
+      "publisher": { "@id": "{{ .Site.BaseURL }}#organization" }
+    },
+    {
+      "@type": "Organization",
+      "@id": "{{ .Site.BaseURL }}#organization",
+      "name": "2389 Research",
+      "url": "https://github.com/2389-research"
+    },
+    {
+      "@type": "SoftwareApplication",
+      "name": "Dippin",
+      "description": "A domain-specific language and toolchain for authoring AI pipeline workflows. Replaces Graphviz DOT with first-class syntax for prompts, tools, conditions, and parallel execution.",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "macOS, Linux, Windows",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+      "license": "https://opensource.org/licenses/MIT",
+      "codeRepository": "https://github.com/2389-research/dippin-lang",
+      "programmingLanguage": "Go",
+      "author": { "@id": "{{ .Site.BaseURL }}#organization" }
+    }
+  ]
+}
+</script>
+{{- else if and (eq .Section "blog") (ne .Kind "section") }}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "{{ .Title }}",
+  "description": "{{ $desc }}",
+  "datePublished": "{{ .Date.Format "2006-01-02" }}",
+  "dateModified": "{{ .Lastmod.Format "2006-01-02" }}",
+  "author": { "@id": "{{ .Site.BaseURL }}#organization" },
+  "publisher": { "@id": "{{ .Site.BaseURL }}#organization" },
+  "mainEntityOfPage": "{{ .Permalink }}"
+}
+</script>
+{{- end }}
+{{- if not .IsHome }}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    { "@type": "ListItem", "position": 1, "name": "Home", "item": "{{ .Site.BaseURL }}" }
+    {{- if .Section }},{ "@type": "ListItem", "position": 2, "name": "{{ .Section | title }}", "item": "{{ printf "/%s/" .Section | absURL }}" }
+    ,{ "@type": "ListItem", "position": 3, "name": "{{ .Title }}" }
+    {{- else }},{ "@type": "ListItem", "position": 2, "name": "{{ .Title }}" }
+    {{- end }}
+  ]
+}
+</script>
+{{- end }}
 </head>
