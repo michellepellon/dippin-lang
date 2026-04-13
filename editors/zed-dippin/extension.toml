@@ -1,0 +1,15 @@
+id = "dippin"
+name = "Dippin"
+version = "0.0.1"
+schema_version = 1
+authors = ["2389 Research"]
+description = "Dippin workflow language support with syntax highlighting and LSP."
+repository = "https://github.com/2389-research/dippin-lang"
+
+[grammars.dippin]
+repository = "https://github.com/2389-research/dippin-lang"
+path = "editors/tree-sitter-dippin"
+commit = "8190145ed959ca65529dc427a051d51d80df4d73"
+
+[language_servers.dippin-lsp]
+languages = ["Dippin"]
