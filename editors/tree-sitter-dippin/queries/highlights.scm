@@ -12,6 +12,7 @@
   "human"
   "tool"
   "subgraph"
+  "conditional"
   "parallel"
   "fan_in"
 ] @type
@@ -43,8 +44,6 @@
   "*" @operator)
 
 ; Field names
-(workflow_field
-  (field_name) @property)
 (defaults_field
   (field_name) @property)
 (node_field
@@ -66,6 +65,8 @@
 (tool_node
   (identifier) @function)
 (subgraph_node
+  (identifier) @function)
+(conditional_node
   (identifier) @function)
 (parallel_node
   (identifier) @function)

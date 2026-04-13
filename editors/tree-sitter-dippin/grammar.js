@@ -1,6 +1,12 @@
 // Tree-sitter grammar for the Dippin workflow language.
 // Dippin is indentation-sensitive (like Python); INDENT/DEDENT tokens
 // are produced by the external scanner in src/scanner.c.
+//
+// The scanner emits exactly one of INDENT, DEDENT, or NEWLINE per line
+// boundary. Rules that contain indented blocks use _indent/_dedent
+// directly. Line-ending _newline tokens are consumed at the repeat
+// level, not inside individual field rules, so the scanner can emit
+// DEDENT when valid.
 
 module.exports = grammar({
   name: "dippin",
@@ -12,10 +18,10 @@ module.exports = grammar({
   word: ($) => $.identifier,
 
   rules: {
-    source_file: ($) => $.workflow_decl,
+    source_file: ($) => seq(repeat($._newline), $.workflow_decl),
 
     workflow_decl: ($) =>
-      seq("workflow", $.identifier, $._newline, $._indent, $.workflow_body, $._dedent),
+      seq("workflow", $.identifier, $._indent, $.workflow_body, $._dedent),
 
     workflow_body: ($) =>
       repeat1(
@@ -30,19 +36,13 @@ module.exports = grammar({
       ),
 
     workflow_field: ($) =>
-      seq(
-        choice("goal", "start", "exit"),
-        ":",
-        $.field_value,
-        $._newline
-      ),
+      seq(choice("goal", "start", "exit"), ":", $.field_value),
 
     // ── Defaults ──────────────────────────────────────────────
     defaults_section: ($) =>
-      seq("defaults", $._newline, $._indent, repeat1($.defaults_field), $._dedent),
+      seq("defaults", $._indent, repeat1(choice($.defaults_field, $._newline)), $._dedent),
 
-    defaults_field: ($) =>
-      seq($.field_name, ":", $.field_value, $._newline),
+    defaults_field: ($) => seq($.field_name, ":", $.field_value),
 
     // ── Nodes ─────────────────────────────────────────────────
     node_decl: ($) =>
@@ -51,21 +51,25 @@ module.exports = grammar({
         $.human_node,
         $.tool_node,
         $.subgraph_node,
+        $.conditional_node,
         $.parallel_node,
         $.fan_in_node
       ),
 
     agent_node: ($) =>
-      seq("agent", $.identifier, $._newline, $._indent, repeat1($.node_field), $._dedent),
+      seq("agent", $.identifier, $._indent, repeat1(choice($.node_field, $._newline)), $._dedent),
 
     human_node: ($) =>
-      seq("human", $.identifier, $._newline, $._indent, repeat1($.node_field), $._dedent),
+      seq("human", $.identifier, $._indent, repeat1(choice($.node_field, $._newline)), $._dedent),
 
     tool_node: ($) =>
-      seq("tool", $.identifier, $._newline, $._indent, repeat1($.node_field), $._dedent),
+      seq("tool", $.identifier, $._indent, repeat1(choice($.node_field, $._newline)), $._dedent),
 
     subgraph_node: ($) =>
-      seq("subgraph", $.identifier, $._newline, $._indent, repeat1($.node_field), $._dedent),
+      seq("subgraph", $.identifier, $._indent, repeat1(choice($.node_field, $._newline)), $._dedent),
+
+    conditional_node: ($) =>
+      seq("conditional", $.identifier, $._indent, repeat1(choice($.node_field, $._newline)), $._dedent),
 
     parallel_node: ($) =>
       seq("parallel", $.identifier, "->", $.identifier_list, $._newline),
@@ -73,20 +77,14 @@ module.exports = grammar({
     fan_in_node: ($) =>
       seq("fan_in", $.identifier, "<-", $.identifier_list, $._newline),
 
-    node_field: ($) => seq($.field_name, ":", $.field_value, $._newline),
+    node_field: ($) => seq($.field_name, ":", $.field_value),
 
     // ── Edges ─────────────────────────────────────────────────
     edges_section: ($) =>
-      seq("edges", $._newline, $._indent, repeat1($.edge_entry), $._dedent),
+      seq("edges", $._indent, repeat1(choice($.edge_entry, $._newline)), $._dedent),
 
     edge_entry: ($) =>
-      seq(
-        $.identifier,
-        "->",
-        $.identifier,
-        repeat($.edge_attr),
-        $._newline
-      ),
+      seq($.identifier, "->", $.identifier, repeat($.edge_attr)),
 
     edge_attr: ($) =>
       choice(
@@ -107,9 +105,7 @@ module.exports = grammar({
         3,
         seq(
           $.operand,
-          optional(
-            seq(optional("not"), $.compare_op, $.operand)
-          )
+          optional(seq(optional("not"), $.compare_op, $.operand))
         )
       ),
 
@@ -122,21 +118,13 @@ module.exports = grammar({
 
     // ── Stylesheet ────────────────────────────────────────────
     stylesheet_section: ($) =>
-      seq(
-        "stylesheet",
-        ":",
-        $._newline,
-        $._indent,
-        repeat1($.stylesheet_rule),
-        $._dedent
-      ),
+      seq("stylesheet", ":", $._indent, repeat1(choice($.stylesheet_rule, $._newline)), $._dedent),
 
     stylesheet_rule: ($) =>
       seq(
         $.selector,
-        $._newline,
         $._indent,
-        repeat1(seq($.field_name, ":", $.field_value, $._newline)),
+        repeat1(choice(seq($.field_name, ":", $.field_value), $._newline)),
         $._dedent
       ),
 
@@ -154,10 +142,10 @@ module.exports = grammar({
     field_value: ($) =>
       choice($.string, $.multiline_block, $.raw_inline),
 
-    raw_inline: ($) => /[^\n]+/,
+    raw_inline: ($) => token(prec(-1, /[^\n]+/)),
 
     multiline_block: ($) =>
-      seq($._newline, $._indent, $.block_content, $._dedent),
+      seq($._indent, $.block_content, $._dedent),
 
     block_content: ($) => repeat1(choice($.block_line, $._newline)),
 
@@ -165,7 +153,7 @@ module.exports = grammar({
 
     identifier_list: ($) => seq($.identifier, repeat(seq(",", $.identifier))),
 
-    identifier: ($) => /[a-zA-Z0-9][a-zA-Z0-9_\-.]*/,
+    identifier: ($) => /[a-zA-Z0-9][a-zA-Z0-9_\-]*/,
 
     string: ($) =>
       seq('"', repeat(choice(/[^"\\]+/, /\\./)), '"'),
