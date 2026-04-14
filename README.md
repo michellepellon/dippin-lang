@@ -536,6 +536,10 @@ Test functions (`_test.go`) are excluded from complexity enforcement.
 
 See `QUICK_REFERENCE.md` for refactoring patterns when a function exceeds the threshold.
 
+## Like this?
+
+If Dippin saves you from one missing-backslash debugging session, give us a star — it's how we know what to keep building.
+
 ## License
 
 MIT
