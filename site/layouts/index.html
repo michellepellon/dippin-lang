@@ -13,8 +13,8 @@
     Author multi-model agent workflows with first-class syntax for prompts, tools, conditions, and parallel execution. Replace escaped DOT strings with real code.
   </p>
   <div class="hero-actions">
-    <a href="#install" class="btn btn-primary">Get Started</a>
-    <a href="https://github.com/2389-research/dippin-lang" class="btn btn-ghost">GitHub &rarr;</a>
+    <a href="#install" class="btn btn-primary" data-tinylytics-event="hero.get_started">Get Started</a>
+    <a href="https://github.com/2389-research/dippin-lang" class="btn btn-ghost" data-tinylytics-event="hero.github">GitHub &rarr;</a>
   </div>
 </div>
 </section>
@@ -248,24 +248,24 @@
   <p class="section-desc">Hands-on guides for every part of Dippin, from first install to CI integration.</p>
 
   <div class="features-grid" style="grid-template-columns: repeat(3, 1fr);">
-    <a href="{{ "blog/multi-line-prompts.html" | relURL }}" class="feature" style="text-decoration:none;color:inherit;">
+    <a href="{{ "blog/multi-line-prompts.html" | relURL }}" class="feature" style="text-decoration:none;color:inherit;" data-tinylytics-event="blog.click" data-tinylytics-event-value="multi-line-prompts">
       <span class="feature-num">New</span>
       <h3>Multi-line Prompts</h3>
       <p>DOT's escaped strings are unreadable. Dippin's indentation-based blocks let you write prompts without escaping.</p>
     </a>
-    <a href="{{ "blog/conditional-edges.html" | relURL }}" class="feature" style="text-decoration:none;color:inherit;">
+    <a href="{{ "blog/conditional-edges.html" | relURL }}" class="feature" style="text-decoration:none;color:inherit;" data-tinylytics-event="blog.click" data-tinylytics-event-value="conditional-edges">
       <span class="feature-num">New</span>
       <h3>Conditional Edges</h3>
       <p>Route pipelines based on LLM output with the <code>when</code> keyword. Build branching workflows step by step.</p>
     </a>
-    <a href="{{ "blog/cost-estimation.html" | relURL }}" class="feature" style="text-decoration:none;color:inherit;">
+    <a href="{{ "blog/cost-estimation.html" | relURL }}" class="feature" style="text-decoration:none;color:inherit;" data-tinylytics-event="blog.click" data-tinylytics-event-value="cost-estimation">
       <span class="feature-num">New</span>
       <h3>Cost Estimation</h3>
       <p>Estimate per-run pipeline costs before spending real money on LLM calls.</p>
     </a>
   </div>
 
-  <p style="margin-top: 1.5rem;"><a href="{{ "blog/index.html" | relURL }}" style="font-family:var(--mono);font-size:0.85rem;">All posts &rarr;</a></p>
+  <p style="margin-top: 1.5rem;"><a href="{{ "blog/index.html" | relURL }}" style="font-family:var(--mono);font-size:0.85rem;" data-tinylytics-event="blog.all_posts">All posts &rarr;</a></p>
 </div>
 </section>
 {{ end }}

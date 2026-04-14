@@ -9,7 +9,7 @@
   <div class="nav-primary">
     {{ range .Site.Menus.main }}
       {{ if .Params.external }}
-        <a href="{{ .URL }}" class="nav-gh">{{ .Name }}</a>
+        <a href="{{ .URL }}" class="nav-gh" data-tinylytics-event="nav.github">{{ .Name }}</a>
       {{ else if .Params.highlightDocs }}
         <a href="{{ .URL }}"{{ if $isDocsPage }} class="active"{{ end }}>{{ .Name }}</a>
       {{ else }}

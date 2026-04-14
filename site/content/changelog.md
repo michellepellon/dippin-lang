@@ -1,6 +1,7 @@
 ---
 title: "Changelog"
 description: "Version history and release notes for dippin-lang."
+navActive: "changelog"
 layout: "changelog"
 ---
 ## [v0.18.0] — 2026-04-06
