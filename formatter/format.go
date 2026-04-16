@@ -18,35 +18,38 @@ import (
 // The output always ends with exactly one trailing newline.
 func Format(w *ir.Workflow) string {
 	wr := &writer{}
-
 	writeWorkflowHeader(wr, w)
+	writeWorkflowSections(wr, w)
+	return wr.String()
+}
 
+// writeWorkflowSections emits all optional top-level sections in canonical order.
+func writeWorkflowSections(wr *writer, w *ir.Workflow) {
 	if !isDefaultsZero(w.Defaults) {
 		wr.blank()
 		writeDefaults(wr, w.Defaults)
 	}
-
 	if len(w.Vars) > 0 {
 		wr.blank()
 		writeVars(wr, w.Vars)
 	}
-
 	for _, n := range w.Nodes {
 		wr.blank()
 		writeNode(wr, n)
 	}
+	writeWorkflowTailSections(wr, w)
+}
 
+// writeWorkflowTailSections emits stylesheet and edges after nodes.
+func writeWorkflowTailSections(wr *writer, w *ir.Workflow) {
 	if len(w.Stylesheet) > 0 {
 		wr.blank()
 		writeStylesheet(wr, w.Stylesheet)
 	}
-
 	if len(w.Edges) > 0 {
 		wr.blank()
 		writeEdges(wr, w.Edges)
 	}
-
-	return wr.String()
 }
 
 // writer wraps a strings.Builder with indentation tracking.

@@ -15,9 +15,7 @@ func (p *Parser) parseVars() {
 }
 
 func (p *Parser) parseVarsBody() {
-	if p.workflow.Vars == nil {
-		p.workflow.Vars = make(map[string]string)
-	}
+	p.ensureVarsMap()
 	for p.lexer.PeekToken().Type != TokenOutdent && p.lexer.PeekToken().Type != TokenEOF {
 		t := p.lexer.PeekToken()
 		if t.Type == TokenNewline {
@@ -29,6 +27,12 @@ func (p *Parser) parseVarsBody() {
 		} else {
 			p.lexer.NextToken()
 		}
+	}
+}
+
+func (p *Parser) ensureVarsMap() {
+	if p.workflow.Vars == nil {
+		p.workflow.Vars = make(map[string]string)
 	}
 }
 

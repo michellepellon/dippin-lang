@@ -142,7 +142,7 @@ func applyUnknownGraphAttr(k, v string, w *ir.Workflow) {
 }
 
 // applyIntDefault handles integer-valued graph defaults.
-// Returns true if the key was recognised and applied.
+// Returns true if the key was recognized and applied.
 func applyIntDefault(k, v string, w *ir.Workflow) bool {
 	n, err := strconv.Atoi(v)
 	if err != nil {
