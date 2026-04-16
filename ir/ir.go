@@ -10,11 +10,11 @@ import "time"
 // Workflow is the top-level IR structure representing a complete pipeline.
 type Workflow struct {
 	Name       string
-	Version    string           // Dippin format version
-	Goal       string           // Human-readable objective
-	Start      string           // Explicit entry node ID (required)
-	Exit       string           // Explicit exit node ID (required)
-	Defaults   WorkflowDefaults   // Graph-level config
+	Version    string            // Dippin format version
+	Goal       string            // Human-readable objective
+	Start      string            // Explicit entry node ID (required)
+	Exit       string            // Explicit exit node ID (required)
+	Defaults   WorkflowDefaults  // Graph-level config
 	Vars       map[string]string // User-defined workflow variables
 	Nodes      []*Node           // Ordered for deterministic processing
 	Edges      []*Edge

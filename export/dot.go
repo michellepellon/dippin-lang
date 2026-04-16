@@ -93,7 +93,7 @@ func writeVarsAttrs(b *strings.Builder, vars map[string]string) {
 	}
 	sortStrings(keys)
 	for _, k := range keys {
-		fmt.Fprintf(b, "  %s=%s;\n", k, dotQuote(vars[k]))
+		fmt.Fprintf(b, "  %s=%s;\n", dotID(k), dotQuote(vars[k]))
 	}
 }
 

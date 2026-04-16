@@ -2,6 +2,7 @@ package migrate
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -129,16 +130,30 @@ func extractGraphDefaults(attrs map[string]string, w *ir.Workflow) {
 	}
 }
 
-// applyUnknownGraphAttr routes unknown graph attributes: integer-valued
-// attrs go to Defaults; everything else is captured in Workflow.Vars.
+// applyUnknownGraphAttr routes unknown graph attributes: only recognized
+// integer-backed default keys (max_retries, max_restarts) go to Defaults;
+// all other attrs, including unrecognized integer-valued ones, are captured
+// in Workflow.Vars. Keys that aren't valid Dippin identifiers are skipped.
 func applyUnknownGraphAttr(k, v string, w *ir.Workflow) {
 	if applyIntDefault(k, v, w) {
+		return
+	}
+	if !isDippinIdentifier(k) {
 		return
 	}
 	if w.Vars == nil {
 		w.Vars = make(map[string]string)
 	}
 	w.Vars[k] = v
+}
+
+// dippinIdentPattern matches valid Dippin identifiers:
+// alphanumeric start, followed by alphanumeric, underscore, or dash.
+var dippinIdentPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
+
+// isDippinIdentifier returns true if s is a valid Dippin identifier.
+func isDippinIdentifier(s string) bool {
+	return dippinIdentPattern.MatchString(s)
 }
 
 // applyIntDefault handles integer-valued graph defaults.

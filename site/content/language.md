@@ -7,7 +7,7 @@ subtitle: "Complete syntax for .dip workflow files."
 
 ## File Structure
 
-Every `.dip` file contains exactly one workflow. The top-level structure has four sections that must appear in order:
+Every `.dip` file contains exactly one workflow. The top-level structure has five sections that must appear in order:
 
 <div class="flow-diagram">
   <div class="flow-step">workflow &lt;name&gt;</div>
@@ -15,6 +15,8 @@ Every `.dip` file contains exactly one workflow. The top-level structure has fou
   <div class="flow-step">Header<br>goal, start, exit</div>
   <div class="flow-arrow">&rarr;</div>
   <div class="flow-step">Defaults (optional)<br>model, provider, ...</div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-step">Vars (optional)<br>key: value, ...</div>
   <div class="flow-arrow">&rarr;</div>
   <div class="flow-step">Node Definitions<br>agent, human, tool, ...</div>
   <div class="flow-arrow">&rarr;</div>
