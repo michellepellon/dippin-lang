@@ -367,7 +367,7 @@ func nodeValidationExplanations() map[string]Explanation {
 			Summary: "max_retries set with restart edges but no max_restarts",
 			Trigger: "The workflow defaults set max_retries (per-node LLM retry count) and the workflow has restart: true edges, but max_restarts (global loop restart budget) is not set. These are commonly confused.",
 			Fix:     "If you want to control loop iterations, set max_restarts instead of (or in addition to) max_retries.",
-			Example: "defaults\n  max_restarts: 10  // loop restart budget\n  max_retries: 3    // per-node LLM retries",
+			Example: "defaults\n  max_retries: 5  // but no max_restarts!\n\nedges\n  Review -> Implement  restart: true",
 		},
 	}
 }

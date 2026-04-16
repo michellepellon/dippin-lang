@@ -92,8 +92,8 @@ func lintRetryRestartConfusion(w *ir.Workflow) []Diagnostic {
 	return []Diagnostic{{
 		Code:     DIP134,
 		Severity: SeverityWarning,
-		Message:  fmt.Sprintf("defaults has max_retries: %d but no max_restarts, and the workflow has restart: true edges — did you mean max_restarts?", w.Defaults.MaxRetries),
-		Help:     "max_retries controls per-node LLM retries; max_restarts controls the loop restart budget for restart: true edges",
+		Message:  fmt.Sprintf("defaults specify max_retries: %d but no max_restarts, and the workflow has restart: true edges", w.Defaults.MaxRetries),
+		Help:     "max_retries controls per-node LLM retries; max_restarts controls the loop restart budget for restart: true edges — did you mean max_restarts?",
 	}}
 }
 

@@ -2037,52 +2037,37 @@ func TestLintAllStructuredFieldsValidNoWarnings(t *testing.T) {
 	assertNoCode(t, res, DIP133)
 }
 
-func resultHasCode(r Result, code string) bool {
-	for _, d := range r.Diagnostics {
-		if d.Code == code {
-			return true
+func TestLintRetryRestartConfusion(t *testing.T) {
+	buildWorkflow := func(maxRetries, maxRestarts int, hasRestart bool) *ir.Workflow {
+		edges := []*ir.Edge{{From: "A", To: "B"}}
+		if hasRestart {
+			edges = append(edges, &ir.Edge{From: "B", To: "A", Restart: true})
+		}
+		return &ir.Workflow{
+			Start: "A",
+			Exit:  "B",
+			Defaults: ir.WorkflowDefaults{
+				MaxRetries:  maxRetries,
+				MaxRestarts: maxRestarts,
+			},
+			Nodes: []*ir.Node{
+				{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "a"}},
+				{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "b"}},
+			},
+			Edges: edges,
 		}
 	}
-	return false
-}
 
-func TestLintRetryRestartConfusion(t *testing.T) {
-	tests := []struct {
-		name        string
-		maxRetries  int
-		maxRestarts int
-		hasRestart  bool
-		wantDIP134  bool
-	}{
-		{"max_retries with restart edges and no max_restarts", 5, 0, true, true},
-		{"max_retries with restart edges and max_restarts set", 5, 10, true, false},
-		{"no max_retries", 0, 0, true, false},
-		{"max_retries but no restart edges", 5, 0, false, false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			edges := []*ir.Edge{{From: "A", To: "B"}}
-			if tt.hasRestart {
-				edges = append(edges, &ir.Edge{From: "B", To: "A", Restart: true})
-			}
-			w := &ir.Workflow{
-				Start: "A",
-				Exit:  "B",
-				Defaults: ir.WorkflowDefaults{
-					MaxRetries:  tt.maxRetries,
-					MaxRestarts: tt.maxRestarts,
-				},
-				Nodes: []*ir.Node{
-					{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "a"}},
-					{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "b"}},
-				},
-				Edges: edges,
-			}
-			result := Lint(w)
-			got := resultHasCode(result, DIP134)
-			if got != tt.wantDIP134 {
-				t.Errorf("DIP134: got %v, want %v", got, tt.wantDIP134)
-			}
-		})
-	}
+	t.Run("fires when max_retries set with restart edges and no max_restarts", func(t *testing.T) {
+		assertHasCode(t, Lint(buildWorkflow(5, 0, true)), DIP134)
+	})
+	t.Run("silent when max_restarts also set", func(t *testing.T) {
+		assertNoCode(t, Lint(buildWorkflow(5, 10, true)), DIP134)
+	})
+	t.Run("silent when no max_retries", func(t *testing.T) {
+		assertNoCode(t, Lint(buildWorkflow(0, 0, true)), DIP134)
+	})
+	t.Run("silent when no restart edges", func(t *testing.T) {
+		assertNoCode(t, Lint(buildWorkflow(5, 0, false)), DIP134)
+	})
 }
