@@ -282,6 +282,8 @@ func applyAgentRuntimeField(cfg *ir.AgentConfig, key, val string) bool {
 	switch key {
 	case "backend":
 		cfg.Backend = val
+	case "working_dir":
+		cfg.WorkingDir = val
 	default:
 		return false
 	}

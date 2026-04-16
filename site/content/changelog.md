@@ -8,6 +8,7 @@ layout: "changelog"
 
 ### Added
 - **`backend` field** on agent nodes for per-node backend selection (e.g., `native`, `claude-code`, `acp`). Previously this value was silently dropped by the parser.
+- **`working_dir` field** on agent nodes for per-node working directory override.
 
 ### Fixed
 - **Unrecognized node fields** now emit a parse diagnostic suggesting the user put the field under `params:`, instead of being silently discarded.

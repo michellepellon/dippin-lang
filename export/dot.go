@@ -210,8 +210,16 @@ func applyAgentAttrs(attrs map[string]string, cfg ir.AgentConfig) {
 	if cfg.Provider != "" {
 		attrs["provider"] = cfg.Provider
 	}
+	applyAgentRuntimeAttrs(attrs, cfg)
+}
+
+// applyAgentRuntimeAttrs adds backend and working_dir attributes.
+func applyAgentRuntimeAttrs(attrs map[string]string, cfg ir.AgentConfig) {
 	if cfg.Backend != "" {
 		attrs["backend"] = cfg.Backend
+	}
+	if cfg.WorkingDir != "" {
+		attrs["working_dir"] = cfg.WorkingDir
 	}
 }
 

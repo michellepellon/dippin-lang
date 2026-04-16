@@ -1420,3 +1420,33 @@ func TestParseUnrecognizedSubgraphFieldSuggestsParams(t *testing.T) {
 		t.Errorf("subgraph nodes support params — hint should mention params, got: %s", err.Error())
 	}
 }
+
+func TestParseAgentWorkingDirField(t *testing.T) {
+	input := `workflow Test
+  start: A
+  exit: B
+  agent A
+    working_dir: .ai/worktrees/claude
+    prompt: do it
+  agent B
+    prompt: done
+  edges
+    A -> B
+`
+	p := NewParser(input, "test.dip")
+	w, err := p.Parse()
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+	node := w.Node("A")
+	if node == nil {
+		t.Fatal("node A not found")
+	}
+	cfg, ok := node.Config.(ir.AgentConfig)
+	if !ok {
+		t.Fatalf("expected AgentConfig, got %T", node.Config)
+	}
+	if cfg.WorkingDir != ".ai/worktrees/claude" {
+		t.Errorf("expected working_dir '.ai/worktrees/claude', got %q", cfg.WorkingDir)
+	}
+}

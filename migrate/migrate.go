@@ -257,6 +257,9 @@ func applyModelAttrs(cfg *ir.AgentConfig, attrs map[string]string) {
 	if v, ok := attrs["backend"]; ok {
 		cfg.Backend = v
 	}
+	if v, ok := attrs["working_dir"]; ok {
+		cfg.WorkingDir = v
+	}
 }
 
 // applyModelField sets the model field from model or llm_model attrs.
