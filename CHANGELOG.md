@@ -5,6 +5,7 @@ All notable changes to dippin-lang are documented here. Versions follow [semver]
 ## [Unreleased]
 
 ### Added
+- **`vars` block** at the workflow level for declaring user-defined variables. Vars export as DOT graph-level attributes and round-trip through parse → format → export → migrate.
 - **DIP134 lint rule**: warns when `max_retries` is set in defaults with `restart: true` edges but no `max_restarts` — catches the common confusion between per-node LLM retries and loop restart budget.
 
 ## [v0.19.1] — 2026-04-16

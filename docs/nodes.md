@@ -420,6 +420,35 @@ The subgraph handles the full interview lifecycle: generating questions with sug
 
 ---
 
+## Vars Block
+
+The optional `vars` block at the workflow level declares user-defined variables. These are substituted by the runtime wherever `$key` placeholders appear in prompts and commands.
+
+```dippin
+  vars
+    source_ref: "references/claude-agent-sdk-python/src"
+    target_name: claude-agents-rs
+    target_module: "claude-agents-rs/src/"
+```
+
+### Vars Fields
+
+Each entry is a key-value pair. Values follow the same syntax as other field values — quoted strings or bare identifiers:
+
+```dippin
+  vars
+    my_path: "some/quoted/path"
+    my_name: bare-identifier
+```
+
+Keys must be unique within the block. Duplicate keys cause a parse error.
+
+### DOT Export
+
+Vars are exported as graph-level DOT attributes (e.g., `source_ref="references/..."`) so they round-trip through `dippin export-dot` and `dippin migrate`.
+
+---
+
 ## Node Declaration Order
 
 Nodes can be declared in any order within the workflow. The `start` and `exit` fields (not declaration order) determine entry and exit points. However, the canonical formatter groups nodes by kind for readability.

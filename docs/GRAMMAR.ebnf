@@ -25,7 +25,7 @@ workflow_file   = workflow_decl ;
 workflow_decl   = "workflow" IDENTIFIER NEWLINE
                   INDENT workflow_body OUTDENT ;
 
-workflow_body   = { workflow_field | defaults_section
+workflow_body   = { workflow_field | defaults_section | vars_section
                   | node_decl | edges_section
                   | stylesheet_section | NEWLINE } ;
 
@@ -49,6 +49,14 @@ defaults_field   = "model"          ":" field_value
                  | "cache_tools"    ":" BOOLEAN
                  | "compaction"     ":" field_value
                  | "on_resume"      ":" field_value ;
+
+(* ═══════════════════════════════════════════════════════════ *)
+(* Vars Section                                               *)
+(* ═══════════════════════════════════════════════════════════ *)
+
+vars_section     = "vars" NEWLINE INDENT { vars_field } OUTDENT ;
+
+vars_field       = IDENTIFIER ":" field_value ;
 
 (* ═══════════════════════════════════════════════════════════ *)
 (* Node Declarations                                          *)
@@ -310,5 +318,5 @@ digit           = "0" | "1" | ... | "9" ;
 (* These identifiers have special meaning in context but can  *)
 (* be used as node IDs without conflict:                      *)
 (* workflow, agent, human, tool, subgraph, parallel, fan_in,  *)
-(* edges, defaults, when, and, or, not, contains, startswith, *)
+(* edges, defaults, vars, when, and, or, not, contains, startswith, *)
 (* endswith, in, true, false, restart, label, weight          *)
