@@ -2,6 +2,11 @@
 
 All notable changes to dippin-lang are documented here. Versions follow [semver](https://semver.org/).
 
+## [v0.19.1] — 2026-04-16
+
+### Added
+- **`working_dir` field** on agent nodes for per-node working directory override (e.g., `.ai/worktrees/claude`). Wired through parser, formatter, DOT export, and migrate.
+
 ## [v0.19.0] — 2026-04-16
 
 ### Added
