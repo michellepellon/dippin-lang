@@ -125,22 +125,38 @@ func extractGraphDefaults(attrs map[string]string, w *ir.Workflow) {
 			handler(v, w)
 			continue
 		}
-		applyIntDefault(k, v, w)
+		applyUnknownGraphAttr(k, v, w)
 	}
 }
 
+// applyUnknownGraphAttr routes unknown graph attributes: integer-valued
+// attrs go to Defaults; everything else is captured in Workflow.Vars.
+func applyUnknownGraphAttr(k, v string, w *ir.Workflow) {
+	if applyIntDefault(k, v, w) {
+		return
+	}
+	if w.Vars == nil {
+		w.Vars = make(map[string]string)
+	}
+	w.Vars[k] = v
+}
+
 // applyIntDefault handles integer-valued graph defaults.
-func applyIntDefault(k, v string, w *ir.Workflow) {
+// Returns true if the key was recognised and applied.
+func applyIntDefault(k, v string, w *ir.Workflow) bool {
 	n, err := strconv.Atoi(v)
 	if err != nil {
-		return
+		return false
 	}
 	switch k {
 	case "default_max_retry", "max_retries":
 		w.Defaults.MaxRetries = n
 	case "max_restarts":
 		w.Defaults.MaxRestarts = n
+	default:
+		return false
 	}
+	return true
 }
 
 // convertNode converts a DOT node to an IR node.
