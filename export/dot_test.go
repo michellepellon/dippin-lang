@@ -1191,3 +1191,66 @@ func TestExportConditionalNodeDiamond(t *testing.T) {
 		t.Errorf("expected diamond shape for conditional node, got:\n%s", dot)
 	}
 }
+
+func TestExportVarsAsGraphAttrs(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "Test",
+		Start: "A",
+		Exit:  "B",
+		Vars: map[string]string{
+			"env":     "production",
+			"api_url": "https://example.com/api",
+		},
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "do it"}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done"}},
+		},
+		Edges: []*ir.Edge{{From: "A", To: "B"}},
+	}
+	out := ExportDOT(w, ExportOptions{})
+
+	if !strings.Contains(out, `api_url="https://example.com/api"`) {
+		t.Errorf("expected api_url graph attr, got:\n%s", out)
+	}
+	if !strings.Contains(out, `env="production"`) {
+		t.Errorf("expected env graph attr, got:\n%s", out)
+	}
+	// Sorted: api_url must appear before env
+	apiIdx := strings.Index(out, "api_url=")
+	envIdx := strings.Index(out, "env=")
+	if apiIdx < 0 || envIdx < 0 {
+		t.Fatalf("keys missing from output:\n%s", out)
+	}
+	if apiIdx > envIdx {
+		t.Errorf("vars not sorted: api_url@%d should precede env@%d\n%s", apiIdx, envIdx, out)
+	}
+}
+
+func TestExportVarsSkipsDefaultsCollision(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "Test",
+		Start: "A",
+		Exit:  "B",
+		Vars: map[string]string{
+			"model":   "should-be-skipped",
+			"env":     "staging",
+			"rankdir": "also-skipped",
+		},
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "do it"}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done"}},
+		},
+		Edges: []*ir.Edge{{From: "A", To: "B"}},
+	}
+	out := ExportDOT(w, ExportOptions{})
+
+	// "model" and "rankdir" are reserved — they must not appear as extra graph attrs
+	// (rankdir appears as the layout directive, model must not appear separately)
+	if strings.Contains(out, `model="should-be-skipped"`) {
+		t.Errorf("reserved key 'model' should be skipped, got:\n%s", out)
+	}
+	// Non-reserved key must appear
+	if !strings.Contains(out, `env="staging"`) {
+		t.Errorf("expected env graph attr, got:\n%s", out)
+	}
+}

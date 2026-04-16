@@ -55,6 +55,14 @@ func ExportDOT(w *ir.Workflow, opts ExportOptions) string {
 	return b.String()
 }
 
+// reservedGraphAttrs are DOT graph attributes used by the defaults/header — skip
+// them when re-emitting workflow vars so they don't collide.
+var reservedGraphAttrs = map[string]bool{
+	"goal": true, "rankdir": true, "model": true, "provider": true,
+	"fidelity": true, "default_fidelity": true,
+	"max_retries": true, "default_max_retry": true, "max_restarts": true,
+}
+
 // writeDOTHeader writes the digraph opening and global attributes.
 func writeDOTHeader(b *strings.Builder, w *ir.Workflow, opts ExportOptions) {
 	rankDir := opts.RankDir
@@ -69,6 +77,24 @@ func writeDOTHeader(b *strings.Builder, w *ir.Workflow, opts ExportOptions) {
 	fmt.Fprintf(b, "  rankdir=%s;\n", rankDir)
 	b.WriteString("  node [fontname=\"Helvetica\"];\n")
 	b.WriteString("  edge [fontname=\"Helvetica\"];\n")
+	if len(w.Vars) > 0 {
+		writeVarsAttrs(b, w.Vars)
+	}
+}
+
+// writeVarsAttrs emits workflow vars as DOT graph-level attributes,
+// skipping any key that collides with a reserved graph attribute.
+func writeVarsAttrs(b *strings.Builder, vars map[string]string) {
+	keys := make([]string, 0, len(vars))
+	for k := range vars {
+		if !reservedGraphAttrs[k] {
+			keys = append(keys, k)
+		}
+	}
+	sortStrings(keys)
+	for _, k := range keys {
+		fmt.Fprintf(b, "  %s=%s;\n", k, dotQuote(vars[k]))
+	}
 }
 
 // buildExecOrder builds a map from node ID to execution order indices.
