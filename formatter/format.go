@@ -315,6 +315,9 @@ func writeAgentRuntimeFields(wr *writer, cfg ir.AgentConfig) {
 	if cfg.Backend != "" {
 		wr.line("backend: %s", quoteValue(cfg.Backend))
 	}
+	if cfg.WorkingDir != "" {
+		wr.line("working_dir: %s", quoteValue(cfg.WorkingDir))
+	}
 }
 
 // writeAgentResponseFields writes response format fields for agent nodes.
