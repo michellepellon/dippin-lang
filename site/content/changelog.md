@@ -4,6 +4,14 @@ description: "Version history and release notes for dippin-lang."
 navActive: "changelog"
 layout: "changelog"
 ---
+## [v0.19.0] — 2026-04-16
+
+### Added
+- **`backend` field** on agent nodes for per-node backend selection (e.g., `native`, `claude-code`, `acp`). Previously this value was silently dropped by the parser.
+
+### Fixed
+- **Unrecognized node fields** now emit a parse diagnostic suggesting the user put the field under `params:`, instead of being silently discarded.
+
 ## [v0.18.0] — 2026-04-06
 
 ### Added
