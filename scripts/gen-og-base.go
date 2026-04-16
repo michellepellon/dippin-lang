@@ -28,7 +28,7 @@ func generateBase() {
 
 	fillRect(img, 0, 0, imgW, imgH, cream)
 	fillRect(img, 0, 0, 8, imgH, lavender)
-	fillRect(img, 0, 624, imgW, 6, green)
+	fillRect(img, 0, imgH-6, imgW, 6, green)
 
 	writeImage(img, "site/assets/og-base.png")
 }

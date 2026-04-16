@@ -1366,3 +1366,57 @@ func TestParseUnrecognizedAgentFieldEmitsDiagnostic(t *testing.T) {
 		t.Errorf("error should suggest 'params:', got: %s", err.Error())
 	}
 }
+
+func TestParseUnrecognizedToolFieldEmitsDiagnostic(t *testing.T) {
+	input := `workflow Test
+  start: A
+  exit: B
+  tool A
+    foo: bar
+    command: echo hi
+    timeout: 5s
+  agent B
+    prompt: done
+  edges
+    A -> B
+`
+	p := NewParser(input, "test.dip")
+	_, err := p.Parse()
+	if err == nil {
+		t.Fatal("expected parse error for unrecognized tool field 'foo'")
+	}
+	if !strings.Contains(err.Error(), "unrecognized") {
+		t.Errorf("error should mention 'unrecognized', got: %s", err.Error())
+	}
+	if !strings.Contains(err.Error(), "tool") {
+		t.Errorf("error should mention node kind 'tool', got: %s", err.Error())
+	}
+	if strings.Contains(err.Error(), "params") {
+		t.Errorf("tool nodes don't support params — hint should NOT mention params, got: %s", err.Error())
+	}
+}
+
+func TestParseUnrecognizedSubgraphFieldSuggestsParams(t *testing.T) {
+	input := `workflow Test
+  start: A
+  exit: B
+  subgraph A
+    foo: bar
+    ref: child.dip
+  agent B
+    prompt: done
+  edges
+    A -> B
+`
+	p := NewParser(input, "test.dip")
+	_, err := p.Parse()
+	if err == nil {
+		t.Fatal("expected parse error for unrecognized subgraph field 'foo'")
+	}
+	if !strings.Contains(err.Error(), "unrecognized") {
+		t.Errorf("error should mention 'unrecognized', got: %s", err.Error())
+	}
+	if !strings.Contains(err.Error(), "params") {
+		t.Errorf("subgraph nodes support params — hint should mention params, got: %s", err.Error())
+	}
+}
