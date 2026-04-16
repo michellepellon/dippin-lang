@@ -65,7 +65,7 @@ func walkForBinary(bin *string) func(syntax.Node) bool {
 			return false
 		}
 		name := callExprBinary(node)
-		if name != "" && !isShellBuiltin(name) {
+		if name != "" && !isSkippableCommand(name) {
 			*bin = name
 			return false
 		}
@@ -106,11 +106,24 @@ var shellBuiltins = map[string]bool{
 	"trap": true, "wait": true, "true": true, "false": true,
 	"source": true, ".": true, "local": true, "declare": true,
 	"set": true, "cd": true, "export": true, "unset": true,
+	"command": true,
+}
+
+// preambleCommands are external binaries commonly used for setup that
+// should be skipped when finding the "real" tool binary in a command block.
+var preambleCommands = map[string]bool{
+	"mkdir": true, "touch": true, "chmod": true, "rm": true, "cp": true, "mv": true,
 }
 
 // isShellBuiltin returns true if the command is a shell builtin.
 func isShellBuiltin(cmd string) bool {
 	return shellBuiltins[cmd]
+}
+
+// isSkippableCommand returns true if the command should be skipped
+// when looking for the primary tool binary (builtins + preamble).
+func isSkippableCommand(cmd string) bool {
+	return shellBuiltins[cmd] || preambleCommands[cmd]
 }
 
 // strQuote wraps a string in double quotes for diagnostic messages.

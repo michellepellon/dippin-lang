@@ -187,6 +187,12 @@ func TestExtractBinary(t *testing.T) {
 		{"cat file | grep pattern", "cat"},
 		// Conditional
 		{"if true; then echo yes; fi", ""},
+		// Preamble commands skipped
+		{"mkdir -p .ai/cache\nshellcheck script.sh", "shellcheck"},
+		{"mkdir -p /tmp/out\ntouch /tmp/out/file\ncurl http://x", "curl"},
+		// command builtin
+		{"if command -v shellcheck >/dev/null 2>&1; then shellcheck script.sh; fi", "shellcheck"},
+		{"command -v git && git status", "git"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.cmd, func(t *testing.T) {
