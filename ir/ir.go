@@ -14,8 +14,9 @@ type Workflow struct {
 	Goal       string           // Human-readable objective
 	Start      string           // Explicit entry node ID (required)
 	Exit       string           // Explicit exit node ID (required)
-	Defaults   WorkflowDefaults // Graph-level config
-	Nodes      []*Node          // Ordered for deterministic processing
+	Defaults   WorkflowDefaults   // Graph-level config
+	Vars       map[string]string // User-defined workflow variables
+	Nodes      []*Node           // Ordered for deterministic processing
 	Edges      []*Edge
 	Stylesheet []StylesheetRule // Theme/styling rules
 	SourceMap  *SourceMap       // File/line mapping for diagnostics
