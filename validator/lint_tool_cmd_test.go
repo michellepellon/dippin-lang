@@ -168,17 +168,48 @@ func TestExtractBinary(t *testing.T) {
 		cmd  string
 		want string
 	}{
-		{"echo hello", "echo"},
+		// Basic commands
+		{"echo hello", ""},
 		{"set -eu\nls -la", "ls"},
 		{"set -eu\ncd /tmp\ngit status", "git"},
 		{"# comment\nset -eu\ncurl http://x", "curl"},
 		{"", ""},
+		// Variable assignments (tracker#87)
+		{"COUNTER='.ai/count.txt'\necho done", ""},
+		{"count=0\nprintf '%s' $count", ""},
+		{"FOO=bar", ""},
+		{"FOO=bar\nBAZ=qux", ""},
+		// Assignment with command on same line
+		{"FOO=bar ls -la", "ls"},
+		// Command substitution in assignment — walk finds cat inside $() first
+		{"count=$(cat file)\necho $count", "cat"},
+		// Pipes
+		{"cat file | grep pattern", "cat"},
+		// Conditional
+		{"if true; then echo yes; fi", ""},
 	}
 	for _, tt := range tests {
-		got := extractBinary(tt.cmd)
-		if got != tt.want {
-			t.Errorf("extractBinary(%q) = %q, want %q", tt.cmd, got, tt.want)
-		}
+		t.Run(tt.cmd, func(t *testing.T) {
+			got := extractBinary(tt.cmd)
+			if got != tt.want {
+				t.Errorf("extractBinary(%q) = %q, want %q", tt.cmd, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLintToolBinary_VariableAssignment(t *testing.T) {
+	w := &ir.Workflow{
+		Name: "test", Start: "T", Exit: "T",
+		Nodes: []*ir.Node{
+			{ID: "T", Kind: ir.NodeTool, Config: ir.ToolConfig{
+				Command: "set -eu\nCOUNTER='.ai/ralph/iteration-count.txt'\ncount=0\n[ -f \"$COUNTER\" ] && count=$(cat \"$COUNTER\")\ncount=$((count + 1))\nprintf '%s' \"$count\" > \"$COUNTER\"\nprintf '%s' \"$count\"",
+			}},
+		},
+	}
+	diags := lintToolBinary(w)
+	if len(diags) != 0 {
+		t.Errorf("expected no DIP125 for variable assignments, got %d: %v", len(diags), diags)
 	}
 }
 

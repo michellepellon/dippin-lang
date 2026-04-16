@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/2389-research/dippin-lang/ir"
+	"mvdan.cc/sh/v3/syntax"
 )
 
 // ctxVarPattern matches ${ctx.*} references in tool commands.
@@ -42,30 +43,57 @@ func checkToolCtxVars(n *ir.Node) []Diagnostic {
 	return diags
 }
 
-// shellPreamble patterns that should be skipped when finding the binary.
-var shellPreamble = regexp.MustCompile(
-	`^(set\s+-\w+|cd\s+\S+|export\s+\S+|mkdir\s+-p\s+\S+|#.*)$`,
-)
-
-// extractBinary finds the first non-preamble command's binary name.
+// extractBinary parses a shell command and returns the first non-builtin
+// command name. Uses a proper shell AST parser to correctly handle
+// variable assignments, pipes, subshells, command substitution, etc.
 func extractBinary(command string) string {
-	for _, line := range strings.Split(command, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || shellPreamble.MatchString(line) {
-			continue
-		}
-		return firstToken(line)
-	}
-	return ""
-}
-
-// firstToken returns the first whitespace-delimited token of a line.
-func firstToken(line string) string {
-	fields := strings.Fields(line)
-	if len(fields) == 0 {
+	parser := syntax.NewParser(syntax.KeepComments(false))
+	prog, err := parser.Parse(strings.NewReader(command), "")
+	if err != nil {
 		return ""
 	}
-	return fields[0]
+	var bin string
+	syntax.Walk(prog, walkForBinary(&bin))
+	return bin
+}
+
+// walkForBinary returns a walk function that captures the first non-builtin
+// command binary into bin.
+func walkForBinary(bin *string) func(syntax.Node) bool {
+	return func(node syntax.Node) bool {
+		if *bin != "" {
+			return false
+		}
+		name := callExprBinary(node)
+		if name != "" && !isShellBuiltin(name) {
+			*bin = name
+			return false
+		}
+		return true
+	}
+}
+
+// callExprBinary returns the literal binary name of a CallExpr node,
+// or "" if the node is not a non-empty CallExpr with a literal first arg.
+func callExprBinary(node syntax.Node) string {
+	call, ok := node.(*syntax.CallExpr)
+	if !ok || len(call.Args) == 0 {
+		return ""
+	}
+	return extractWordLiteral(call.Args[0])
+}
+
+// extractWordLiteral returns the literal string of a simple Word,
+// or "" if it contains expansions/substitutions.
+func extractWordLiteral(w *syntax.Word) string {
+	if len(w.Parts) != 1 {
+		return ""
+	}
+	lit, ok := w.Parts[0].(*syntax.Lit)
+	if !ok {
+		return ""
+	}
+	return lit.Value
 }
 
 // shellBuiltins are commands handled by the shell, not found on PATH.
@@ -77,6 +105,7 @@ var shellBuiltins = map[string]bool{
 	"exec": true, "exit": true, "return": true, "shift": true,
 	"trap": true, "wait": true, "true": true, "false": true,
 	"source": true, ".": true, "local": true, "declare": true,
+	"set": true, "cd": true, "export": true, "unset": true,
 }
 
 // isShellBuiltin returns true if the command is a shell builtin.
