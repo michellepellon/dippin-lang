@@ -271,6 +271,7 @@ func writeSecondaryConfigFields(wr *writer, n *ir.Node) {
 func writeAgentFields(wr *writer, n *ir.Node, cfg ir.AgentConfig) {
 	writeCommonNodeFields(wr, n)
 	writeAgentModelFields(wr, cfg)
+	writeAgentRuntimeFields(wr, cfg)
 	writeAgentResponseFields(wr, cfg)
 	writeAgentBehaviorFields(wr, cfg)
 	writeAgentCompactionFields(wr, cfg)
@@ -306,6 +307,13 @@ func writeAgentModelFields(wr *writer, cfg ir.AgentConfig) {
 	}
 	if cfg.Fidelity != "" {
 		wr.line("fidelity: %s", quoteValue(cfg.Fidelity))
+	}
+}
+
+// writeAgentRuntimeFields writes runtime behavior fields for agent nodes.
+func writeAgentRuntimeFields(wr *writer, cfg ir.AgentConfig) {
+	if cfg.Backend != "" {
+		wr.line("backend: %s", quoteValue(cfg.Backend))
 	}
 }
 

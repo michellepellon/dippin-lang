@@ -35,7 +35,7 @@ workflow <Name>
 
 | Kind | Required Fields | Optional Fields |
 |------|----------------|-----------------|
-| `agent` | `prompt` | `model`, `provider`, `auto_status`, `goal_gate`, `reasoning_effort`, `fidelity`, `max_turns`, `system_prompt` |
+| `agent` | `prompt` | `model`, `provider`, `backend`, `auto_status`, `goal_gate`, `reasoning_effort`, `fidelity`, `max_turns`, `system_prompt` |
 | `human` | `mode` (freeform\|choice) | `default` |
 | `tool` | `command` | `timeout` (e.g. 30s, 5m) |
 | `parallel` | `-> Target1, Target2` (inline) | — |
