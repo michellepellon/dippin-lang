@@ -78,6 +78,35 @@ func checkNodeRetryPolicies(w *ir.Workflow) []Diagnostic {
 	return diags
 }
 
+// lintRetryRestartConfusion checks DIP134: if the workflow has restart: true
+// edges and max_retries is set in defaults but max_restarts is not, the user
+// likely confused the two. max_retries controls per-node LLM retries;
+// max_restarts controls the global loop restart budget.
+func lintRetryRestartConfusion(w *ir.Workflow) []Diagnostic {
+	if !hasRestartEdges(w) {
+		return nil
+	}
+	if w.Defaults.MaxRetries == 0 || w.Defaults.MaxRestarts != 0 {
+		return nil
+	}
+	return []Diagnostic{{
+		Code:     DIP134,
+		Severity: SeverityWarning,
+		Message:  fmt.Sprintf("defaults has max_retries: %d but no max_restarts, and the workflow has restart: true edges — did you mean max_restarts?", w.Defaults.MaxRetries),
+		Help:     "max_retries controls per-node LLM retries; max_restarts controls the loop restart budget for restart: true edges",
+	}}
+}
+
+// hasRestartEdges returns true if any edge has Restart: true.
+func hasRestartEdges(w *ir.Workflow) bool {
+	for _, e := range w.Edges {
+		if e.Restart {
+			return true
+		}
+	}
+	return false
+}
+
 // lintGoalGateFallback checks DIP115: nodes with goal_gate: true should have
 // a retry_target or fallback_target so the pipeline has a recovery path when
 // the gate fails.

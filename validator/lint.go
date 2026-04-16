@@ -34,6 +34,7 @@ func Lint(w *ir.Workflow) Result {
 	diags = append(diags, lintToolTimeout(w)...)
 	diags = append(diags, lintReadsWithoutUpstreamWrites(w)...)
 	diags = append(diags, lintRetryPolicy(w)...)
+	diags = append(diags, lintRetryRestartConfusion(w)...)
 	diags = append(diags, lintFidelity(w)...)
 	diags = append(diags, lintGoalGateFallback(w)...)
 	diags = append(diags, lintCompactionThreshold(w)...)

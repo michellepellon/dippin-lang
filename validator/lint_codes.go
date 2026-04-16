@@ -1,6 +1,6 @@
 package validator
 
-// Diagnostic codes for semantic quality warnings (DIP101–DIP133).
+// Diagnostic codes for semantic quality warnings (DIP101–DIP134).
 const (
 	DIP101 = "DIP101" // unreachable nodes after conditional branches
 	DIP102 = "DIP102" // routing node without default/unconditional edge
@@ -35,6 +35,7 @@ const (
 	DIP131 = "DIP131" // response_schema/response_format mismatch
 	DIP132 = "DIP132" // response_schema is not valid JSON
 	DIP133 = "DIP133" // agent params key shadows a first-class field
+	DIP134 = "DIP134" // max_retries set with restart edges but no max_restarts
 )
 
 func init() {
@@ -72,4 +73,5 @@ func init() {
 	CodeDescription[DIP131] = "response_schema and response_format mismatch"
 	CodeDescription[DIP132] = "response_schema is not valid JSON"
 	CodeDescription[DIP133] = "agent params key shadows a first-class field"
+	CodeDescription[DIP134] = "max_retries set in defaults with restart edges but no max_restarts — did you mean max_restarts?"
 }
