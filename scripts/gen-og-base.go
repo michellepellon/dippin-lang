@@ -12,58 +12,36 @@ import (
 	"os"
 )
 
+const imgW, imgH = 1200, 630
+
 func main() {
 	generateBase()
 	generateHome()
 }
 
 func generateBase() {
-	img := image.NewRGBA(image.Rect(0, 0, 1200, 630))
+	img := image.NewRGBA(image.Rect(0, 0, imgW, imgH))
 
 	cream := color.RGBA{0xFA, 0xFA, 0xF7, 0xFF}
 	lavender := color.RGBA{0xDD, 0xD6, 0xF3, 0xFF}
 	green := color.RGBA{0x8F, 0xD5, 0xA6, 0xFF}
 
-	// Fill cream background
-	for y := 0; y < 630; y++ {
-		for x := 0; x < 1200; x++ {
-			img.Set(x, y, cream)
-		}
-	}
-
-	// Left lavender bar (8px wide)
-	for y := 0; y < 630; y++ {
-		for x := 0; x < 8; x++ {
-			img.Set(x, y, lavender)
-		}
-	}
-
-	// Bottom green strip (6px tall)
-	for y := 624; y < 630; y++ {
-		for x := 0; x < 1200; x++ {
-			img.Set(x, y, green)
-		}
-	}
+	fillRect(img, 0, 0, imgW, imgH, cream)
+	fillRect(img, 0, 0, 8, imgH, lavender)
+	fillRect(img, 0, 624, imgW, 6, green)
 
 	writeImage(img, "site/assets/og-base.png")
 }
 
 func generateHome() {
-	img := image.NewRGBA(image.Rect(0, 0, 1200, 630))
+	img := image.NewRGBA(image.Rect(0, 0, imgW, imgH))
 
 	dark := color.RGBA{0x1A, 0x1A, 0x1A, 0xFF}
 	lavender := color.RGBA{0xDD, 0xD6, 0xF3, 0x60}
 	green := color.RGBA{0x8F, 0xD5, 0xA6, 0x50}
 	yellow := color.RGBA{0xF5, 0xD5, 0x6A, 0x40}
 
-	// Fill dark background
-	for y := 0; y < 630; y++ {
-		for x := 0; x < 1200; x++ {
-			img.Set(x, y, dark)
-		}
-	}
-
-	// Decorative circles (subtle, semi-transparent)
+	fillRect(img, 0, 0, imgW, imgH, dark)
 	drawCircle(img, 1080, 90, 70, lavender)
 	drawCircle(img, 120, 540, 60, green)
 	drawCircle(img, 1020, 420, 25, yellow)
@@ -71,19 +49,32 @@ func generateHome() {
 	writeImage(img, "site/assets/og-home.png")
 }
 
+func fillRect(img *image.RGBA, x0, y0, w, h int, c color.RGBA) {
+	for y := y0; y < y0+h; y++ {
+		for x := x0; x < x0+w; x++ {
+			img.Set(x, y, c)
+		}
+	}
+}
+
 func drawCircle(img *image.RGBA, cx, cy, r int, c color.RGBA) {
 	for y := cy - r; y <= cy+r; y++ {
 		for x := cx - r; x <= cx+r; x++ {
-			if x < 0 || x >= 1200 || y < 0 || y >= 630 {
-				continue
-			}
-			dx := float64(x - cx)
-			dy := float64(y - cy)
-			if math.Sqrt(dx*dx+dy*dy) <= float64(r) {
+			if inBounds(x, y) && inRadius(x, y, cx, cy, r) {
 				img.Set(x, y, c)
 			}
 		}
 	}
+}
+
+func inBounds(x, y int) bool {
+	return x >= 0 && x < imgW && y >= 0 && y < imgH
+}
+
+func inRadius(x, y, cx, cy, r int) bool {
+	dx := float64(x - cx)
+	dy := float64(y - cy)
+	return math.Sqrt(dx*dx+dy*dy) <= float64(r)
 }
 
 func writeImage(img *image.RGBA, path string) {

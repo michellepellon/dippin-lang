@@ -77,9 +77,11 @@ func (p *Parser) parseNodeField(node *ir.Node, t Token) {
 
 // emitUnknownFieldHint emits a diagnostic for an unrecognized field on a node.
 func (p *Parser) emitUnknownFieldHint(kind, key string, loc ir.SourceLocation) {
-	p.diagnostics = append(p.diagnostics, fmt.Sprintf(
-		"unrecognized %s field %q at %d:%d — did you mean to put it under params:?",
-		kind, key, loc.Line, loc.Column))
+	hint := fmt.Sprintf("unrecognized %s field %q at %d:%d", kind, key, loc.Line, loc.Column)
+	if kind == "agent" || kind == "subgraph" {
+		hint += " — did you mean to put it under params:?"
+	}
+	p.diagnostics = append(p.diagnostics, hint)
 }
 
 func (p *Parser) emitNestedRetryError(loc ir.SourceLocation) {
