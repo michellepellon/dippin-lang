@@ -26,6 +26,11 @@ func Format(w *ir.Workflow) string {
 		writeDefaults(wr, w.Defaults)
 	}
 
+	if len(w.Vars) > 0 {
+		wr.blank()
+		writeVars(wr, w.Vars)
+	}
+
 	for _, n := range w.Nodes {
 		wr.blank()
 		writeNode(wr, n)
@@ -172,6 +177,20 @@ func writeDefaultsCompactionFields(wr *writer, d ir.WorkflowDefaults) {
 	if d.OnResume != "" {
 		wr.line("on_resume: %s", quoteValue(d.OnResume))
 	}
+}
+
+func writeVars(wr *writer, vars map[string]string) {
+	wr.line("vars")
+	wr.push()
+	keys := make([]string, 0, len(vars))
+	for k := range vars {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		wr.line("%s: %s", k, quoteValue(vars[k]))
+	}
+	wr.pop()
 }
 
 func writeNode(wr *writer, n *ir.Node) {
