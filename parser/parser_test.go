@@ -1450,3 +1450,65 @@ func TestParseAgentWorkingDirField(t *testing.T) {
 		t.Errorf("expected working_dir '.ai/worktrees/claude', got %q", cfg.WorkingDir)
 	}
 }
+
+func TestParseVarsBlock(t *testing.T) {
+	input := `workflow Test
+  start: A
+  exit: B
+
+  vars
+    api_url: https://example.com/api
+    env: production
+    retries: 3
+
+  agent A
+    prompt: do it
+  agent B
+    prompt: done
+  edges
+    A -> B
+`
+	p := NewParser(input, "test.dip")
+	w, err := p.Parse()
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+	if len(w.Vars) != 3 {
+		t.Fatalf("expected 3 vars, got %d", len(w.Vars))
+	}
+	if w.Vars["api_url"] != "https://example.com/api" {
+		t.Errorf("api_url = %q, want %q", w.Vars["api_url"], "https://example.com/api")
+	}
+	if w.Vars["env"] != "production" {
+		t.Errorf("env = %q, want %q", w.Vars["env"], "production")
+	}
+	if w.Vars["retries"] != "3" {
+		t.Errorf("retries = %q, want %q", w.Vars["retries"], "3")
+	}
+}
+
+func TestParseVarsDuplicateKey(t *testing.T) {
+	input := `workflow Test
+  start: A
+  exit: B
+
+  vars
+    key: first
+    key: second
+
+  agent A
+    prompt: do it
+  agent B
+    prompt: done
+  edges
+    A -> B
+`
+	p := NewParser(input, "test.dip")
+	_, err := p.Parse()
+	if err == nil {
+		t.Fatal("expected error for duplicate vars key, got nil")
+	}
+	if !strings.Contains(err.Error(), "duplicate vars key") {
+		t.Errorf("error %q does not mention duplicate vars key", err.Error())
+	}
+}

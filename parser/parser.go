@@ -90,6 +90,8 @@ func (p *Parser) dispatchWorkflowField(t Token) {
 		p.parseWorkflowStringField(t)
 	case "defaults":
 		p.parseDefaults()
+	case "vars":
+		p.parseVars()
 	case "edges":
 		p.parseEdges()
 	case "stylesheet":
