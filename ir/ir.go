@@ -96,6 +96,7 @@ type AgentConfig struct {
 	GoalGate            bool              // Pipeline fails if this node fails
 	ResponseFormat      string            // "json_object" or "json_schema"
 	ResponseSchema      string            // JSON schema (when ResponseFormat is "json_schema")
+	Backend             string            // Per-node backend override: "native", "claude-code", "acp"
 	Params              map[string]string // Generic key-value pairs passed through to runtime
 }
 

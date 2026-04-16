@@ -103,6 +103,7 @@ Agent nodes invoke an LLM. They are the most configurable node kind.
 | `system_prompt` | Multiline | — | System-level instructions passed separately to the LLM. Has higher behavioral precedence than the user prompt. Used for persistent rules like output format or persona. |
 | `model` | String | workflow default | LLM model identifier (e.g., `"claude-opus-4-6"`, `"gpt-5.4"`). Overrides the workflow-level default. |
 | `provider` | String | workflow default | LLM provider (e.g., `"anthropic"`, `"openai"`, `"gemini"`). Overrides the workflow-level default. |
+| `backend` | String | workflow default | Per-node backend override (e.g., `native`, `claude-code`, `acp`). |
 | `max_turns` | Integer | 1 | Maximum conversation turns in an agentic loop. A turn is one request-response cycle. Set higher for multi-step tool-using agents. |
 | `cmd_timeout` | Duration | — | Command execution timeout for the agent's agentic loop (e.g., `30s`, `5m`). Applies to tool/command calls made within the agent, not to the LLM API call itself. |
 | `cache_tools` | Boolean | workflow default | Whether to cache tool call results for this agent. Useful for expensive, deterministic tools. |
@@ -146,6 +147,10 @@ Goal gates are pipeline-critical nodes. Even if execution eventually reaches the
 ```
 
 In DOT export, goal gate nodes are highlighted with a red filled background.
+
+### Unrecognized Fields
+
+If you use a field name that is not recognized for the current node type, the parser emits a diagnostic suggesting you put the field under `params:` instead. This replaces the previous behavior of silently discarding unknown fields.
 
 ---
 

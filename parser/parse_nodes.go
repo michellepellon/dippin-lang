@@ -75,6 +75,13 @@ func (p *Parser) parseNodeField(node *ir.Node, t Token) {
 	p.applyNodeField(node, key, val, t.Location)
 }
 
+// emitUnknownFieldHint emits a diagnostic for an unrecognized field on a node.
+func (p *Parser) emitUnknownFieldHint(kind, key string, loc ir.SourceLocation) {
+	p.diagnostics = append(p.diagnostics, fmt.Sprintf(
+		"unrecognized %s field %q at %d:%d — did you mean to put it under params:?",
+		kind, key, loc.Line, loc.Column))
+}
+
 func (p *Parser) emitNestedRetryError(loc ir.SourceLocation) {
 	p.diagnostics = append(p.diagnostics, fmt.Sprintf(
 		"nested retry blocks are not supported; use flat attributes instead (retry_policy, max_retries, retry_target, fallback_target, base_delay) at %d:%d",
@@ -149,7 +156,7 @@ func (p *Parser) applySecondaryConfigField(n *ir.Node, key, val string, loc ir.S
 		p.applySubgraphField(&cfg, key, val, loc)
 		n.Config = cfg
 	case ir.ConditionalConfig:
-		// Conditional nodes only accept common fields (label, class, reads, writes).
+		p.emitUnknownFieldHint("conditional", key, loc)
 	}
 }
 
@@ -228,7 +235,10 @@ func applyAgentStringField(cfg *ir.AgentConfig, key, val string) bool {
 	if applyAgentPromptField(cfg, key, val) {
 		return true
 	}
-	return applyAgentModelField(cfg, key, val)
+	if applyAgentModelField(cfg, key, val) {
+		return true
+	}
+	return applyAgentRuntimeField(cfg, key, val)
 }
 
 // applyAgentPromptField handles prompt-related agent fields.
@@ -265,6 +275,17 @@ func applyAgentModelField(cfg *ir.AgentConfig, key, val string) bool {
 	return true
 }
 
+// applyAgentRuntimeField handles runtime behavior fields.
+func applyAgentRuntimeField(cfg *ir.AgentConfig, key, val string) bool {
+	switch key {
+	case "backend":
+		cfg.Backend = val
+	default:
+		return false
+	}
+	return true
+}
+
 // applyAgentComplexField handles fields needing parsing for agent config.
 func (p *Parser) applyAgentComplexField(cfg *ir.AgentConfig, key, val string, loc ir.SourceLocation) {
 	if applyAgentBoolField(cfg, key, val) {
@@ -274,7 +295,10 @@ func (p *Parser) applyAgentComplexField(cfg *ir.AgentConfig, key, val string, lo
 		cfg.Params = p.parseParamsBlock(val)
 		return
 	}
-	p.applyAgentParsedField(cfg, key, val, loc)
+	if p.applyAgentParsedField(cfg, key, val, loc) {
+		return
+	}
+	p.emitUnknownFieldHint("agent", key, loc)
 }
 
 // applyAgentBoolField handles boolean and string agent fields.
@@ -295,7 +319,8 @@ func applyAgentBoolField(cfg *ir.AgentConfig, key, val string) bool {
 }
 
 // applyAgentParsedField handles agent fields that require parsing.
-func (p *Parser) applyAgentParsedField(cfg *ir.AgentConfig, key, val string, loc ir.SourceLocation) {
+// Returns true if the field was recognized.
+func (p *Parser) applyAgentParsedField(cfg *ir.AgentConfig, key, val string, loc ir.SourceLocation) bool {
 	switch key {
 	case "max_turns":
 		cfg.MaxTurns = p.parseInt(val, key, loc)
@@ -303,7 +328,10 @@ func (p *Parser) applyAgentParsedField(cfg *ir.AgentConfig, key, val string, loc
 		cfg.CompactionThreshold = p.parseFloat(val, key, loc)
 	case "cmd_timeout":
 		cfg.CmdTimeout = p.parseDuration(val, key, loc)
+	default:
+		return false
 	}
+	return true
 }
 
 // applyHumanField applies human-specific configuration fields.
@@ -311,7 +339,10 @@ func (p *Parser) applyHumanField(cfg *ir.HumanConfig, key, val string, loc ir.So
 	if applyHumanStringField(cfg, key, val) {
 		return
 	}
-	applyHumanInterviewField(cfg, key, val)
+	if applyHumanInterviewField(cfg, key, val) {
+		return
+	}
+	p.emitUnknownFieldHint("human", key, loc)
 }
 
 func applyHumanStringField(cfg *ir.HumanConfig, key, val string) bool {
@@ -328,13 +359,16 @@ func applyHumanStringField(cfg *ir.HumanConfig, key, val string) bool {
 	return true
 }
 
-func applyHumanInterviewField(cfg *ir.HumanConfig, key, val string) {
+func applyHumanInterviewField(cfg *ir.HumanConfig, key, val string) bool {
 	switch key {
 	case "questions_key":
 		cfg.QuestionsKey = val
 	case "answers_key":
 		cfg.AnswersKey = val
+	default:
+		return false
 	}
+	return true
 }
 
 // applyToolField applies tool-specific configuration fields.
@@ -346,6 +380,8 @@ func (p *Parser) applyToolField(cfg *ir.ToolConfig, key, val string, loc ir.Sour
 		cfg.Timeout = p.parseDuration(val, key, loc)
 	case "outputs":
 		cfg.Outputs = splitComma(val)
+	default:
+		p.emitUnknownFieldHint("tool", key, loc)
 	}
 }
 
@@ -356,6 +392,8 @@ func (p *Parser) applySubgraphField(cfg *ir.SubgraphConfig, key, val string, loc
 		cfg.Ref = val
 	case "params":
 		cfg.Params = p.parseParamsBlock(val)
+	default:
+		p.emitUnknownFieldHint("subgraph", key, loc)
 	}
 }
 

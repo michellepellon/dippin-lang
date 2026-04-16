@@ -1308,3 +1308,61 @@ func TestNestedRetryBlockRestOfWorkflowParses(t *testing.T) {
 		t.Error("edges should be parsed despite retry error in node A")
 	}
 }
+
+func TestParseAgentBackendField(t *testing.T) {
+	input := `workflow Test
+  start: A
+  exit: B
+  agent A
+    backend: claude-code
+    prompt: do it
+  agent B
+    prompt: done
+  edges
+    A -> B
+`
+	p := NewParser(input, "test.dip")
+	w, err := p.Parse()
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+	node := w.Node("A")
+	if node == nil {
+		t.Fatal("node A not found")
+	}
+	cfg, ok := node.Config.(ir.AgentConfig)
+	if !ok {
+		t.Fatalf("expected AgentConfig, got %T", node.Config)
+	}
+	if cfg.Backend != "claude-code" {
+		t.Errorf("expected backend 'claude-code', got %q", cfg.Backend)
+	}
+}
+
+func TestParseUnrecognizedAgentFieldEmitsDiagnostic(t *testing.T) {
+	input := `workflow Test
+  start: A
+  exit: B
+  agent A
+    foo: bar
+    prompt: do it
+  agent B
+    prompt: done
+  edges
+    A -> B
+`
+	p := NewParser(input, "test.dip")
+	_, err := p.Parse()
+	if err == nil {
+		t.Fatal("expected parse error for unrecognized field 'foo'")
+	}
+	if !strings.Contains(err.Error(), "unrecognized") {
+		t.Errorf("error should mention 'unrecognized', got: %s", err.Error())
+	}
+	if !strings.Contains(err.Error(), "foo") {
+		t.Errorf("error should mention field name 'foo', got: %s", err.Error())
+	}
+	if !strings.Contains(err.Error(), "params") {
+		t.Errorf("error should suggest 'params:', got: %s", err.Error())
+	}
+}

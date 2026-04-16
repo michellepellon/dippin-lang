@@ -103,6 +103,7 @@ Agent nodes invoke an LLM. They are the most configurable node kind. Key fields 
 |-------|------|-------------|
 | `model` | String | LLM model to use (overrides defaults) |
 | `provider` | String | LLM provider (e.g., "anthropic", "openai") |
+| `backend` | String | Per-node backend override (e.g., `native`, `claude-code`, `acp`) |
 | `prompt` | Block | Multiline prompt text sent to the model |
 | `system_prompt` | Block | System-level instructions prepended before the prompt |
 | `max_turns` | Integer | Maximum conversation turns before the node exits |

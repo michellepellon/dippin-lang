@@ -12,8 +12,9 @@
 (*   below describes the intended condition syntax.            *)
 (* - Keywords are not reserved — they can be used as node IDs. *)
 (*   The parser distinguishes by context, not by token type.   *)
-(* - Unknown fields on nodes are silently ignored by the       *)
-(*   parser (open field set per node type).                    *)
+(* - Unrecognized fields on any node type now emit a           *)
+(*   diagnostic suggesting the user put the field under        *)
+(*   params: instead.                                          *)
 
 (* ═══════════════════════════════════════════════════════════ *)
 (* Top-Level Structure                                        *)
@@ -66,6 +67,7 @@ agent_field     = "prompt"            ":" field_value
                 | "system_prompt"     ":" field_value
                 | "model"             ":" field_value
                 | "provider"          ":" field_value
+                | "backend"           ":" field_value
                 | "max_turns"         ":" INTEGER
                 | "cmd_timeout"       ":" DURATION
                 | "goal_gate"         ":" BOOLEAN

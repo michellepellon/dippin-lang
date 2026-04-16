@@ -254,6 +254,9 @@ func applyModelAttrs(cfg *ir.AgentConfig, attrs map[string]string) {
 	if v, ok := attrs["fidelity"]; ok {
 		cfg.Fidelity = v
 	}
+	if v, ok := attrs["backend"]; ok {
+		cfg.Backend = v
+	}
 }
 
 // applyModelField sets the model field from model or llm_model attrs.

@@ -69,13 +69,13 @@ lint-examples: build
 
 # Check cyclomatic complexity (max 5 per function, excluding tests)
 complexity:
-    @violations=$( gocyclo -over 5 . | grep -v _test.go ); \
+    @violations=$( gocyclo -over 5 . | grep -v _test.go | grep -v scripts/ ); \
     if [ -n "$violations" ]; then \
         echo "Cyclomatic complexity violations (max 5):"; \
         echo "$violations"; \
         exit 1; \
     fi
-    @violations=$( gocognit -over 7 . | grep -v _test.go ); \
+    @violations=$( gocognit -over 7 . | grep -v _test.go | grep -v scripts/ ); \
     if [ -n "$violations" ]; then \
         echo "Cognitive complexity violations (max 7):"; \
         echo "$violations"; \

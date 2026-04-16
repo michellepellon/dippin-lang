@@ -210,6 +210,9 @@ func applyAgentAttrs(attrs map[string]string, cfg ir.AgentConfig) {
 	if cfg.Provider != "" {
 		attrs["provider"] = cfg.Provider
 	}
+	if cfg.Backend != "" {
+		attrs["backend"] = cfg.Backend
+	}
 }
 
 // applyToolAttrs adds tool-specific attributes.
