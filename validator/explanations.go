@@ -250,6 +250,14 @@ func configExplanations() map[string]Explanation {
 }
 
 func advancedExplanations() map[string]Explanation {
+	m := conditionExplanations()
+	for k, v := range nodeValidationExplanations() {
+		m[k] = v
+	}
+	return m
+}
+
+func conditionExplanations() map[string]Explanation {
 	return map[string]Explanation{
 		DIP120: {
 			Code:    DIP120,
@@ -300,6 +308,11 @@ func advancedExplanations() map[string]Explanation {
 			Fix:     "Fix the ref path or create the missing workflow file.",
 			Example: "subgraph Review\n  ref: review_pipeline.dip  // file not found",
 		},
+	}
+}
+
+func nodeValidationExplanations() map[string]Explanation {
+	return map[string]Explanation{
 		DIP127: {
 			Code:    DIP127,
 			Summary: "invalid human node mode",
@@ -348,6 +361,13 @@ func advancedExplanations() map[string]Explanation {
 			Trigger: "A key in the params block matches a typed first-class field like model, provider, or response_format. The typed field takes precedence and the params entry is ignored.",
 			Fix:     "Move the value from params to the dedicated typed field.",
 			Example: "agent Call\n  params:\n    model: gpt-4  // use top-level model: instead",
+		},
+		DIP134: {
+			Code:    DIP134,
+			Summary: "max_retries set with restart edges but no max_restarts",
+			Trigger: "The workflow defaults set max_retries (per-node LLM retry count) and the workflow has restart: true edges, but max_restarts (global loop restart budget) is not set. These are commonly confused.",
+			Fix:     "If you want to control loop iterations, set max_restarts instead of (or in addition to) max_retries.",
+			Example: "defaults\n  max_retries: 5  // but no max_restarts!\n\nedges\n  Review -> Implement  restart: true",
 		},
 	}
 }
