@@ -1512,3 +1512,43 @@ func TestParseVarsDuplicateKey(t *testing.T) {
 		t.Errorf("error %q does not mention duplicate vars key", err.Error())
 	}
 }
+
+func TestParseVarsRoundTrip(t *testing.T) {
+	input := `workflow Test
+  start: A
+  exit: B
+
+  vars
+    source_ref: "references/sdk-python/src"
+    target_name: my-crate
+
+  agent A
+    prompt: go
+
+  agent B
+    prompt: done
+
+  edges
+    A -> B
+`
+	p := NewParser(input, "test.dip")
+	w, err := p.Parse()
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	formatted := formatter.Format(w)
+	p2 := NewParser(formatted, "roundtrip.dip")
+	w2, err := p2.Parse()
+	if err != nil {
+		t.Fatalf("re-parse error: %v\nformatted:\n%s", err, formatted)
+	}
+	if len(w2.Vars) != 2 {
+		t.Errorf("expected 2 vars after round-trip, got %d", len(w2.Vars))
+	}
+	if w2.Vars["source_ref"] != "references/sdk-python/src" {
+		t.Errorf("source_ref lost in round-trip: %q", w2.Vars["source_ref"])
+	}
+	if w2.Vars["target_name"] != "my-crate" {
+		t.Errorf("target_name lost in round-trip: %q", w2.Vars["target_name"])
+	}
+}
