@@ -6,7 +6,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"testing"
 )
 
@@ -28,13 +27,14 @@ func run(t *testing.T, dir string, name string, args ...string) {
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("%s %s failed: %v\n%s", name, strings.Join(args, " "), err, out)
+		t.Fatalf("%s failed: %v\n%s", cmd.String(), err, out)
 	}
 }
 
-func copyRepo(t *testing.T, root string) string {
+func copyRepo(t *testing.T) string {
 	t.Helper()
 
+	root := repoRoot(t)
 	copyRoot := t.TempDir()
 	run(t, root, "rsync", "-a", "--exclude", ".git", root+"/", copyRoot+"/")
 	return copyRoot
@@ -51,13 +51,17 @@ func TestGeneratedSpecSourceIsTrackedInGitCheckout(t *testing.T) {
 }
 
 func TestGeneratedSpecIsCurrentWithGenerator(t *testing.T) {
-	root := repoRoot(t)
-	copyRoot := copyRepo(t, root)
+	copyRoot := copyRepo(t)
 	specPath := filepath.Join(copyRoot, "cmd", "dippin", "generated-spec.md")
+	outputPath := filepath.Join(copyRoot, "docs", "generated-spec.md")
 
 	before, err := os.ReadFile(specPath)
 	if err != nil {
 		t.Fatalf("read %s before regeneration: %v", specPath, err)
+	}
+
+	if err := os.Remove(specPath); err != nil {
+		t.Fatalf("remove %s before regeneration: %v", specPath, err)
 	}
 
 	run(t, copyRoot, "./scripts/gen-spec.sh")
@@ -67,13 +71,21 @@ func TestGeneratedSpecIsCurrentWithGenerator(t *testing.T) {
 		t.Fatalf("read %s after regeneration: %v", specPath, err)
 	}
 
+	output, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("read %s after regeneration: %v", outputPath, err)
+	}
+
 	if !bytes.Equal(before, after) {
 		t.Fatal("scripts/gen-spec.sh changed cmd/dippin/generated-spec.md; commit the refreshed file")
+	}
+
+	if !bytes.Equal(after, output) {
+		t.Fatal("scripts/gen-spec.sh did not keep cmd/dippin/generated-spec.md in sync with docs/generated-spec.md")
 	}
 }
 
 func TestCLIBuildsFromCopiedSourceTree(t *testing.T) {
-	root := repoRoot(t)
-	copyRoot := copyRepo(t, root)
+	copyRoot := copyRepo(t)
 	run(t, copyRoot, "go", "build", "./cmd/dippin")
 }
