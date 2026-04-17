@@ -4,10 +4,15 @@ description: "Version history and release notes for dippin-lang."
 navActive: "changelog"
 layout: "changelog"
 ---
-## [Unreleased]
+## [v0.20.0] — 2026-04-17
 
 ### Added
 - **`vars` block** at the workflow level for declaring user-defined variables. Vars export as DOT graph-level attributes and round-trip through parse → format → export → migrate.
+- **DIP134 lint rule**: warns on `max_retries` vs `max_restarts` confusion.
+
+### Fixed
+- **DIP125 false positives on shell variable assignments** (tracker#87). Shell AST parsing via `mvdan.cc/sh/v3` replaces regex-based extraction.
+- **`go install ...@latest` broken** — embedded spec now checked in.
 
 ## [v0.19.1] — 2026-04-16
 

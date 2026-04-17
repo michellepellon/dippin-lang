@@ -2,11 +2,17 @@
 
 All notable changes to dippin-lang are documented here. Versions follow [semver](https://semver.org/).
 
-## [Unreleased]
+## [v0.20.0] — 2026-04-17
 
 ### Added
 - **`vars` block** at the workflow level for declaring user-defined variables. Vars export as DOT graph-level attributes and round-trip through parse → format → export → migrate.
 - **DIP134 lint rule**: warns when `max_retries` is set in defaults with `restart: true` edges but no `max_restarts` — catches the common confusion between per-node LLM retries and loop restart budget.
+- **Release invariant checks** (`releasecheck/`) — validates the embedded spec is tracked, current, and buildable from a source tree without `.git`.
+
+### Fixed
+- **DIP125 false positives on shell variable assignments** (tracker#87). Replaced regex-based binary extraction with proper shell AST parsing via `mvdan.cc/sh/v3`. Variable assignments, command substitutions, and `command -v` checks are now correctly identified. Preamble commands (`mkdir`) are skipped to find the real tool binary.
+- **`go install ...@latest` broken** — `cmd/dippin/generated-spec.md` is now checked into the repo so the `go:embed` directive resolves from module proxy downloads.
+- **Pre-commit hook and `just check` now mirror CI exactly** — spec freshness, release checks, complexity exclusions all aligned.
 
 ## [v0.19.1] — 2026-04-16
 
