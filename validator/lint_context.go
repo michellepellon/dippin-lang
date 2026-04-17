@@ -17,13 +17,13 @@ var varRefPattern = regexp.MustCompile(`\$\{([^}]+)\}`)
 func lintUndefinedVariables(w *ir.Workflow) []Diagnostic {
 	var diags []Diagnostic
 	for _, n := range w.Nodes {
-		diags = append(diags, checkNodeVarRefs(n)...)
+		diags = append(diags, checkNodeVarRefs(n, w)...)
 	}
 	return diags
 }
 
 // checkNodeVarRefs checks variable references in a single node's prompt.
-func checkNodeVarRefs(n *ir.Node) []Diagnostic {
+func checkNodeVarRefs(n *ir.Node, w *ir.Workflow) []Diagnostic {
 	prompt := nodePrompt(n)
 	if prompt == "" {
 		return nil
@@ -32,8 +32,7 @@ func checkNodeVarRefs(n *ir.Node) []Diagnostic {
 	matches := varRefPattern.FindAllStringSubmatch(prompt, -1)
 	for _, m := range matches {
 		varRef := m[1]
-		parts := strings.SplitN(varRef, ".", 2)
-		if len(parts) < 2 || !knownNamespaces[parts[0]] {
+		if !isVarRefValid(varRef, w) {
 			diags = append(diags, Diagnostic{
 				Code:     DIP106,
 				Severity: SeverityWarning,
@@ -44,6 +43,34 @@ func checkNodeVarRefs(n *ir.Node) []Diagnostic {
 		}
 	}
 	return diags
+}
+
+// isVarRefValid returns true if the variable reference is valid: either a known
+// namespace prefix (with ctx.node.* requiring a real node ID) or a bare
+// node-scoped reference (node.<existingNode>.*).
+func isVarRefValid(varRef string, w *ir.Workflow) bool {
+	// ctx.node.* is special: node ID must resolve in the workflow.
+	if strings.HasPrefix(varRef, "ctx.node.") {
+		return isNodeScopedKey(varRef, w)
+	}
+	parts := strings.SplitN(varRef, ".", 2)
+	return len(parts) >= 2 && knownNamespaces[parts[0]]
+}
+
+// isNodeScopedKey returns true if the key matches node.<nodeID>.* where nodeID
+// is a real node in the workflow. Tracker auto-aliases every context key a node
+// writes as node.<nodeID>.<key>, so these references are always valid.
+// The key may be prefixed with "ctx." (e.g. "ctx.node.Planner.last_response").
+func isNodeScopedKey(key string, w *ir.Workflow) bool {
+	k := strings.TrimPrefix(key, "ctx.")
+	if !strings.HasPrefix(k, "node.") {
+		return false
+	}
+	parts := strings.SplitN(k, ".", 3) // ["node", "<nodeID>", "<key>"]
+	if len(parts) < 3 {
+		return false
+	}
+	return w.Node(parts[1]) != nil
 }
 
 // lintUnusedWrites checks DIP107: context keys declared in a node's writes:
@@ -200,15 +227,16 @@ func checkUnprovidedReads(w *ir.Workflow, available map[string]map[string]bool) 
 
 	for _, n := range w.Nodes {
 		for _, key := range n.IO.Reads {
-			if !available[n.ID][key] {
-				diags = append(diags, Diagnostic{
-					Code:     DIP112,
-					Severity: SeverityWarning,
-					Message:  fmt.Sprintf("node %q reads context key %q but no upstream node declares it in writes", n.ID, key),
-					Location: n.Source,
-					Help:     fmt.Sprintf("add writes: %s to an upstream node, or the key may be auto-injected at runtime", key),
-				})
+			if available[n.ID][key] || isNodeScopedKey(key, w) {
+				continue
 			}
+			diags = append(diags, Diagnostic{
+				Code:     DIP112,
+				Severity: SeverityWarning,
+				Message:  fmt.Sprintf("node %q reads context key %q but no upstream node declares it in writes", n.ID, key),
+				Location: n.Source,
+				Help:     fmt.Sprintf("add writes: %s to an upstream node, or the key may be auto-injected at runtime", key),
+			})
 		}
 	}
 

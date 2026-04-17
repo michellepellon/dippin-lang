@@ -605,6 +605,36 @@ func TestLint(t *testing.T) {
 			},
 			wantNoDiag: true,
 		},
+		{
+			name: "DIP106: ctx.node.<existingNode>.* is valid — no DIP106",
+			workflow: &ir.Workflow{
+				Name:  "node_scoped_ref_valid",
+				Start: "Planner",
+				Exit:  "Builder",
+				Nodes: []*ir.Node{
+					{ID: "Planner", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "plan"}},
+					{ID: "Builder", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+						Prompt: "Build based on ${ctx.node.Planner.last_response}",
+					}},
+				},
+				Edges: []*ir.Edge{{From: "Planner", To: "Builder"}},
+			},
+			wantNoDiag: true,
+		},
+		{
+			name: "DIP106: ctx.node.<unknownNode>.* triggers DIP106",
+			workflow: &ir.Workflow{
+				Name:  "node_scoped_ref_invalid",
+				Start: "A",
+				Exit:  "A",
+				Nodes: []*ir.Node{
+					{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+						Prompt: "Use ${ctx.node.Ghost.result}",
+					}},
+				},
+			},
+			wantCodes: []string{DIP106},
+		},
 
 		// --- DIP107: Unused writes ---
 		{
@@ -858,6 +888,23 @@ func TestLint(t *testing.T) {
 				},
 				Edges: []*ir.Edge{
 					{From: "A", To: "B"},
+				},
+			},
+			wantNoDiag: true,
+		},
+		{
+			name: "DIP112: node.<existingNode>.* in reads is valid — no DIP112",
+			workflow: &ir.Workflow{
+				Name:  "node_scoped_read_valid",
+				Start: "Planner",
+				Exit:  "Builder",
+				Nodes: []*ir.Node{
+					{ID: "Planner", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "plan"}},
+					{ID: "Builder", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "build"},
+						IO: ir.NodeIO{Reads: []string{"node.Planner.last_response"}}},
+				},
+				Edges: []*ir.Edge{
+					{From: "Planner", To: "Builder"},
 				},
 			},
 			wantNoDiag: true,
