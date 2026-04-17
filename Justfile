@@ -121,6 +121,7 @@ changelog-md:
 
 # Build the Hugo site for production
 site-build: build wasm changelog-md
+    cp docs/generated-spec.md site/static/llms-full.txt
     cd site && hugo --minify
 
 # Build WASM binary for the browser playground

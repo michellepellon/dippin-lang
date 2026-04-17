@@ -8,8 +8,6 @@ Agents (AI coding assistants) need a fast, reliable way to download the full dip
 
 A build-time-generated spec file embedded into the `dippin` binary via `go:embed`. The same file is published to `dippin.org/llms-full.txt` for web access.
 
-Implementation note: `docs/generated-spec.md` remains the scratch output from the generator, while the checked-in release copies live at `cmd/dippin/generated-spec.md` and `site/static/llms-full.txt`. This keeps fresh clones and module tags buildable without requiring a pre-build generation step.
-
 ## Components
 
 ### 1. Spec Generator Script (`scripts/gen-spec.sh`)
@@ -27,14 +25,14 @@ Assembles `docs/generated-spec.md` by concatenating sections from existing sourc
 | CLI reference | `site/static/skill.md` | Command summary (authoring, export, analysis, testing) |
 | Providers | `site/static/skill.md` | Supported providers list |
 
-**Output:** `docs/generated-spec.md` scratch output plus checked-in copies at `cmd/dippin/generated-spec.md` and `site/static/llms-full.txt` (~800-1200 lines, no examples)
+**Output:** `docs/generated-spec.md` (~800-1200 lines, no examples)
 
 The script uses `sed`/`awk` to extract sections by heading markers. Each source file has stable heading structure that won't drift.
 
 ### 2. CLI Command (`cmd/dippin/cmd_spec.go`)
 
 ```go
-//go:embed generated-spec.md
+//go:embed ../../docs/generated-spec.md
 var specContent string
 
 func (c *CLI) CmdSpec(args []string) ExitCode {
@@ -50,7 +48,7 @@ func (c *CLI) CmdSpec(args []string) ExitCode {
 
 ### 3. Web Distribution
 
-During generation, `docs/generated-spec.md` is copied to `site/static/llms-full.txt`.
+During site build, `docs/generated-spec.md` is copied to `site/static/llms-full.txt`.
 
 **Netlify headers** (added to `netlify.toml`):
 ```toml
@@ -73,11 +71,12 @@ gen-spec:
 
 # Existing recipes updated:
 build: gen-spec    # ensures embed is fresh before compile
-site-build: build wasm changelog-md
+site-build: build wasm changelog-md gen-spec
+    cp docs/generated-spec.md site/static/llms-full.txt
     cd site && hugo --minify
 ```
 
-The `gen-spec` dependency on `build` ensures the embedded content and tracked web copy are always current. CI and local builds both produce correct binaries.
+The `gen-spec` dependency on `build` ensures the embedded content is always current. CI and local builds both produce correct binaries.
 
 ### 5. Existing llms.txt
 
@@ -88,15 +87,13 @@ The current `llms.txt` (Hugo-generated, link-based) remains as-is. It serves the
 | File | Change |
 |------|--------|
 | `scripts/gen-spec.sh` | New — assembles spec from source docs |
-| `docs/generated-spec.md` | New (generated) — the scratch spec used to refresh the checked-in copies |
-| `cmd/dippin/generated-spec.md` | New (generated, tracked) — embedded source for fresh clones and module tags |
-| `site/static/llms-full.txt` | Generated, tracked — published web copy kept in sync by `gen-spec` |
+| `docs/generated-spec.md` | New (generated) — the assembled spec, gitignored |
 | `cmd/dippin/cmd_spec.go` | New — `dippin spec` command |
 | `cmd/dippin/cmd_spec_test.go` | New — tests for the spec command |
 | `cmd/dippin/cli.go` | Add `"spec"` to dispatch map and help text |
 | `Justfile` | Add `gen-spec` recipe, update `build` and `site-build` dependencies |
 | `netlify.toml` | Add `llms-full.txt` header |
-| `.gitignore` | Ignore only `docs/generated-spec.md` scratch output |
+| `.gitignore` | Add `docs/generated-spec.md` |
 
 ## Testing
 

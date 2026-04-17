@@ -13,7 +13,7 @@ paths.jsonl
 # Temp site files
 site/*.tmp
 
-# Generated spec scratch file
+# Generated spec (build artifact)
 docs/generated-spec.md
 
 # Hugo build output
