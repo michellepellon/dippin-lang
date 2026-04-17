@@ -110,7 +110,7 @@ Agent nodes invoke an LLM. They are the most configurable node kind.
 | `cache_tools` | Boolean | workflow default | Whether to cache tool call results for this agent. Useful for expensive, deterministic tools. |
 | `compaction` | String | workflow default | Context compaction mode for managing long context windows. |
 | `compaction_threshold` | Float | — | Threshold value that triggers compaction (provider-specific semantics). |
-| `reasoning_effort` | String | — | Extended thinking effort level (provider-specific, e.g., `"high"`, `"medium"`, `"low"`). Controls how much reasoning budget the LLM spends. |
+| `reasoning_effort` | String | — | Extended thinking effort level (provider-specific, e.g., `"none"`, `"minimal"`, `"low"`, `"medium"`, `"high"`, `"xhigh"`, `"max"`). Controls how much reasoning budget the LLM spends. |
 | `fidelity` | String | workflow default | Checkpoint fidelity level for this node's state. |
 | `auto_status` | Boolean | false | When true, the engine parses `STATUS: <status>` from the LLM response to set `ctx.outcome`. This enables automatic routing based on the agent's self-assessment. |
 | `goal_gate` | Boolean | false | When true, this node is a "goal gate" — if it fails (outcome != success), the entire pipeline fails even if execution reaches the exit node. Used for critical quality checks. |

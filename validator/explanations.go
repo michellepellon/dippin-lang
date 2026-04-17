@@ -243,7 +243,7 @@ func configExplanations() map[string]Explanation {
 			Code:    DIP119,
 			Summary: "invalid reasoning_effort value",
 			Trigger: "A node specifies a reasoning_effort value outside the allowed set.",
-			Fix:     "Use a valid reasoning_effort: low, medium, or high.",
+			Fix:     "Use a valid reasoning_effort: none, minimal, low, medium, high, xhigh, or max.",
 			Example: "node A { reasoning_effort extreme }  // invalid value",
 		},
 	}

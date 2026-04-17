@@ -1543,7 +1543,7 @@ func TestLint_DIP119_InvalidReasoningEffort(t *testing.T) {
 }
 
 func TestLint_DIP119_ValidReasoningEffort(t *testing.T) {
-	for _, level := range []string{"low", "medium", "high"} {
+	for _, level := range []string{"none", "minimal", "low", "medium", "high", "xhigh", "max"} {
 		w := cleanMinimalWorkflow()
 		w.Nodes[0].Config = ir.AgentConfig{Prompt: "Go.", ReasoningEffort: level}
 		res := Lint(w)

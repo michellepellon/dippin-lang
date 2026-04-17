@@ -49,7 +49,7 @@ func fieldCompletions() []protocol.CompletionItem {
 		{"mode:", "Human node mode (choice|freeform)"},
 		{"command:", "Tool node shell command"},
 		{"goal_gate:", "Fail pipeline if node fails"},
-		{"reasoning_effort:", "Reasoning effort (high|medium|low)"},
+		{"reasoning_effort:", "Reasoning effort (none|minimal|low|medium|high|xhigh|max)"},
 		{"fidelity:", "Fidelity level"},
 	}
 	var items []protocol.CompletionItem

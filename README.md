@@ -309,7 +309,7 @@ Comments are not stripped inside multiline blocks — a `#` inside a prompt or c
 | `provider` | agent | anthropic, openai, gemini |
 | `prompt` | agent | Prompt text (multiline) |
 | `system_prompt` | agent | System prompt (multiline) |
-| `reasoning_effort` | agent | low, medium, high |
+| `reasoning_effort` | agent | none, minimal, low, medium, high, xhigh, max |
 | `fidelity` | agent | summary:low, summary:medium, summary:high, full:high |
 | `goal_gate` | agent | true/false — pipeline fails if this node fails |
 | `auto_status` | agent | true/false — parse STATUS: from response |

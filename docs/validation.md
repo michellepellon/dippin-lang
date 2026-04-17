@@ -595,10 +595,10 @@ A node specifies a `reasoning_effort` value that isn't recognized.
 ```
 warning[DIP119]: node "Analyze" has reasoning_effort "max" which is not a recognized level
   --> pipeline.dip:12:3
-  = help: valid levels: low, medium, high
+  = help: valid levels: none, minimal, low, medium, high, xhigh, max
 ```
 
-**Valid levels**: `low`, `medium`, `high`
+**Valid levels**: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`
 
 **How to fix**: Use one of the three recognized levels.
 
