@@ -27,7 +27,7 @@
     },
 
     "node-declaration": {
-      "match": "^\\s*(agent|tool|human|subgraph)\\s+(\\w+)",
+      "match": "^\\s*(agent|tool|human|subgraph|conditional)\\s+(\\w+)",
       "captures": {
         "1": { "name": "keyword.control.node.dippin" },
         "2": { "name": "entity.name.function.node.dippin" }
@@ -35,7 +35,7 @@
     },
 
     "section-keyword": {
-      "match": "^\\s*(defaults|edges)\\b",
+      "match": "^\\s*(defaults|vars|edges)\\b",
       "captures": {
         "1": { "name": "keyword.control.section.dippin" }
       }

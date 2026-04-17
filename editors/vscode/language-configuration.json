@@ -23,7 +23,7 @@
     "offSide": true
   },
   "indentationRules": {
-    "increaseIndentPattern": "^\\s*(workflow|agent|tool|human|subgraph|defaults|edges)\\b.*$|^\\s*\\w+:\\s*$",
+    "increaseIndentPattern": "^\\s*(workflow|agent|tool|human|subgraph|conditional|defaults|vars|edges)\\b.*$|^\\s*\\w+:\\s*$",
     "decreaseIndentPattern": "^\\s*$"
   },
   "onEnterRules": [
@@ -34,7 +34,7 @@
       }
     },
     {
-      "beforeText": "^\\s*(workflow|agent|tool|human|subgraph|defaults|edges)\\b.*$",
+      "beforeText": "^\\s*(workflow|agent|tool|human|subgraph|conditional|defaults|vars|edges)\\b.*$",
       "action": {
         "indent": "indent"
       }
