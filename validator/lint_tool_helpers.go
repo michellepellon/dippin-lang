@@ -43,9 +43,11 @@ func checkToolCtxVars(n *ir.Node) []Diagnostic {
 	return diags
 }
 
-// extractBinary parses a shell command and returns the first non-builtin
-// command name. Uses a proper shell AST parser to correctly handle
-// variable assignments, pipes, subshells, command substitution, etc.
+// extractBinary parses a shell command and returns the first non-builtin,
+// non-preamble command name. Uses a proper shell AST parser to correctly
+// handle variable assignments, pipes, subshells, command substitution, etc.
+// Shell builtins (set, cd, echo, etc.) and preamble commands (mkdir, touch,
+// etc.) are skipped to find the primary tool binary.
 func extractBinary(command string) string {
 	parser := syntax.NewParser(syntax.KeepComments(false))
 	prog, err := parser.Parse(strings.NewReader(command), "")
