@@ -4,6 +4,8 @@
 set -e
 
 OUTPUT="docs/generated-spec.md"
+EMBED_OUTPUT="cmd/dippin/generated-spec.md"
+WEB_OUTPUT="site/static/llms-full.txt"
 LLM_REF="docs/llm-reference.md"
 SKILL="site/static/skill.md"
 
@@ -54,7 +56,9 @@ sed -n '/^## Grammar/,$ p' "$LLM_REF" >> "$OUTPUT"
   echo "- [GitHub](https://github.com/2389-research/dippin-lang)"
 } >> "$OUTPUT"
 
-# Copy into cmd/dippin/ so go:embed can reach it (go:embed forbids ".." paths)
-cp "$OUTPUT" "cmd/dippin/generated-spec.md"
+# Keep the checked-in release copies in sync with the scratch output.
+for output in "$EMBED_OUTPUT" "$WEB_OUTPUT"; do
+  cp "$OUTPUT" "$output"
+done
 
 echo "gen-spec: wrote $OUTPUT"

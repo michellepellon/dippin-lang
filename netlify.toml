@@ -9,7 +9,6 @@
     cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" site/static/wasm_exec.js && \
     ./scripts/gen-changelog.sh && \
     ./scripts/gen-spec.sh && \
-    cp docs/generated-spec.md site/static/llms-full.txt && \
     cd site && hugo --minify
   """
   publish = "site/public"
@@ -25,7 +24,6 @@
     cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" site/static/wasm_exec.js && \
     ./scripts/gen-changelog.sh && \
     ./scripts/gen-spec.sh && \
-    cp docs/generated-spec.md site/static/llms-full.txt && \
     cd site && hugo --minify --baseURL $URL
   """
 
@@ -36,7 +34,6 @@
     cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" site/static/wasm_exec.js && \
     ./scripts/gen-changelog.sh && \
     ./scripts/gen-spec.sh && \
-    cp docs/generated-spec.md site/static/llms-full.txt && \
     cd site && hugo --minify --baseURL $DEPLOY_PRIME_URL
   """
 

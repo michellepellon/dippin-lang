@@ -4,7 +4,7 @@
 
 **Goal:** Add a `dippin spec` command that dumps a comprehensive language reference to stdout, assembled at build time from existing docs and embedded via `go:embed`.
 
-**Architecture:** A shell script (`scripts/gen-spec.sh`) concatenates sections from `docs/llm-reference.md` and `site/static/skill.md` into `docs/generated-spec.md`. A new Go file embeds that file and exposes it via `dippin spec`. The same file is copied to `site/static/llms-full.txt` during site builds for web access at `dippin.org/llms-full.txt`.
+**Architecture:** A shell script (`scripts/gen-spec.sh`) concatenates sections from `docs/llm-reference.md` and `site/static/skill.md` into `docs/generated-spec.md`. The script then refreshes the checked-in copies at `cmd/dippin/generated-spec.md` and `site/static/llms-full.txt` so fresh clones and module tags stay buildable. The CLI embeds `cmd/dippin/generated-spec.md` and exposes it via `dippin spec`.
 
 **Tech Stack:** Go (`go:embed`), shell (`sh`), Hugo site, Netlify
 
@@ -15,13 +15,14 @@
 | File | Action | Responsibility |
 |------|--------|----------------|
 | `scripts/gen-spec.sh` | Create | Assembles `docs/generated-spec.md` from source docs |
-| `docs/generated-spec.md` | Generated | The assembled spec (gitignored) |
+| `docs/generated-spec.md` | Generated | Scratch output used to refresh checked-in copies |
+| `cmd/dippin/generated-spec.md` | Generated, tracked | Embedded source for `dippin spec` |
 | `cmd/dippin/cmd_spec.go` | Create | `dippin spec` command — embeds and prints the spec |
 | `cmd/dippin/cmd_spec_test.go` | Create | Tests for the spec command |
 | `cmd/dippin/cli.go` | Modify | Add `"spec"` to dispatch map and help text |
 | `Justfile` | Modify | Add `gen-spec` recipe, update `build` and `site-build` deps |
 | `netlify.toml` | Modify | Add `llms-full.txt` header, add gen-spec to build commands |
-| `.gitignore` | Modify | Add `docs/generated-spec.md` |
+| `.gitignore` | Modify | Ignore only `docs/generated-spec.md` scratch output |
 
 ---
 
@@ -142,7 +143,7 @@ for embedding into the dippin binary."
 **Files:**
 - Modify: `.gitignore`
 
-The generated spec is a build artifact and should not be tracked.
+The scratch output stays ignored, but the embedded CLI copy must be tracked so fresh clones and module tags can build without a generation step.
 
 - [ ] **Step 1: Add the gitignore entry**
 
@@ -175,7 +176,7 @@ git commit -m "chore: gitignore generated spec file"
 
 The command embeds the generated spec via `go:embed` and prints it to stdout. It follows the same pattern as other simple commands (like `CmdExplain`).
 
-Important: `go:embed` paths are relative to the Go source file. `cmd/dippin/cmd_spec.go` is two directories deep from the repo root, so the embed path is `../../docs/generated-spec.md`.
+Important: `go:embed` paths are relative to the Go source file. The generated spec now lives alongside `cmd_spec.go`, so the embed path is `generated-spec.md`.
 
 - [ ] **Step 1: Ensure the generated spec exists**
 
@@ -196,7 +197,7 @@ import (
 	"fmt"
 )
 
-//go:embed ../../docs/generated-spec.md
+//go:embed generated-spec.md
 var specContent string
 
 // CmdSpec prints the full dippin language specification to stdout.
@@ -346,7 +347,7 @@ and no leaked frontmatter."
 **Files:**
 - Modify: `Justfile`
 
-The `gen-spec` recipe runs the generator script. The `build` recipe depends on it so the embedded file is always fresh before compilation. The `site-build` recipe copies the generated spec to `site/static/llms-full.txt`.
+The `gen-spec` recipe runs the generator script. The `build` recipe depends on it so the embedded file and tracked web copy are always fresh before compilation.
 
 - [ ] **Step 1: Add `gen-spec` recipe**
 
@@ -387,11 +388,10 @@ to:
 
 ```just
 site-build: build wasm changelog-md
-    cp docs/generated-spec.md site/static/llms-full.txt
     cd site && hugo --minify
 ```
 
-(`build` already depends on `gen-spec`, so no need to list `gen-spec` again here.)
+(`build` already depends on `gen-spec`, which refreshes `site/static/llms-full.txt`, so no extra copy step is needed.)
 
 - [ ] **Step 4: Verify the recipes work**
 
@@ -414,7 +414,7 @@ git add Justfile
 git commit -m "build: add gen-spec recipe, wire into build and site-build
 
 gen-spec assembles the language spec before compilation so go:embed
-picks up the latest content. site-build copies it to llms-full.txt."
+picks up the latest content and refreshes llms-full.txt."
 ```
 
 ---
@@ -439,7 +439,7 @@ Add this block after the existing `/skill.md` header block in `netlify.toml`:
 
 - [ ] **Step 2: Add gen-spec to Netlify build commands**
 
-In the `[build]` command, add `./scripts/gen-spec.sh &&` before the `cd site` step and add a `cp` step. Update the command to:
+In the `[build]` command, add `./scripts/gen-spec.sh &&` before the `cd site` step. Update the command to:
 
 ```toml
 [build]
@@ -450,13 +450,12 @@ In the `[build]` command, add `./scripts/gen-spec.sh &&` before the `cd site` st
     cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" site/static/wasm_exec.js && \
     ./scripts/gen-changelog.sh && \
     ./scripts/gen-spec.sh && \
-    cp docs/generated-spec.md site/static/llms-full.txt && \
     cd site && hugo --minify
   """
   publish = "site/public"
 ```
 
-Apply the same change to `[context.production]` and `[context.deploy-preview]` command blocks — add `./scripts/gen-spec.sh && \` and `cp docs/generated-spec.md site/static/llms-full.txt && \` before the `cd site` lines.
+Apply the same change to `[context.production]` and `[context.deploy-preview]` command blocks — add `./scripts/gen-spec.sh && \` before the `cd site` lines.
 
 For `[context.production]`:
 
@@ -468,7 +467,6 @@ For `[context.production]`:
     cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" site/static/wasm_exec.js && \
     ./scripts/gen-changelog.sh && \
     ./scripts/gen-spec.sh && \
-    cp docs/generated-spec.md site/static/llms-full.txt && \
     cd site && hugo --minify --baseURL $URL
   """
 ```
@@ -483,7 +481,6 @@ For `[context.deploy-preview]`:
     cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" site/static/wasm_exec.js && \
     ./scripts/gen-changelog.sh && \
     ./scripts/gen-spec.sh && \
-    cp docs/generated-spec.md site/static/llms-full.txt && \
     cd site && hugo --minify --baseURL $DEPLOY_PRIME_URL
   """
 ```
@@ -494,7 +491,7 @@ For `[context.deploy-preview]`:
 git add netlify.toml
 git commit -m "build: add llms-full.txt to Netlify build and headers
 
-Generates spec and copies to site/static during Netlify builds.
+Generates spec before Hugo runs and refreshes the tracked llms-full.txt copy.
 Serves llms-full.txt with text/plain content type."
 ```
 
