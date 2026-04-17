@@ -32,13 +32,12 @@ func run(t *testing.T, dir string, name string, args ...string) {
 	}
 }
 
-func TestGeneratedSpecSourceIsPresent(t *testing.T) {
-	root := repoRoot(t)
-	specPath := filepath.Join(root, "cmd", "dippin", "generated-spec.md")
+func copyRepo(t *testing.T, root string) string {
+	t.Helper()
 
-	if _, err := os.Stat(specPath); err != nil {
-		t.Fatalf("expected checked-in generated spec at %s: %v", specPath, err)
-	}
+	copyRoot := t.TempDir()
+	run(t, root, "rsync", "-a", "--exclude", ".git", root+"/", copyRoot+"/")
+	return copyRoot
 }
 
 func TestGeneratedSpecSourceIsTrackedInGitCheckout(t *testing.T) {
@@ -53,10 +52,8 @@ func TestGeneratedSpecSourceIsTrackedInGitCheckout(t *testing.T) {
 
 func TestGeneratedSpecIsCurrentWithGenerator(t *testing.T) {
 	root := repoRoot(t)
-	copyRoot := t.TempDir()
+	copyRoot := copyRepo(t, root)
 	specPath := filepath.Join(copyRoot, "cmd", "dippin", "generated-spec.md")
-
-	run(t, root, "rsync", "-a", "--exclude", ".git", root+"/", copyRoot+"/")
 
 	before, err := os.ReadFile(specPath)
 	if err != nil {
@@ -77,8 +74,6 @@ func TestGeneratedSpecIsCurrentWithGenerator(t *testing.T) {
 
 func TestCLIBuildsFromCopiedSourceTree(t *testing.T) {
 	root := repoRoot(t)
-	copyRoot := t.TempDir()
-
-	run(t, root, "rsync", "-a", "--exclude", ".git", root+"/", copyRoot+"/")
+	copyRoot := copyRepo(t, root)
 	run(t, copyRoot, "go", "build", "./cmd/dippin")
 }
