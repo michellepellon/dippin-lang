@@ -56,6 +56,9 @@ jobs:
       - name: Run tests with race detector and coverage
         run: go test ./... -short -count=1 -race -coverprofile=coverage.out
 
+      - name: Run release checks (no -short)
+        run: go test ./releasecheck/ -count=1 -race -v
+
       - name: Coverage check
         run: |
           total=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | tr -d '%')
