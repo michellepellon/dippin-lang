@@ -12,7 +12,7 @@ import (
 // This is a best-effort catalog — unknown combinations produce a warning,
 // not an error, since new models may be added at any time.
 //
-// Last verified: 2026-03-25
+// Last verified: 2026-04-17
 //
 // Sources:
 //
@@ -25,6 +25,7 @@ import (
 //	Cohere:     https://cohere.com/pricing
 var knownModelProviders = map[string]map[string]bool{
 	"anthropic": {
+		"claude-opus-4-7":   true,
 		"claude-opus-4-6":   true,
 		"claude-sonnet-4-6": true,
 		"claude-haiku-4-5":  true,
@@ -34,7 +35,7 @@ var knownModelProviders = map[string]map[string]bool{
 		"claude-opus-4-1":   true,
 		"claude-sonnet-4-0": true,
 		"claude-opus-4-0":   true,
-		// Deprecated — retires 2026-04-19.
+		// Deprecated — retired 2026-02-19.
 		"claude-haiku-3-5": true,
 	},
 	"google": geminiModels(),
@@ -63,20 +64,22 @@ var knownModelProviders = map[string]map[string]bool{
 	"xai":  grokModels(),
 	"grok": grokModels(),
 	"mistral": {
-		"mistral-large-3":   true,
-		"mistral-medium-3":  true,
-		"mistral-small-3.2": true,
-		"mistral-small":     true,
-		"ministral-8b":      true,
-		"codestral":         true,
-		"magistral-medium":  true,
-		"mistral-nemo":      true,
-		"pixtral-large":     true,
+		"mistral-large-3":    true,
+		"mistral-medium-3":   true,
+		"mistral-small-2603": true, // Mistral Small 4 (March 2026)
+		"mistral-small-3.2":  true,
+		"mistral-small":      true,
+		"ministral-8b":       true,
+		"codestral":          true,
+		"magistral-medium":   true,
+		"mistral-nemo":       true,
+		"pixtral-large":      true,
 	},
 	"cohere": {
-		"command-r-plus": true,
-		"command-r":      true,
-		"command-r7b":    true,
+		"command-a-03-2025": true, // Current flagship
+		"command-r-plus":    true,
+		"command-r":         true,
+		"command-r7b":       true,
 	},
 }
 

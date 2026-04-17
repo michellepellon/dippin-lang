@@ -18,6 +18,7 @@ func DefaultPricing() PricingTable {
 	grok := grokPricing()
 	return PricingTable{
 		"anthropic": {
+			"claude-opus-4-7":   {InputPer1M: 5.00, OutputPer1M: 25.00},
 			"claude-opus-4-6":   {InputPer1M: 5.00, OutputPer1M: 25.00},
 			"claude-sonnet-4-6": {InputPer1M: 3.00, OutputPer1M: 15.00},
 			"claude-haiku-4-5":  {InputPer1M: 1.00, OutputPer1M: 5.00},
@@ -26,7 +27,7 @@ func DefaultPricing() PricingTable {
 			"claude-opus-4-1":   {InputPer1M: 15.00, OutputPer1M: 75.00},
 			"claude-sonnet-4-0": {InputPer1M: 3.00, OutputPer1M: 15.00},
 			"claude-opus-4-0":   {InputPer1M: 15.00, OutputPer1M: 75.00},
-			// Deprecated — retires 2026-04-19.
+			// Deprecated — retired 2026-02-19.
 			"claude-haiku-3-5": {InputPer1M: 0.25, OutputPer1M: 1.25},
 		},
 		"openai": {
@@ -55,20 +56,22 @@ func DefaultPricing() PricingTable {
 		"xai":  grok,
 		"grok": grok,
 		"mistral": {
-			"mistral-large-3":   {InputPer1M: 0.50, OutputPer1M: 1.50},
-			"mistral-medium-3":  {InputPer1M: 0.40, OutputPer1M: 2.00},
-			"mistral-small-3.2": {InputPer1M: 0.075, OutputPer1M: 0.20},
-			"mistral-small":     {InputPer1M: 0.10, OutputPer1M: 0.30},
-			"ministral-8b":      {InputPer1M: 0.10, OutputPer1M: 0.10},
-			"codestral":         {InputPer1M: 0.30, OutputPer1M: 0.90},
-			"magistral-medium":  {InputPer1M: 2.00, OutputPer1M: 5.00},
-			"mistral-nemo":      {InputPer1M: 0.02, OutputPer1M: 0.04},
-			"pixtral-large":     {InputPer1M: 2.00, OutputPer1M: 6.00},
+			"mistral-large-3":    {InputPer1M: 0.50, OutputPer1M: 1.50},
+			"mistral-medium-3":   {InputPer1M: 0.40, OutputPer1M: 2.00},
+			"mistral-small-2603": {InputPer1M: 0.10, OutputPer1M: 0.30},
+			"mistral-small-3.2":  {InputPer1M: 0.075, OutputPer1M: 0.20},
+			"mistral-small":      {InputPer1M: 0.10, OutputPer1M: 0.30},
+			"ministral-8b":       {InputPer1M: 0.10, OutputPer1M: 0.10},
+			"codestral":          {InputPer1M: 0.30, OutputPer1M: 0.90},
+			"magistral-medium":   {InputPer1M: 2.00, OutputPer1M: 5.00},
+			"mistral-nemo":       {InputPer1M: 0.02, OutputPer1M: 0.04},
+			"pixtral-large":      {InputPer1M: 2.00, OutputPer1M: 6.00},
 		},
 		"cohere": {
-			"command-r-plus": {InputPer1M: 2.50, OutputPer1M: 10.00},
-			"command-r":      {InputPer1M: 0.50, OutputPer1M: 1.50},
-			"command-r7b":    {InputPer1M: 0.0375, OutputPer1M: 0.15},
+			"command-a-03-2025": {InputPer1M: 2.50, OutputPer1M: 10.00},
+			"command-r-plus":    {InputPer1M: 2.50, OutputPer1M: 10.00},
+			"command-r":         {InputPer1M: 0.50, OutputPer1M: 1.50},
+			"command-r7b":       {InputPer1M: 0.0375, OutputPer1M: 0.15},
 		},
 	}
 }
