@@ -83,8 +83,23 @@ complexity:
     fi
     @echo "Complexity OK."
 
+# Verify generated-spec.md is current with source docs
+spec-check:
+    @cp cmd/dippin/generated-spec.md /tmp/spec-check-before.md
+    @./scripts/gen-spec.sh
+    @if ! diff -q cmd/dippin/generated-spec.md /tmp/spec-check-before.md >/dev/null 2>&1; then \
+        echo "ERROR: cmd/dippin/generated-spec.md is stale — run ./scripts/gen-spec.sh and commit"; \
+        exit 1; \
+    fi
+    @rm -f /tmp/spec-check-before.md
+    @echo "Spec is current."
+
+# Run release invariant checks (git tracking, freshness, tarball build)
+releasecheck:
+    go test ./releasecheck/ -count=1 -race
+
 # Run the full pre-commit check suite (mirrors CI exactly)
-check: build vet fmt-check lint-go test-race complexity validate-examples
+check: spec-check build vet fmt-check lint-go test-race releasecheck complexity validate-examples
     @echo "All checks passed."
 
 # Generate test coverage report (excludes untestable files: main.go, cmd_lsp.go)
