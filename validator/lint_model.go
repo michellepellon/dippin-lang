@@ -248,8 +248,8 @@ func knownModelList(provider string) string {
 }
 
 // validReasoningEfforts is the set of reasoning effort levels recognized by LLM providers.
-// Levels: none (disabled), minimal, low, medium, high, xhigh (extra-high).
-// Not all providers support all levels — e.g., Anthropic Opus 4.7+ supports xhigh,
+// Levels: none (disabled), minimal, low, medium, high, xhigh (extra-high), max.
+// Not all providers support all levels — e.g., Anthropic Opus 4.7+ supports xhigh/max,
 // OpenAI GPT-5.4 supports none/minimal/low/medium/high/xhigh, older o3 only low/medium/high.
 var validReasoningEfforts = map[string]bool{
 	"none":    true,
@@ -258,6 +258,7 @@ var validReasoningEfforts = map[string]bool{
 	"medium":  true,
 	"high":    true,
 	"xhigh":   true,
+	"max":     true,
 }
 
 // lintReasoningEffort checks DIP119: reasoning_effort must be a recognized level.
@@ -274,7 +275,7 @@ func lintReasoningEffort(w *ir.Workflow) []Diagnostic {
 				Severity: SeverityWarning,
 				Message:  fmt.Sprintf("node %q has reasoning_effort %q which is not a recognized level", n.ID, r),
 				Location: n.Source,
-				Help:     "valid levels: none, minimal, low, medium, high, xhigh",
+				Help:     "valid levels: none, minimal, low, medium, high, xhigh, max",
 			})
 		}
 	}
