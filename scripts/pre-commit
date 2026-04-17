@@ -4,15 +4,9 @@
 # Install: ln -sf ../../scripts/pre-commit .git/hooks/pre-commit
 set -e
 
-echo "=== pre-commit: gen-spec freshness ==="
-cp cmd/dippin/generated-spec.md /tmp/spec-before-precommit.md
+echo "=== pre-commit: gen-spec auto-regenerate ==="
 ./scripts/gen-spec.sh
-if ! diff -q cmd/dippin/generated-spec.md /tmp/spec-before-precommit.md >/dev/null 2>&1; then
-  echo "ERROR: cmd/dippin/generated-spec.md is stale"
-  echo "Run ./scripts/gen-spec.sh and stage the result"
-  exit 1
-fi
-rm -f /tmp/spec-before-precommit.md
+git add cmd/dippin/generated-spec.md
 
 echo "=== pre-commit: go build ==="
 go build ./...

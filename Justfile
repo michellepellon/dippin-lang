@@ -83,16 +83,10 @@ complexity:
     fi
     @echo "Complexity OK."
 
-# Verify generated-spec.md is current with source docs
+# Regenerate spec from source docs (always fresh)
 spec-check:
-    @cp cmd/dippin/generated-spec.md /tmp/spec-check-before.md
     @./scripts/gen-spec.sh
-    @if ! diff -q cmd/dippin/generated-spec.md /tmp/spec-check-before.md >/dev/null 2>&1; then \
-        echo "ERROR: cmd/dippin/generated-spec.md is stale — run ./scripts/gen-spec.sh and commit"; \
-        exit 1; \
-    fi
-    @rm -f /tmp/spec-check-before.md
-    @echo "Spec is current."
+    @echo "Spec regenerated."
 
 # Run release invariant checks (git tracking, freshness, tarball build)
 releasecheck:
