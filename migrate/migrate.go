@@ -361,7 +361,20 @@ func buildHumanConfig(attrs map[string]string) ir.HumanConfig {
 	if v, ok := attrs["default"]; ok {
 		cfg.Default = v
 	}
+	applyHumanTimeout(&cfg, attrs)
 	return cfg
+}
+
+// applyHumanTimeout parses and sets timeout fields on HumanConfig.
+func applyHumanTimeout(cfg *ir.HumanConfig, attrs map[string]string) {
+	if v, ok := attrs["timeout"]; ok {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.Timeout = d
+		}
+	}
+	if v, ok := attrs["timeout_action"]; ok {
+		cfg.TimeoutAction = v
+	}
 }
 
 func buildToolConfig(attrs map[string]string) (ir.ToolConfig, error) {

@@ -106,11 +106,13 @@ func (AgentConfig) nodeConfig() {}
 
 // HumanConfig holds configuration for human gate nodes.
 type HumanConfig struct {
-	Mode         string // "choice" | "freeform" | "interview"
-	Default      string // Default choice
-	Prompt       string // Instructions shown to the human
-	QuestionsKey string // Context key to read questions from (interview mode)
-	AnswersKey   string // Context key to write answers to (interview mode)
+	Mode          string        // "choice" | "freeform" | "interview"
+	Default       string        // Default choice
+	Prompt        string        // Instructions shown to the human
+	QuestionsKey  string        // Context key to read questions from (interview mode)
+	AnswersKey    string        // Context key to write answers to (interview mode)
+	Timeout       time.Duration // Per-gate timeout; 0 = no timeout
+	TimeoutAction string        // "fail" | "default" | "" (pick default-if-set else fail)
 }
 
 func (HumanConfig) nodeConfig() {}

@@ -267,6 +267,12 @@ func applyHumanAttrs(attrs map[string]string, cfg ir.HumanConfig) {
 	if cfg.Default != "" {
 		attrs["default"] = cfg.Default
 	}
+	if cfg.Timeout != 0 {
+		attrs["timeout"] = formatDuration(cfg.Timeout)
+	}
+	if cfg.TimeoutAction != "" {
+		attrs["timeout_action"] = cfg.TimeoutAction
+	}
 }
 
 // applySubgraphAttrs adds subgraph-specific attributes.

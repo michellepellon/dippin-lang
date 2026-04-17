@@ -442,6 +442,17 @@ func writeHumanModeFields(wr *writer, cfg ir.HumanConfig) {
 	if cfg.AnswersKey != "" {
 		wr.line("answers_key: %s", quoteValue(cfg.AnswersKey))
 	}
+	writeHumanTimeoutFields(wr, cfg)
+}
+
+// writeHumanTimeoutFields writes timeout and timeout_action fields for human nodes.
+func writeHumanTimeoutFields(wr *writer, cfg ir.HumanConfig) {
+	if cfg.Timeout != 0 {
+		wr.line("timeout: %s", formatDuration(cfg.Timeout))
+	}
+	if cfg.TimeoutAction != "" {
+		wr.line("timeout_action: %s", quoteValue(cfg.TimeoutAction))
+	}
 }
 
 func writeToolFields(wr *writer, n *ir.Node, cfg ir.ToolConfig) {

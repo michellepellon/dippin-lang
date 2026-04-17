@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/2389-research/dippin-lang/formatter"
 	"github.com/2389-research/dippin-lang/ir"
@@ -1550,5 +1551,20 @@ func TestParseVarsRoundTrip(t *testing.T) {
 	}
 	if w2.Vars["target_name"] != "my-crate" {
 		t.Errorf("target_name lost in round-trip: %q", w2.Vars["target_name"])
+	}
+}
+
+func TestParseHumanTimeout(t *testing.T) {
+	w := parseFixture(t, "human_timeout.dip")
+	gate := findNode(t, w, "Gate")
+	cfg, ok := gate.Config.(ir.HumanConfig)
+	if !ok {
+		t.Fatal("Gate is not HumanConfig")
+	}
+	if cfg.Timeout != 5*time.Minute {
+		t.Errorf("Timeout = %v, want 5m0s", cfg.Timeout)
+	}
+	if cfg.TimeoutAction != "default" {
+		t.Errorf("TimeoutAction = %q, want default", cfg.TimeoutAction)
 	}
 }
