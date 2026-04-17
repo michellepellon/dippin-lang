@@ -180,6 +180,20 @@ func writeDefaultsCompactionFields(wr *writer, d ir.WorkflowDefaults) {
 	if d.OnResume != "" {
 		wr.line("on_resume: %s", quoteValue(d.OnResume))
 	}
+	writeDefaultsBudgetFields(wr, d)
+}
+
+// writeDefaultsBudgetFields writes max_total_tokens, max_cost_cents, and max_wall_time.
+func writeDefaultsBudgetFields(wr *writer, d ir.WorkflowDefaults) {
+	if d.MaxTotalTokens != 0 {
+		wr.line("max_total_tokens: %d", d.MaxTotalTokens)
+	}
+	if d.MaxCostCents != 0 {
+		wr.line("max_cost_cents: %d", d.MaxCostCents)
+	}
+	if d.MaxWallTime != 0 {
+		wr.line("max_wall_time: %s", formatDuration(d.MaxWallTime))
+	}
 }
 
 func writeVars(wr *writer, vars map[string]string) {

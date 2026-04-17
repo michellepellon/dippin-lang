@@ -159,6 +159,9 @@ func isDippinIdentifier(s string) bool {
 // applyIntDefault handles integer-valued graph defaults.
 // Returns true if the key was recognized and applied.
 func applyIntDefault(k, v string, w *ir.Workflow) bool {
+	if applyIntBudgetDefault(k, v, w) {
+		return true
+	}
 	n, err := strconv.Atoi(v)
 	if err != nil {
 		return false
@@ -171,6 +174,40 @@ func applyIntDefault(k, v string, w *ir.Workflow) bool {
 	default:
 		return false
 	}
+	return true
+}
+
+// applyIntBudgetDefault handles budget-related integer and duration defaults.
+func applyIntBudgetDefault(k, v string, w *ir.Workflow) bool {
+	switch k {
+	case "max_total_tokens":
+		return tryApplyIntDefault(v, &w.Defaults.MaxTotalTokens)
+	case "max_cost_cents":
+		return tryApplyIntDefault(v, &w.Defaults.MaxCostCents)
+	case "max_wall_time":
+		return tryApplyDurationDefault(v, &w.Defaults.MaxWallTime)
+	default:
+		return false
+	}
+}
+
+// tryApplyIntDefault parses an integer and sets it on target. Returns true on success.
+func tryApplyIntDefault(v string, target *int) bool {
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return false
+	}
+	*target = n
+	return true
+}
+
+// tryApplyDurationDefault parses a duration and sets it on target. Returns true on success.
+func tryApplyDurationDefault(v string, target *time.Duration) bool {
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		return false
+	}
+	*target = d
 	return true
 }
 

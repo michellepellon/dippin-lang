@@ -1554,6 +1554,20 @@ func TestParseVarsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestParseDefaultsBudget(t *testing.T) {
+	w := parseFixture(t, "defaults_budget.dip")
+	d := w.Defaults
+	if d.MaxTotalTokens != 500000 {
+		t.Errorf("max_total_tokens = %d, want 500000", d.MaxTotalTokens)
+	}
+	if d.MaxCostCents != 1000 {
+		t.Errorf("max_cost_cents = %d, want 1000", d.MaxCostCents)
+	}
+	if d.MaxWallTime != 30*time.Minute {
+		t.Errorf("max_wall_time = %v, want 30m0s", d.MaxWallTime)
+	}
+}
+
 func TestParseHumanTimeout(t *testing.T) {
 	w := parseFixture(t, "human_timeout.dip")
 	gate := findNode(t, w, "Gate")
