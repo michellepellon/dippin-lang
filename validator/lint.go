@@ -62,6 +62,8 @@ func Lint(w *ir.Workflow) Result {
 // knownNamespaces lists the valid namespace prefixes for variable references.
 // Per §8.2 of the Dippin spec: ctx. (runtime context), graph. (workflow-level
 // attributes), params. (module parameters for composition).
+// node.* is intentionally excluded: it requires structural validation
+// (node ID must exist, ref must have exactly 3 parts) handled in isVarRefValid.
 // Used by lint_context.go (DIP106) and lint_conditions.go (DIP120).
 var knownNamespaces = map[string]bool{
 	"ctx":    true,
