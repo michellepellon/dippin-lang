@@ -635,6 +635,52 @@ func TestLint(t *testing.T) {
 			},
 			wantCodes: []string{DIP106},
 		},
+		{
+			name: "DIP106: bare node.<unknownNode>.* triggers DIP106",
+			workflow: &ir.Workflow{
+				Name:  "bare_node_ref_invalid",
+				Start: "A",
+				Exit:  "A",
+				Nodes: []*ir.Node{
+					{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+						Prompt: "Use ${node.Ghost.result}",
+					}},
+				},
+			},
+			wantCodes: []string{DIP106},
+		},
+		{
+			name: "DIP106: bare node.<existingNode>.* is valid — no DIP106",
+			workflow: &ir.Workflow{
+				Name:  "bare_node_ref_valid",
+				Start: "Planner",
+				Exit:  "Builder",
+				Nodes: []*ir.Node{
+					{ID: "Planner", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "plan"}},
+					{ID: "Builder", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+						Prompt: "Build based on ${node.Planner.last_response}",
+					}},
+				},
+				Edges: []*ir.Edge{{From: "Planner", To: "Builder"}},
+			},
+			wantNoDiag: true,
+		},
+		{
+			name: "DIP106: malformed node.<id> missing key triggers DIP106",
+			workflow: &ir.Workflow{
+				Name:  "malformed_node_ref",
+				Start: "Planner",
+				Exit:  "Builder",
+				Nodes: []*ir.Node{
+					{ID: "Planner", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "plan"}},
+					{ID: "Builder", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+						Prompt: "Build based on ${node.Planner}",
+					}},
+				},
+				Edges: []*ir.Edge{{From: "Planner", To: "Builder"}},
+			},
+			wantCodes: []string{DIP106},
+		},
 
 		// --- DIP107: Unused writes ---
 		{
@@ -908,6 +954,22 @@ func TestLint(t *testing.T) {
 				},
 			},
 			wantNoDiag: true,
+		},
+		{
+			name: "DIP112: node.<existingNode>.* not upstream triggers DIP112",
+			workflow: &ir.Workflow{
+				Name:  "node_scoped_read_not_upstream",
+				Start: "A",
+				Exit:  "B",
+				Nodes: []*ir.Node{
+					{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "a"}},
+					{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "b"},
+						// B reads from A but A is not upstream of B (no edge A→B)
+						IO: ir.NodeIO{Reads: []string{"node.A.result"}}},
+				},
+				// No edge from A to B — A is not upstream of B
+			},
+			wantCodes: []string{DIP112},
 		},
 
 		// --- Edge cases ---

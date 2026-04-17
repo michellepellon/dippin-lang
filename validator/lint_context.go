@@ -38,35 +38,47 @@ func checkNodeVarRefs(n *ir.Node, w *ir.Workflow) []Diagnostic {
 				Severity: SeverityWarning,
 				Message:  fmt.Sprintf("node %q references undefined variable ${%s}", n.ID, varRef),
 				Location: n.Source,
-				Help:     fmt.Sprintf("use a namespaced variable like ${ctx.%s}, ${graph.%s}, or ${params.%s}", varRef, varRef, varRef),
+				Help:     varRefHelp(varRef),
 			})
 		}
 	}
 	return diags
 }
 
+// varRefHelp returns an appropriate help message for an invalid variable reference.
+// Node-scoped refs get a specific message; everything else gets the generic namespace hint.
+func varRefHelp(varRef string) string {
+	bare := strings.TrimPrefix(varRef, "ctx.")
+	if strings.HasPrefix(bare, "node.") {
+		parts := strings.SplitN(bare, ".", 3) // ["node", "<id>", ...]
+		if len(parts) >= 2 && parts[1] != "" {
+			return fmt.Sprintf("node %q does not exist in the workflow", parts[1])
+		}
+		return "node-scoped refs must be in the form node.<id>.<key>"
+	}
+	return fmt.Sprintf("use a namespaced variable like ${ctx.%s}, ${graph.%s}, or ${params.%s}", varRef, varRef, varRef)
+}
+
 // isVarRefValid returns true if the variable reference is valid: either a known
-// namespace prefix (with ctx.node.* requiring a real node ID) or a bare
-// node-scoped reference (node.<existingNode>.*).
+// namespace prefix or a node-scoped reference (node.<existingNode>.<key> or
+// ctx.node.<existingNode>.<key>) with a real node ID and exactly 3 parts.
 func isVarRefValid(varRef string, w *ir.Workflow) bool {
-	// ctx.node.* is special: node ID must resolve in the workflow.
-	if strings.HasPrefix(varRef, "ctx.node.") {
-		return isNodeScopedKey(varRef, w)
+	bare := strings.TrimPrefix(varRef, "ctx.")
+	if strings.HasPrefix(bare, "node.") {
+		return isNodeScopedKey(bare, w)
 	}
 	parts := strings.SplitN(varRef, ".", 2)
 	return len(parts) >= 2 && knownNamespaces[parts[0]]
 }
 
-// isNodeScopedKey returns true if the key matches node.<nodeID>.* where nodeID
-// is a real node in the workflow. Tracker auto-aliases every context key a node
-// writes as node.<nodeID>.<key>, so these references are always valid.
-// The key may be prefixed with "ctx." (e.g. "ctx.node.Planner.last_response").
+// isNodeScopedKey returns true if the key matches node.<nodeID>.<key> where nodeID
+// is a real node in the workflow. The key must have exactly 3 dot-separated parts.
+// Callers must strip any "ctx." prefix before calling this function.
 func isNodeScopedKey(key string, w *ir.Workflow) bool {
-	k := strings.TrimPrefix(key, "ctx.")
-	if !strings.HasPrefix(k, "node.") {
+	if !strings.HasPrefix(key, "node.") {
 		return false
 	}
-	parts := strings.SplitN(k, ".", 3) // ["node", "<nodeID>", "<key>"]
+	parts := strings.SplitN(key, ".", 3) // ["node", "<nodeID>", "<key>"]
 	if len(parts) < 3 {
 		return false
 	}
@@ -117,25 +129,27 @@ func lintReadsWithoutUpstreamWrites(w *ir.Workflow) []Diagnostic {
 	}
 
 	adj := buildForwardAdjacency(w)
-	available := computeAvailableWrites(w, adj)
-	return checkUnprovidedReads(w, available)
+	available, upstream := computeAvailableAndUpstream(w, adj)
+	return checkUnprovidedReads(w, available, upstream)
 }
 
-// computeAvailableWrites performs topological traversal and computes
-// which context keys are available at each node based on upstream writes.
-func computeAvailableWrites(w *ir.Workflow, adj map[string][]string) map[string]map[string]bool {
+// computeAvailableAndUpstream performs a topological traversal and computes:
+//   - available: context keys written by upstream nodes (available at each node)
+//   - upstream: set of node IDs that are strictly upstream of each node
+func computeAvailableAndUpstream(w *ir.Workflow, adj map[string][]string) (map[string]map[string]bool, map[string]map[string]bool) {
 	inDegree := computeInDegrees(w, adj)
 	queue := findRootNodes(w, inDegree)
 	available := initializeAvailable(w)
+	upstream := initializeAvailable(w)
 
 	for len(queue) > 0 {
 		curr := queue[0]
 		queue = queue[1:]
 		addNodeWrites(w, available, curr)
-		queue = propagateAndEnqueue(adj, available, inDegree, curr, queue)
+		queue = propagateAndEnqueue(adj, available, upstream, inDegree, curr, queue)
 	}
 
-	return available
+	return available, upstream
 }
 
 // addNodeWrites adds a node's write keys to its available set.
@@ -147,10 +161,16 @@ func addNodeWrites(w *ir.Workflow, available map[string]map[string]bool, nodeID 
 	}
 }
 
-// propagateAndEnqueue propagates available keys to successors and enqueues those with zero in-degree.
-func propagateAndEnqueue(adj map[string][]string, available map[string]map[string]bool, inDegree map[string]int, curr string, queue []string) []string {
+// propagateAndEnqueue propagates available keys and upstream node IDs to successors,
+// then enqueues successors whose in-degree reaches zero.
+func propagateAndEnqueue(adj map[string][]string, available, upstream map[string]map[string]bool, inDegree map[string]int, curr string, queue []string) []string {
 	for _, next := range adj[curr] {
+		if upstream[next] == nil {
+			upstream[next] = make(map[string]bool)
+		}
 		propagateKeys(available, curr, next)
+		propagateKeys(upstream, curr, next)
+		upstream[next][curr] = true
 		inDegree[next]--
 		if inDegree[next] == 0 {
 			queue = append(queue, next)
@@ -222,25 +242,55 @@ func propagateKeys(available map[string]map[string]bool, from, to string) {
 }
 
 // checkUnprovidedReads generates diagnostics for reads that have no upstream write.
-func checkUnprovidedReads(w *ir.Workflow, available map[string]map[string]bool) []Diagnostic {
+func checkUnprovidedReads(w *ir.Workflow, available, upstream map[string]map[string]bool) []Diagnostic {
 	var diags []Diagnostic
-
 	for _, n := range w.Nodes {
 		for _, key := range n.IO.Reads {
-			if available[n.ID][key] || isNodeScopedKey(key, w) {
-				continue
-			}
-			diags = append(diags, Diagnostic{
-				Code:     DIP112,
-				Severity: SeverityWarning,
-				Message:  fmt.Sprintf("node %q reads context key %q but no upstream node declares it in writes", n.ID, key),
-				Location: n.Source,
-				Help:     fmt.Sprintf("add writes: %s to an upstream node, or the key may be auto-injected at runtime", key),
-			})
+			diags = append(diags, checkReadKey(n, key, w, available[n.ID], upstream[n.ID])...)
 		}
 	}
-
 	return diags
+}
+
+// checkReadKey validates a single read key for a node, emitting DIP112 if needed.
+func checkReadKey(n *ir.Node, key string, w *ir.Workflow, avail, upstream map[string]bool) []Diagnostic {
+	if avail[key] {
+		return nil
+	}
+	if msg := nodeReadDIP112(n.ID, key, w, upstream); msg != "" {
+		return []Diagnostic{{
+			Code:     DIP112,
+			Severity: SeverityWarning,
+			Message:  msg,
+			Location: n.Source,
+			Help:     fmt.Sprintf("add writes: %s to an upstream node, or the key may be auto-injected at runtime", key),
+		}}
+	}
+	return nil
+}
+
+// nodeReadDIP112 returns a non-empty diagnostic message when a read key is
+// problematic, or empty string if the read is valid.
+func nodeReadDIP112(nodeID, key string, w *ir.Workflow, upstream map[string]bool) string {
+	parts := strings.SplitN(strings.TrimPrefix(key, "ctx."), ".", 3)
+	if len(parts) == 3 && parts[0] == "node" {
+		return nodeScopedReadMsg(nodeID, key, parts[1], w, upstream)
+	}
+	if isNodeScopedKey(key, w) {
+		return ""
+	}
+	return fmt.Sprintf("node %q reads context key %q but no upstream node declares it in writes", nodeID, key)
+}
+
+// nodeScopedReadMsg validates a node.<id>.* read and returns an error message or "".
+func nodeScopedReadMsg(readerID, key, refNodeID string, w *ir.Workflow, upstream map[string]bool) string {
+	if w.Node(refNodeID) == nil {
+		return fmt.Sprintf("node %q reads %q but node %q does not exist in the workflow", readerID, key, refNodeID)
+	}
+	if !upstream[refNodeID] {
+		return fmt.Sprintf("node %q reads %q but node %q is not upstream", readerID, key, refNodeID)
+	}
+	return ""
 }
 
 // nodePrompt extracts the prompt text from a node if it has one.
