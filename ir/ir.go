@@ -37,16 +37,19 @@ type StyleSelector struct {
 // WorkflowDefaults holds graph-level configuration that applies to all nodes
 // unless overridden at the node level.
 type WorkflowDefaults struct {
-	Model         string // Default LLM model
-	Provider      string // Default LLM provider
-	RetryPolicy   string // Default retry policy name
-	MaxRetries    int    // Default max retries
-	Fidelity      string // Default fidelity level
-	MaxRestarts   int    // Max loop restarts (default 5)
-	RestartTarget string // Where to restart on loop
-	CacheTools    bool   // Cache tool results
-	Compaction    string // Context compaction mode
-	OnResume      string // Fidelity behavior on resume: "preserve" or "degrade"
+	Model          string        // Default LLM model
+	Provider       string        // Default LLM provider
+	RetryPolicy    string        // Default retry policy name
+	MaxRetries     int           // Default max retries
+	Fidelity       string        // Default fidelity level
+	MaxRestarts    int           // Max loop restarts (default 5)
+	RestartTarget  string        // Where to restart on loop
+	CacheTools     bool          // Cache tool results
+	Compaction     string        // Context compaction mode
+	OnResume       string        // Fidelity behavior on resume: "preserve" or "degrade"
+	MaxTotalTokens int           // Hard ceiling on total tokens
+	MaxCostCents   int           // Hard ceiling on cost in cents (USD)
+	MaxWallTime    time.Duration // Hard ceiling on wall time
 }
 
 // Node represents a single step in the workflow.
@@ -106,11 +109,13 @@ func (AgentConfig) nodeConfig() {}
 
 // HumanConfig holds configuration for human gate nodes.
 type HumanConfig struct {
-	Mode         string // "choice" | "freeform" | "interview"
-	Default      string // Default choice
-	Prompt       string // Instructions shown to the human
-	QuestionsKey string // Context key to read questions from (interview mode)
-	AnswersKey   string // Context key to write answers to (interview mode)
+	Mode          string        // "choice" | "freeform" | "interview"
+	Default       string        // Default choice
+	Prompt        string        // Instructions shown to the human
+	QuestionsKey  string        // Context key to read questions from (interview mode)
+	AnswersKey    string        // Context key to write answers to (interview mode)
+	Timeout       time.Duration // Per-gate timeout; 0 = no timeout
+	TimeoutAction string        // "fail" | "default" | "" (pick default-if-set else fail)
 }
 
 func (HumanConfig) nodeConfig() {}

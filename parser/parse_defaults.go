@@ -97,6 +97,20 @@ func (p *Parser) applyDefaultComplexField(key, val string, loc ir.SourceLocation
 	case "cache_tools":
 		p.workflow.Defaults.CacheTools = (val == "true")
 	default:
+		p.applyDefaultBudgetField(key, val, loc)
+	}
+}
+
+// applyDefaultBudgetField handles budget-related default fields.
+func (p *Parser) applyDefaultBudgetField(key, val string, loc ir.SourceLocation) {
+	switch key {
+	case "max_total_tokens":
+		p.workflow.Defaults.MaxTotalTokens = p.parseInt(val, key, loc)
+	case "max_cost_cents":
+		p.workflow.Defaults.MaxCostCents = p.parseInt(val, key, loc)
+	case "max_wall_time":
+		p.workflow.Defaults.MaxWallTime = p.parseDuration(val, key, loc)
+	default:
 		p.diagnostics = append(p.diagnostics,
 			fmt.Sprintf("unknown defaults field %q at %d:%d", key, loc.Line, loc.Column))
 	}

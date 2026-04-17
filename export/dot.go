@@ -61,6 +61,7 @@ var reservedGraphAttrs = map[string]bool{
 	"goal": true, "rankdir": true, "model": true, "provider": true,
 	"fidelity": true, "default_fidelity": true,
 	"max_retries": true, "default_max_retry": true, "max_restarts": true,
+	"max_total_tokens": true, "max_cost_cents": true, "max_wall_time": true,
 }
 
 // writeDOTHeader writes the digraph opening and global attributes.
@@ -136,8 +137,10 @@ func writeNodeDOT(b *strings.Builder, n *ir.Node, w *ir.Workflow, opts ExportOpt
 		applyGoalGateHighlight(attrs, n)
 	}
 
+	applySemanticConfigAttrs(attrs, n.Config)
+
 	if opts.IncludePrompts {
-		applyConfigAttrs(attrs, n.Config)
+		applyPromptConfigAttrs(attrs, n.Config)
 	}
 
 	fmt.Fprintf(b, "  %s %s;\n", dotID(n.ID), formatDOTAttrs(attrs))
@@ -189,30 +192,29 @@ func applyGoalGateHighlight(attrs map[string]string, n *ir.Node) {
 	}
 }
 
-// applyConfigAttrs adds config-specific attributes to the node.
-func applyConfigAttrs(attrs map[string]string, cfg interface{}) {
-	if !applyPrimaryConfigAttrs(attrs, cfg) {
-		applyStructuralConfigAttrs(attrs, cfg)
+// applySemanticConfigAttrs adds non-prompt runtime attributes unconditionally.
+// These carry runtime semantics (timeout, mode, etc.) and must always be exported.
+func applySemanticConfigAttrs(attrs map[string]string, cfg interface{}) {
+	if !applySemanticNodeAttrs(attrs, cfg) {
+		applySemanticStructuralAttrs(attrs, cfg)
 	}
 }
 
-// applyPrimaryConfigAttrs handles agent, tool, and human configs. Returns true if matched.
-func applyPrimaryConfigAttrs(attrs map[string]string, cfg interface{}) bool {
+// applySemanticNodeAttrs handles human and tool semantic attrs. Returns true if matched.
+func applySemanticNodeAttrs(attrs map[string]string, cfg interface{}) bool {
 	switch c := cfg.(type) {
-	case ir.AgentConfig:
-		applyAgentAttrs(attrs, c)
-	case ir.ToolConfig:
-		applyToolAttrs(attrs, c)
 	case ir.HumanConfig:
-		applyHumanAttrs(attrs, c)
+		applyHumanSemanticAttrs(attrs, c)
+	case ir.ToolConfig:
+		applyToolSemanticAttrs(attrs, c)
 	default:
 		return false
 	}
 	return true
 }
 
-// applyStructuralConfigAttrs handles subgraph, parallel, and fan-in configs.
-func applyStructuralConfigAttrs(attrs map[string]string, cfg interface{}) {
+// applySemanticStructuralAttrs handles subgraph, parallel, and fan-in semantic attrs.
+func applySemanticStructuralAttrs(attrs map[string]string, cfg interface{}) {
 	switch c := cfg.(type) {
 	case ir.SubgraphConfig:
 		applySubgraphAttrs(attrs, c)
@@ -220,12 +222,22 @@ func applyStructuralConfigAttrs(attrs map[string]string, cfg interface{}) {
 		applyParallelAttrs(attrs, c)
 	case ir.FanInConfig:
 		applyFanInAttrs(attrs, c)
-	case ir.ConditionalConfig:
-		// No additional attributes for conditional nodes.
 	}
 }
 
-// applyAgentAttrs adds agent-specific attributes.
+// applyPromptConfigAttrs adds prompt/text attributes gated behind IncludePrompts.
+func applyPromptConfigAttrs(attrs map[string]string, cfg interface{}) {
+	switch c := cfg.(type) {
+	case ir.AgentConfig:
+		applyAgentAttrs(attrs, c)
+	case ir.ToolConfig:
+		applyToolPromptAttrs(attrs, c)
+	case ir.HumanConfig:
+		applyHumanPromptAttrs(attrs, c)
+	}
+}
+
+// applyAgentAttrs adds agent-specific attributes (prompt + runtime).
 func applyAgentAttrs(attrs map[string]string, cfg ir.AgentConfig) {
 	if cfg.Prompt != "" {
 		attrs["prompt"] = escapeNewlines(cfg.Prompt)
@@ -249,23 +261,41 @@ func applyAgentRuntimeAttrs(attrs map[string]string, cfg ir.AgentConfig) {
 	}
 }
 
-// applyToolAttrs adds tool-specific attributes.
-func applyToolAttrs(attrs map[string]string, cfg ir.ToolConfig) {
-	if cfg.Command != "" {
-		attrs["tool_command"] = escapeNewlines(cfg.Command)
-	}
+// applyToolSemanticAttrs adds tool timeout (runtime, always exported).
+func applyToolSemanticAttrs(attrs map[string]string, cfg ir.ToolConfig) {
 	if cfg.Timeout != 0 {
 		attrs["timeout"] = formatDuration(cfg.Timeout)
 	}
 }
 
-// applyHumanAttrs adds human-specific attributes.
-func applyHumanAttrs(attrs map[string]string, cfg ir.HumanConfig) {
+// applyToolPromptAttrs adds tool command text (gated behind IncludePrompts).
+func applyToolPromptAttrs(attrs map[string]string, cfg ir.ToolConfig) {
+	if cfg.Command != "" {
+		attrs["tool_command"] = escapeNewlines(cfg.Command)
+	}
+}
+
+// applyHumanSemanticAttrs adds human mode, default, timeout, and timeout_action.
+// These are all runtime-behavioral — not prompt text.
+func applyHumanSemanticAttrs(attrs map[string]string, cfg ir.HumanConfig) {
 	if cfg.Mode != "" {
 		attrs["mode"] = cfg.Mode
 	}
 	if cfg.Default != "" {
 		attrs["default"] = cfg.Default
+	}
+	if cfg.Timeout != 0 {
+		attrs["timeout"] = formatDuration(cfg.Timeout)
+	}
+	if cfg.TimeoutAction != "" {
+		attrs["timeout_action"] = cfg.TimeoutAction
+	}
+}
+
+// applyHumanPromptAttrs adds human prompt text (gated behind IncludePrompts).
+func applyHumanPromptAttrs(attrs map[string]string, cfg ir.HumanConfig) {
+	if cfg.Prompt != "" {
+		attrs["prompt"] = escapeNewlines(cfg.Prompt)
 	}
 }
 

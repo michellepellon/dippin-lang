@@ -1,0 +1,21 @@
+workflow HumanTimeout
+  goal: "Test human timeout parsing"
+  start: Agent
+  exit: Done
+
+  agent Agent
+    prompt: Do work.
+
+  human Gate
+    mode: choice
+    default: approve
+    timeout: 5m
+    timeout_action: default
+    prompt: Approve or reject.
+
+  agent Done
+    prompt: Finish.
+
+  edges
+    Agent -> Gate
+    Gate -> Done

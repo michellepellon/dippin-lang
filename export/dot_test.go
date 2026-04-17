@@ -154,7 +154,7 @@ func TestExportDOTMinimal(t *testing.T) {
 
 	assertContains(t, out, "digraph minimal {")
 	assertContains(t, out, "rankdir=TB;")
-	assertContains(t, out, `Begin [label="Begin", shape="Mdiamond"];`)
+	assertContains(t, out, `Begin [label="Begin", mode="freeform", shape="Mdiamond"];`)
 	assertContains(t, out, `End [label="End", shape="Msquare"];`)
 	assertContains(t, out, "Begin -> End;")
 	assertContains(t, out, "}\n")
@@ -166,8 +166,8 @@ func TestExportDOTFullWorkflow(t *testing.T) {
 	// Verify digraph structure.
 	assertContains(t, out, "digraph ask_and_execute {")
 
-	// Start node gets Mdiamond shape.
-	assertContains(t, out, `AskUser [label="AskUser", shape="Mdiamond"];`)
+	// Start node (human) gets Mdiamond shape and emits mode.
+	assertContains(t, out, `AskUser [label="AskUser", mode="freeform", shape="Mdiamond"];`)
 
 	// Exit node gets Msquare shape.
 	assertContains(t, out, `Done [label="Done", shape="Msquare"];`)
@@ -175,14 +175,14 @@ func TestExportDOTFullWorkflow(t *testing.T) {
 	// Regular agent node gets box shape.
 	assertContains(t, out, `Interpret [label="Interpret", shape="box"];`)
 
-	// Human node (non-start) gets hexagon shape.
-	assertContains(t, out, `Approve [label="Approve", shape="hexagon"];`)
+	// Human node (non-start) emits mode and default as semantic attrs.
+	assertContains(t, out, `Approve [default="Yes", label="Approve", mode="choice", shape="hexagon"];`)
 
-	// Parallel node gets component shape.
-	assertContains(t, out, `ImplementFanOut [label="ImplementFanOut", shape="component"];`)
+	// Parallel node gets component shape and emits targets.
+	assertContains(t, out, `ImplementFanOut [label="ImplementFanOut", shape="component", targets="ImplementClaude,ImplementCodex"];`)
 
-	// Fan-in node gets tripleoctagon shape.
-	assertContains(t, out, `ImplementJoin [label="ImplementJoin", shape="tripleoctagon"];`)
+	// Fan-in node gets tripleoctagon shape and emits sources.
+	assertContains(t, out, `ImplementJoin [label="ImplementJoin", shape="tripleoctagon", sources="ImplementClaude,ImplementCodex"];`)
 
 	// Simple edge.
 	assertContains(t, out, "AskUser -> Interpret;")

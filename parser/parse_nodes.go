@@ -346,7 +346,30 @@ func (p *Parser) applyHumanField(cfg *ir.HumanConfig, key, val string, loc ir.So
 	if applyHumanInterviewField(cfg, key, val) {
 		return
 	}
+	if p.applyHumanComplexField(cfg, key, val, loc) {
+		return
+	}
 	p.emitUnknownFieldHint("human", key, loc)
+}
+
+// applyHumanComplexField handles fields needing parsing for human config.
+func (p *Parser) applyHumanComplexField(cfg *ir.HumanConfig, key, val string, loc ir.SourceLocation) bool {
+	switch key {
+	case "timeout":
+		cfg.Timeout = p.parseDuration(val, key, loc)
+	case "timeout_action":
+		switch val {
+		case "", "fail", "default":
+			cfg.TimeoutAction = val
+		default:
+			p.diagnostics = append(p.diagnostics, fmt.Sprintf(
+				"invalid timeout_action %q at %d:%d (use fail, default, or empty)",
+				val, loc.Line, loc.Column))
+		}
+	default:
+		return false
+	}
+	return true
 }
 
 func applyHumanStringField(cfg *ir.HumanConfig, key, val string) bool {

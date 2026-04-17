@@ -156,9 +156,12 @@ func isDippinIdentifier(s string) bool {
 	return dippinIdentPattern.MatchString(s)
 }
 
-// applyIntDefault handles integer-valued graph defaults.
+// applyIntDefault handles integer-valued and duration-valued graph defaults.
 // Returns true if the key was recognized and applied.
 func applyIntDefault(k, v string, w *ir.Workflow) bool {
+	if applyIntBudgetDefault(k, v, w) {
+		return true
+	}
 	n, err := strconv.Atoi(v)
 	if err != nil {
 		return false
@@ -171,6 +174,40 @@ func applyIntDefault(k, v string, w *ir.Workflow) bool {
 	default:
 		return false
 	}
+	return true
+}
+
+// applyIntBudgetDefault handles budget-related integer and duration defaults.
+func applyIntBudgetDefault(k, v string, w *ir.Workflow) bool {
+	switch k {
+	case "max_total_tokens":
+		return tryApplyIntDefault(v, &w.Defaults.MaxTotalTokens)
+	case "max_cost_cents":
+		return tryApplyIntDefault(v, &w.Defaults.MaxCostCents)
+	case "max_wall_time":
+		return tryApplyDurationDefault(v, &w.Defaults.MaxWallTime)
+	default:
+		return false
+	}
+}
+
+// tryApplyIntDefault parses an integer and sets it on target. Returns true on success.
+func tryApplyIntDefault(v string, target *int) bool {
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return false
+	}
+	*target = n
+	return true
+}
+
+// tryApplyDurationDefault parses a duration and sets it on target. Returns true on success.
+func tryApplyDurationDefault(v string, target *time.Duration) bool {
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		return false
+	}
+	*target = d
 	return true
 }
 
@@ -193,22 +230,27 @@ func convertNode(dn dotNode, edges []dotEdge) (*ir.Node, error) {
 
 // applyNodeConfig sets kind-specific config on the node.
 func applyNodeConfig(node *ir.Node, kind ir.NodeKind, attrs map[string]string) (*ir.Node, error) {
+	cfg, err := buildNodeConfig(node, kind, attrs)
+	if err != nil {
+		return nil, err
+	}
+	node.Config = cfg
+	return node, nil
+}
+
+// buildNodeConfig returns the config for a node given its kind and DOT attributes.
+func buildNodeConfig(node *ir.Node, kind ir.NodeKind, attrs map[string]string) (ir.NodeConfig, error) {
 	switch kind {
 	case ir.NodeAgent:
-		node.Config = buildAgentConfig(attrs)
 		node.Retry = buildRetryConfig(attrs)
+		return buildAgentConfig(attrs), nil
 	case ir.NodeHuman:
-		node.Config = buildHumanConfig(attrs)
+		return buildHumanConfig(attrs)
 	case ir.NodeTool:
-		cfg, err := buildToolConfig(attrs)
-		if err != nil {
-			return nil, err
-		}
-		node.Config = cfg
+		return buildToolConfig(attrs)
 	default:
-		node.Config = buildOtherConfig(kind, attrs)
+		return buildOtherConfig(kind, attrs), nil
 	}
-	return node, nil
 }
 
 // buildOtherConfig builds config for parallel, fan_in, subgraph, conditional, or fallback.
@@ -353,7 +395,7 @@ func applyCmdTimeout(cfg *ir.AgentConfig, attrs map[string]string) {
 	}
 }
 
-func buildHumanConfig(attrs map[string]string) ir.HumanConfig {
+func buildHumanConfig(attrs map[string]string) (ir.HumanConfig, error) {
 	cfg := ir.HumanConfig{}
 	if v, ok := attrs["mode"]; ok {
 		cfg.Mode = v
@@ -361,7 +403,48 @@ func buildHumanConfig(attrs map[string]string) ir.HumanConfig {
 	if v, ok := attrs["default"]; ok {
 		cfg.Default = v
 	}
-	return cfg
+	if err := applyHumanTimeout(&cfg, attrs); err != nil {
+		return cfg, err
+	}
+	return cfg, nil
+}
+
+// applyHumanTimeout parses and sets timeout fields on HumanConfig.
+// Returns an error if timeout is unparseable or timeout_action is invalid.
+func applyHumanTimeout(cfg *ir.HumanConfig, attrs map[string]string) error {
+	if err := applyHumanTimeoutDuration(cfg, attrs); err != nil {
+		return err
+	}
+	return applyHumanTimeoutAction(cfg, attrs)
+}
+
+// applyHumanTimeoutDuration parses and sets the timeout duration field.
+func applyHumanTimeoutDuration(cfg *ir.HumanConfig, attrs map[string]string) error {
+	v, ok := attrs["timeout"]
+	if !ok {
+		return nil
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		return fmt.Errorf("invalid timeout %q: %w", v, err)
+	}
+	cfg.Timeout = d
+	return nil
+}
+
+// applyHumanTimeoutAction validates and sets the timeout_action field.
+func applyHumanTimeoutAction(cfg *ir.HumanConfig, attrs map[string]string) error {
+	v, ok := attrs["timeout_action"]
+	if !ok {
+		return nil
+	}
+	switch v {
+	case "", "fail", "default":
+		cfg.TimeoutAction = v
+		return nil
+	default:
+		return fmt.Errorf("invalid timeout_action %q (use fail, default, or empty)", v)
+	}
 }
 
 func buildToolConfig(attrs map[string]string) (ir.ToolConfig, error) {

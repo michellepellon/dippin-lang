@@ -738,6 +738,84 @@ func TestMigrateLegacyAttributeNames(t *testing.T) {
 	}
 }
 
+func TestMigrateHumanTimeoutDOT(t *testing.T) {
+	dot := `digraph G {
+		Start [shape=Mdiamond];
+		H [shape=hexagon, mode=choice, timeout="5s", timeout_action="fail"];
+		Exit [shape=Msquare];
+		Start -> H;
+		H -> Exit;
+	}`
+	w, err := Migrate(dot)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	n := w.Node("H")
+	if n == nil {
+		t.Fatal("node H not found")
+	}
+	cfg, ok := n.Config.(ir.HumanConfig)
+	if !ok {
+		t.Fatalf("expected HumanConfig, got %T", n.Config)
+	}
+	if cfg.Timeout != 5*time.Second {
+		t.Errorf("timeout = %v, want 5s", cfg.Timeout)
+	}
+	if cfg.TimeoutAction != "fail" {
+		t.Errorf("timeout_action = %q, want %q", cfg.TimeoutAction, "fail")
+	}
+}
+
+func TestMigrateHumanTimeoutInvalidDuration(t *testing.T) {
+	dot := `digraph G {
+		Start [shape=Mdiamond];
+		H [shape=hexagon, mode=choice, timeout="notaduration"];
+		Exit [shape=Msquare];
+		Start -> H;
+		H -> Exit;
+	}`
+	_, err := Migrate(dot)
+	if err == nil {
+		t.Error("expected error for invalid timeout duration, got nil")
+	}
+}
+
+func TestMigrateHumanTimeoutActionInvalid(t *testing.T) {
+	dot := `digraph G {
+		Start [shape=Mdiamond];
+		H [shape=hexagon, mode=choice, timeout_action="explode"];
+		Exit [shape=Msquare];
+		Start -> H;
+		H -> Exit;
+	}`
+	_, err := Migrate(dot)
+	if err == nil {
+		t.Error("expected error for invalid timeout_action, got nil")
+	}
+}
+
+func TestMigrateBudgetDefaults(t *testing.T) {
+	dot := `digraph G {
+		graph [max_total_tokens="2000000", max_cost_cents="500", max_wall_time="30m"];
+		Start [shape=Mdiamond];
+		Exit [shape=Msquare];
+		Start -> Exit;
+	}`
+	w, err := Migrate(dot)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if w.Defaults.MaxTotalTokens != 2000000 {
+		t.Errorf("max_total_tokens = %d, want 2000000", w.Defaults.MaxTotalTokens)
+	}
+	if w.Defaults.MaxCostCents != 500 {
+		t.Errorf("max_cost_cents = %d, want 500", w.Defaults.MaxCostCents)
+	}
+	if w.Defaults.MaxWallTime != 30*time.Minute {
+		t.Errorf("max_wall_time = %v, want 30m", w.Defaults.MaxWallTime)
+	}
+}
+
 // ============================================================
 // Parity Checker Tests (8 cases)
 // ============================================================
