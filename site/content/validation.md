@@ -148,6 +148,14 @@ These flag likely bugs or questionable patterns. Warnings alone exit 0.
 </div>
 
 <div class="diag-card warning">
+  <span class="diag-code">DIP119</span> — Invalid reasoning_effort Value
+  <p>The <code>reasoning_effort</code> field on an agent node has an unrecognized value. Valid levels: <code>none</code>, <code>minimal</code>, <code>low</code>, <code>medium</code>, <code>high</code>, <code>xhigh</code>, <code>max</code>. Not all providers support all levels.</p>
+  <pre>warning[DIP119]: node "Analyze" has reasoning_effort "extreme" which is not a recognized level
+  --&gt; pipeline.dip:12:5
+  = help: valid levels: none, minimal, low, medium, high, xhigh, max</pre>
+</div>
+
+<div class="diag-card warning">
   <span class="diag-code">DIP123</span> — Tool Command Syntax Error
   <p>The tool command block has a shell syntax error detectable by <code>bash -n</code> — unclosed quotes, bad redirects, missing <code>fi</code>/<code>done</code>.</p>
   <pre>warning[DIP123]: tool command has shell syntax error:

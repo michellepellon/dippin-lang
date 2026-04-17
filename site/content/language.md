@@ -125,6 +125,8 @@ Agent nodes invoke an LLM. They are the most configurable node kind. Key fields 
 | `working_dir` | String | Per-node working directory override for isolated execution. |
 | `prompt` | Block | Multiline prompt text sent to the model |
 | `system_prompt` | Block | System-level instructions prepended before the prompt |
+| `reasoning_effort` | String | Extended thinking effort level: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. Controls how much reasoning budget the LLM spends. |
+| `fidelity` | String | Checkpoint fidelity level for state persistence. |
 | `max_turns` | Integer | Maximum conversation turns before the node exits |
 | `auto_status` | Boolean | Automatically extract `STATUS: success/fail` from model output into `ctx.outcome` |
 | `goal_gate` | Boolean | Marks this node as a goal gate — requires `retry_target` or `fallback_target` for recovery |
