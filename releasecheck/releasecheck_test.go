@@ -1,6 +1,7 @@
 package releasecheck
 
 import (
+	"bytes"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -48,6 +49,30 @@ func TestGeneratedSpecSourceIsTrackedInGitCheckout(t *testing.T) {
 	}
 
 	run(t, root, "git", "ls-files", "--error-unmatch", "cmd/dippin/generated-spec.md")
+}
+
+func TestGeneratedSpecIsCurrentWithGenerator(t *testing.T) {
+	root := repoRoot(t)
+	copyRoot := t.TempDir()
+	specPath := filepath.Join(copyRoot, "cmd", "dippin", "generated-spec.md")
+
+	run(t, root, "rsync", "-a", "--exclude", ".git", root+"/", copyRoot+"/")
+
+	before, err := os.ReadFile(specPath)
+	if err != nil {
+		t.Fatalf("read %s before regeneration: %v", specPath, err)
+	}
+
+	run(t, copyRoot, "./scripts/gen-spec.sh")
+
+	after, err := os.ReadFile(specPath)
+	if err != nil {
+		t.Fatalf("read %s after regeneration: %v", specPath, err)
+	}
+
+	if !bytes.Equal(before, after) {
+		t.Fatal("scripts/gen-spec.sh changed cmd/dippin/generated-spec.md; commit the refreshed file")
+	}
 }
 
 func TestCLIBuildsFromCopiedSourceTree(t *testing.T) {
