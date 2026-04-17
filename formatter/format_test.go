@@ -1671,3 +1671,69 @@ func TestFormatConditionalNode(t *testing.T) {
 		t.Errorf("expected 'label: Evaluate' in output, got:\n%s", output)
 	}
 }
+
+func TestFormatVarsBlock(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "Test",
+		Start: "A",
+		Exit:  "B",
+		Vars: map[string]string{
+			"env":     "production",
+			"api_url": "https://example.com/api",
+			"retries": "3",
+		},
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "do it"}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done"}},
+		},
+		Edges: []*ir.Edge{{From: "A", To: "B"}},
+	}
+	out := Format(w)
+
+	// vars block must appear
+	if !strings.Contains(out, "vars\n") {
+		t.Errorf("expected vars block header, got:\n%s", out)
+	}
+	// keys must be sorted
+	apiIdx := strings.Index(out, "api_url:")
+	envIdx := strings.Index(out, "env:")
+	retriesIdx := strings.Index(out, "retries:")
+	if apiIdx < 0 || envIdx < 0 || retriesIdx < 0 {
+		t.Fatalf("missing key in output:\n%s", out)
+	}
+	if !(apiIdx < envIdx && envIdx < retriesIdx) {
+		t.Errorf("vars keys not sorted: api_url@%d env@%d retries@%d\n%s", apiIdx, envIdx, retriesIdx, out)
+	}
+	// values present
+	if !strings.Contains(out, "api_url: https://example.com/api") {
+		t.Errorf("api_url value missing:\n%s", out)
+	}
+	if !strings.Contains(out, "env: production") {
+		t.Errorf("env value missing:\n%s", out)
+	}
+}
+
+func TestFormatVarsEmptyOmitted(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "Test",
+		Start: "A",
+		Exit:  "B",
+		Vars:  nil,
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "do it"}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done"}},
+		},
+		Edges: []*ir.Edge{{From: "A", To: "B"}},
+	}
+	out := Format(w)
+	if strings.Contains(out, "vars") {
+		t.Errorf("expected no vars block for nil vars, got:\n%s", out)
+	}
+
+	// Also test empty map
+	w.Vars = map[string]string{}
+	out = Format(w)
+	if strings.Contains(out, "vars") {
+		t.Errorf("expected no vars block for empty vars map, got:\n%s", out)
+	}
+}

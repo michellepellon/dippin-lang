@@ -2246,3 +2246,40 @@ func TestMigrateToSourceError(t *testing.T) {
 		t.Error("expected error for invalid DOT input")
 	}
 }
+
+func TestMigrateGraphAttrsToVars(t *testing.T) {
+	input := `digraph pipeline {
+  graph [goal="Run the pipeline", model="claude-opus-4-6", max_retries=3, max_restarts=2, api_url="example.com/api", env=production];
+  A [shape=box, label="Agent A"];
+  B [shape=Msquare, label="Done"];
+  A -> B;
+}`
+	w, err := Migrate(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Known attrs go to Defaults
+	if w.Defaults.MaxRetries != 3 {
+		t.Errorf("MaxRetries = %d, want 3", w.Defaults.MaxRetries)
+	}
+	if w.Defaults.MaxRestarts != 2 {
+		t.Errorf("MaxRestarts = %d, want 2", w.Defaults.MaxRestarts)
+	}
+	if w.Defaults.Model != "claude-opus-4-6" {
+		t.Errorf("Defaults.Model = %q, want %q", w.Defaults.Model, "claude-opus-4-6")
+	}
+
+	// Unknown attrs go to Vars
+	if w.Vars["api_url"] != "example.com/api" {
+		t.Errorf("Vars[api_url] = %q, want %q", w.Vars["api_url"], "example.com/api")
+	}
+	if w.Vars["env"] != "production" {
+		t.Errorf("Vars[env] = %q, want %q", w.Vars["env"], "production")
+	}
+
+	// goal is a known handler — should NOT appear in Vars
+	if _, ok := w.Vars["goal"]; ok {
+		t.Errorf("goal should not be in Vars, but it is: %q", w.Vars["goal"])
+	}
+}

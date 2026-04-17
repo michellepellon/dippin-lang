@@ -85,18 +85,38 @@ var workflowNodeKinds = map[string]bool{
 
 // dispatchWorkflowField routes a workflow-level identifier to the right handler.
 func (p *Parser) dispatchWorkflowField(t Token) {
+	if dispatchWorkflowSimpleField(p, t) {
+		return
+	}
+	p.dispatchWorkflowBlock(t)
+}
+
+// dispatchWorkflowSimpleField handles header fields and config blocks (defaults, vars). Returns true if handled.
+func dispatchWorkflowSimpleField(p *Parser, t Token) bool {
 	switch t.Value {
 	case "goal", "start", "exit":
 		p.parseWorkflowStringField(t)
 	case "defaults":
 		p.parseDefaults()
+	case "vars":
+		p.parseVars()
+	default:
+		return dispatchWorkflowTailField(p, t)
+	}
+	return true
+}
+
+// dispatchWorkflowTailField handles edges, stylesheet. Returns true if handled.
+func dispatchWorkflowTailField(p *Parser, t Token) bool {
+	switch t.Value {
 	case "edges":
 		p.parseEdges()
 	case "stylesheet":
 		p.parseStylesheet()
 	default:
-		p.dispatchWorkflowBlock(t)
+		return false
 	}
+	return true
 }
 
 // dispatchWorkflowBlock handles parallel, fan_in, node kinds, and unknown identifiers.

@@ -4,6 +4,11 @@ description: "Version history and release notes for dippin-lang."
 navActive: "changelog"
 layout: "changelog"
 ---
+## [Unreleased]
+
+### Added
+- **`vars` block** at the workflow level for declaring user-defined variables. Vars export as DOT graph-level attributes and round-trip through parse → format → export → migrate.
+
 ## [v0.19.1] — 2026-04-16
 
 ### Added

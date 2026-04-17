@@ -6,6 +6,11 @@ workflow SemportThematic
   defaults
     max_retries: 5
 
+  vars
+    source_ref: "references/claude-agent-sdk-python/src"
+    target_name: claude-agents-rs
+    target_module: "claude-agents-rs/src/"
+
   agent Start
     label: Start
 

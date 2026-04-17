@@ -7,7 +7,7 @@ subtitle: "Complete syntax for .dip workflow files."
 
 ## File Structure
 
-Every `.dip` file contains exactly one workflow. The top-level structure has four sections that must appear in order:
+Every `.dip` file contains exactly one workflow. The top-level structure has up to five sections, in this order:
 
 <div class="flow-diagram">
   <div class="flow-step">workflow &lt;name&gt;</div>
@@ -15,6 +15,8 @@ Every `.dip` file contains exactly one workflow. The top-level structure has fou
   <div class="flow-step">Header<br>goal, start, exit</div>
   <div class="flow-arrow">&rarr;</div>
   <div class="flow-step">Defaults (optional)<br>model, provider, ...</div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-step">Vars (optional)<br>key: value, ...</div>
   <div class="flow-arrow">&rarr;</div>
   <div class="flow-step">Node Definitions<br>agent, human, tool, ...</div>
   <div class="flow-arrow">&rarr;</div>
@@ -67,6 +69,21 @@ The optional `defaults` block sets graph-level configuration that applies to all
 | `max_restarts` | Integer | Max loop restarts before pipeline failure (default: 5) |
 | `cache_tools` | Boolean | Whether to cache tool call results |
 | `compaction` | String | Context compaction mode for long pipelines |
+
+## Vars Block
+
+The optional `vars` block declares user-defined variables that are substituted wherever `$key` placeholders appear in prompts and commands.
+
+```
+  vars
+    source_ref: "references/claude-agent-sdk-python/src"
+    target_name: claude-agents-rs
+    target_module: "claude-agents-rs/src/"
+```
+
+Values can be quoted strings or bare identifiers. Keys must be unique — duplicate keys cause a parse error.
+
+Vars are exported as graph-level DOT attributes so they round-trip through `dippin export-dot` and `dippin migrate`.
 
 ## Node Kinds
 

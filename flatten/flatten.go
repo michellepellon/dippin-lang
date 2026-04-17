@@ -107,6 +107,7 @@ func newOutputWorkflow(w *ir.Workflow) *ir.Workflow {
 		Start:      w.Start,
 		Exit:       w.Exit,
 		Defaults:   w.Defaults,
+		Vars:       w.Vars,
 		Stylesheet: w.Stylesheet,
 		SourceMap:  w.SourceMap,
 	}

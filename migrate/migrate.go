@@ -2,6 +2,7 @@ package migrate
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -125,22 +126,52 @@ func extractGraphDefaults(attrs map[string]string, w *ir.Workflow) {
 			handler(v, w)
 			continue
 		}
-		applyIntDefault(k, v, w)
+		applyUnknownGraphAttr(k, v, w)
 	}
 }
 
+// applyUnknownGraphAttr routes unknown graph attributes: only recognized
+// integer-backed default keys (max_retries, max_restarts) go to Defaults;
+// all other attrs, including unrecognized integer-valued ones, are captured
+// in Workflow.Vars. Keys that aren't valid Dippin identifiers are skipped.
+func applyUnknownGraphAttr(k, v string, w *ir.Workflow) {
+	if applyIntDefault(k, v, w) {
+		return
+	}
+	if !isDippinIdentifier(k) {
+		return
+	}
+	if w.Vars == nil {
+		w.Vars = make(map[string]string)
+	}
+	w.Vars[k] = v
+}
+
+// dippinIdentPattern matches valid Dippin identifiers:
+// alphanumeric start, followed by alphanumeric, underscore, dash, dot, or slash.
+var dippinIdentPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_\-./]*$`)
+
+// isDippinIdentifier returns true if s is a valid Dippin identifier.
+func isDippinIdentifier(s string) bool {
+	return dippinIdentPattern.MatchString(s)
+}
+
 // applyIntDefault handles integer-valued graph defaults.
-func applyIntDefault(k, v string, w *ir.Workflow) {
+// Returns true if the key was recognized and applied.
+func applyIntDefault(k, v string, w *ir.Workflow) bool {
 	n, err := strconv.Atoi(v)
 	if err != nil {
-		return
+		return false
 	}
 	switch k {
 	case "default_max_retry", "max_retries":
 		w.Defaults.MaxRetries = n
 	case "max_restarts":
 		w.Defaults.MaxRestarts = n
+	default:
+		return false
 	}
+	return true
 }
 
 // convertNode converts a DOT node to an IR node.
