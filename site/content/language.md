@@ -87,7 +87,7 @@ Vars are exported as graph-level DOT attributes so they round-trip through `dipp
 
 ## Node Kinds
 
-There are 6 node kinds, each with its own syntax and configuration:
+There are 7 node kinds, each with its own syntax and configuration:
 
 <div class="flow-diagram">
   <div class="pipeline-box lavender">agent<br>LLM interaction</div>
@@ -96,6 +96,7 @@ There are 6 node kinds, each with its own syntax and configuration:
   <div class="pipeline-box lavender">parallel<br>Fan-out</div>
   <div class="pipeline-box green">fan_in<br>Join</div>
   <div class="pipeline-box yellow">subgraph<br>Sub-pipeline</div>
+  <div class="pipeline-box cream">conditional<br>Pure routing</div>
 </div>
 
 ### agent
@@ -186,6 +187,17 @@ Subgraph nodes embed another workflow as a single step. Parameters are passed vi
       strict: true
       model: gpt-5.4
 ```
+
+### Conditional Nodes
+
+Conditional nodes evaluate outgoing edge conditions without making an LLM call — pure routing with zero token cost.
+
+```dippin
+conditional CheckOutcome
+  label: "Route by Result"
+```
+
+Conditional nodes accept only common fields (`label`, `class`, `reads`, `writes`). No `prompt`, `model`, or `provider`. Maps to `diamond` shape in DOT export.
 
 ## Edges
 

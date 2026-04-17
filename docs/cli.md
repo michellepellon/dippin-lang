@@ -114,17 +114,23 @@ error[DIP003]: unknown node reference "InterpretX" in edge
 
 ### lint
 
-Run both structural validation and semantic linting (DIP001–DIP009 + DIP101–DIP133).
+Run both structural validation and semantic linting (DIP001–DIP009 + DIP101–DIP134).
 
 ```bash
-dippin lint <file>
+dippin lint [--extra-models <spec>] <file>
 ```
 
 **Input**: `.dip` or `.dot` file
 
-**Checks**: All 39 diagnostic rules. Errors (DIP001–DIP009) cause exit code 1. Warnings (DIP101–DIP133) are reported but don't affect the exit code.
+**Checks**: All 40 diagnostic rules. Errors (DIP001–DIP009) cause exit code 1. Warnings (DIP101–DIP134) are reported but don't affect the exit code.
 
 **Output**: All diagnostics (errors and warnings) to stderr.
+
+**Flags**:
+
+| Flag | Description |
+|------|-------------|
+| `--extra-models "provider:model1,model2;provider2:model3"` | Extend the DIP108 model catalog at runtime for private or newly-released models. |
 
 **Example**:
 ```bash
@@ -441,8 +447,14 @@ See [analysis.md](analysis.md#coverage) for output format and JSON schema.
 Health report card aggregating lint, coverage, and cost into a letter grade (A–F).
 
 ```bash
-dippin doctor <file>
+dippin doctor [--extra-models <spec>] <file>
 ```
+
+**Flags**:
+
+| Flag | Description |
+|------|-------------|
+| `--extra-models "provider:model1,model2;provider2:model3"` | Extend the DIP108 model catalog at runtime for private or newly-released models. |
 
 See [analysis.md](analysis.md#doctor) for scoring and output format.
 

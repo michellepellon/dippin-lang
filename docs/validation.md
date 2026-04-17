@@ -1,9 +1,9 @@
 # Validation and Linting Reference
 
-Dippin provides 39 diagnostic checks split into two categories:
+Dippin provides 40 diagnostic checks split into two categories:
 
 - **Structural validation** (DIP001–DIP009): Errors that **must** be fixed. A workflow with any of these cannot execute.
-- **Semantic linting** (DIP101–DIP133): Warnings that flag likely bugs or questionable patterns. They don't block execution but should be reviewed.
+- **Semantic linting** (DIP101–DIP134): Warnings that flag likely bugs or questionable patterns. They don't block execution but should be reviewed.
 
 Run `dippin validate <file>` for structural checks only, or `dippin lint <file>` for both.
 
@@ -12,7 +12,7 @@ graph LR
     SRC[".dip file"] --> PARSE["Parser"]
     PARSE --> IR["IR"]
     IR --> VAL["Structural Validation<br>DIP001–DIP009<br>(errors)"]
-    IR --> LINT["Semantic Linting<br>DIP101–DIP133<br>(warnings)"]
+    IR --> LINT["Semantic Linting<br>DIP101–DIP134<br>(warnings)"]
     VAL --> DIAG["Diagnostics"]
     LINT --> DIAG
 ```
@@ -224,7 +224,7 @@ error[DIP009]: duplicate edge
 
 ---
 
-## Semantic Lint Warnings (DIP101–DIP133)
+## Semantic Lint Warnings (DIP101–DIP134)
 
 ### DIP101: Node Only Reachable via Conditional Edges
 
@@ -858,6 +858,23 @@ hint[DIP133]: node "Analyze" params key "model" shadows the first-class field mo
 
 ---
 
+### DIP134: max_retries Set With Restart Edges but No max_restarts
+
+**Severity**: Warning
+
+`max_retries` is set in defaults and the workflow has `restart: true` edges, but `max_restarts` is not set. These are commonly confused: `max_retries` controls per-node LLM retries, while `max_restarts` controls the global loop restart budget.
+
+**What triggers it**: `defaults.max_retries` is set and at least one edge is marked `restart: true`, but `defaults.max_restarts` is absent.
+
+**How to fix**: Set `max_restarts` in defaults to control loop iterations, or add it alongside `max_retries` if both behaviors are intended:
+```dippin
+  defaults
+    max_retries: 3       # per-node LLM retry attempts
+    max_restarts: 5      # global loop restart budget
+```
+
+---
+
 ## Running Validation
 
 ### Structural validation only
@@ -874,7 +891,7 @@ Runs DIP001–DIP009. Exit code 0 if all pass, 1 if any errors.
 dippin lint pipeline.dip
 ```
 
-Runs all DIP001–DIP009 errors and DIP101–DIP133 warnings. Exit code 1 only for errors; warnings alone exit 0.
+Runs all DIP001–DIP009 errors and DIP101–DIP134 warnings. Exit code 1 only for errors; warnings alone exit 0.
 
 ### JSON output for CI
 

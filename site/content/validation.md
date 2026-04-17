@@ -1,8 +1,8 @@
 ---
 title: "Validation & Linting"
-description: "39 diagnostic checks for AI pipeline workflows. 9 structural errors and 30 semantic warnings catch bugs before runtime."
+description: "40 diagnostic checks for AI pipeline workflows. 9 structural errors and 31 semantic warnings catch bugs before runtime."
 section_label: "Diagnostics"
-subtitle: "39 diagnostic checks — 9 structural errors and 30 semantic warnings — to catch problems before runtime."
+subtitle: "40 diagnostic checks — 9 structural errors and 31 semantic warnings — to catch problems before runtime."
 ---
 
 ## Overview
@@ -11,7 +11,7 @@ Dippin provides two levels of analysis:
 
 **Structural validation** (DIP001-DIP009): Errors that must be fixed. A workflow with any of these cannot execute. Run with `dippin validate`.
 
-**Semantic linting** (DIP101-DIP133): Warnings that flag likely bugs or questionable patterns. They don't block execution but should be reviewed. Run with `dippin lint` for both levels.
+**Semantic linting** (DIP101-DIP134): Warnings that flag likely bugs or questionable patterns. They don't block execution but should be reviewed. Run with `dippin lint` for both levels.
 
 ### Diagnostic Format
 
@@ -99,7 +99,7 @@ These must be fixed for a workflow to be valid. Each causes exit code 1.
   = help: remove the duplicate edge</pre>
 </div>
 
-## Semantic Warnings (DIP101-DIP133)
+## Semantic Warnings (DIP101-DIP134)
 
 These flag likely bugs or questionable patterns. Warnings alone exit 0.
 
@@ -230,3 +230,11 @@ These flag likely bugs or questionable patterns. Warnings alone exit 0.
   --&gt; pipeline.dip:35:7
   = help: remove the params key and set the field directly</pre>
 </div>
+
+### DIP134 — max_retries set with restart edges but no max_restarts
+
+**Severity:** Warning
+
+Fires when `max_retries` is set in defaults and the workflow has `restart: true` edges, but `max_restarts` is not set. These are commonly confused: `max_retries` controls per-node LLM retries, while `max_restarts` controls the global loop restart budget.
+
+**Fix:** Set `max_restarts` in defaults to control loop iterations, or add it alongside `max_retries` if both behaviors are intended.

@@ -43,8 +43,12 @@ dippin [--format text|json] <command> [args]
 
 <div class="cmd-card">
   <h3>lint</h3>
-  <div class="cmd-usage">dippin lint &lt;file&gt;</div>
-  <p>Run both structural validation and semantic linting (DIP001-DIP009 + DIP101-DIP133). All 39 diagnostic rules. Errors cause exit code 1; warnings alone exit 0.</p>
+  <div class="cmd-usage">dippin lint [--extra-models &lt;spec&gt;] &lt;file&gt;</div>
+  <p>Run both structural validation and semantic linting (DIP001-DIP009 + DIP101-DIP134). All 40 diagnostic rules. Errors cause exit code 1; warnings alone exit 0.</p>
+  <dl>
+    <dt><code>--extra-models "provider:model1,model2;provider2:model3"</code></dt>
+    <dd>Extend the DIP108 model catalog at runtime for private or newly-released models.</dd>
+  </dl>
 </div>
 
 <div class="cmd-card">
@@ -111,8 +115,12 @@ dippin [--format text|json] <command> [args]
 
 <div class="cmd-card">
   <h3>doctor</h3>
-  <div class="cmd-usage">dippin doctor &lt;file&gt;</div>
+  <div class="cmd-usage">dippin doctor [--extra-models &lt;spec&gt;] &lt;file&gt;</div>
   <p>Health report card aggregating lint, coverage, and cost into a letter grade (A-F). Generates actionable suggestions.</p>
+  <dl>
+    <dt><code>--extra-models "provider:model1,model2;provider2:model3"</code></dt>
+    <dd>Extend the DIP108 model catalog at runtime for private or newly-released models.</dd>
+  </dl>
 </div>
 
 <div class="cmd-card">
