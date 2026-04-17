@@ -28,6 +28,7 @@ func TestGeneratedSpecSourceIsTrackedInGitCheckout(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping release check in short mode")
 	}
+	requireBinary(t, "git")
 	root := repoRoot(t)
 	if _, err := os.Stat(filepath.Join(root, ".git")); err != nil {
 		t.Skip("git metadata is unavailable in this source tree")
@@ -47,6 +48,7 @@ func TestGeneratedSpecIsCurrentWithGenerator(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("gen-spec.sh requires a POSIX shell")
 	}
+	requireBinary(t, "sh")
 
 	root := repoRoot(t)
 	specPath := filepath.Join(root, "cmd", "dippin", "generated-spec.md")
@@ -58,7 +60,7 @@ func TestGeneratedSpecIsCurrentWithGenerator(t *testing.T) {
 
 	// Run gen-spec.sh in a temp copy so we don't mutate the working tree.
 	copyDir := copyTree(t, root)
-	runCmd(t, copyDir, "bash", "./scripts/gen-spec.sh")
+	runCmd(t, copyDir, "sh", "scripts/gen-spec.sh")
 
 	after, err := os.ReadFile(filepath.Join(copyDir, "cmd", "dippin", "generated-spec.md"))
 	if err != nil {
@@ -86,10 +88,17 @@ func copyTree(t *testing.T, root string) string {
 	if runtime.GOOS == "windows" {
 		t.Skip("copyTree requires cp -a (POSIX)")
 	}
+	requireBinary(t, "cp")
 	dst := t.TempDir()
-	// cp -a copies preserving structure; trailing /. copies contents into dst
-	runCmd(t, root, "bash", "-c", "cp -a . '"+dst+"/' && rm -rf '"+dst+"/.git'")
+	runCmd(t, root, "sh", "-c", "cp -a . '"+dst+"/' && rm -rf '"+dst+"/.git'")
 	return dst
+}
+
+func requireBinary(t *testing.T, name string) {
+	t.Helper()
+	if _, err := exec.LookPath(name); err != nil {
+		t.Skipf("%s not found on PATH, skipping", name)
+	}
 }
 
 func runCmd(t *testing.T, dir, name string, args ...string) {
