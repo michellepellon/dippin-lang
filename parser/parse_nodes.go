@@ -358,7 +358,14 @@ func (p *Parser) applyHumanComplexField(cfg *ir.HumanConfig, key, val string, lo
 	case "timeout":
 		cfg.Timeout = p.parseDuration(val, key, loc)
 	case "timeout_action":
-		cfg.TimeoutAction = val
+		switch val {
+		case "", "fail", "default":
+			cfg.TimeoutAction = val
+		default:
+			p.diagnostics = append(p.diagnostics, fmt.Sprintf(
+				"invalid timeout_action %q at %d:%d (use fail, default, or empty)",
+				val, loc.Line, loc.Column))
+		}
 	default:
 		return false
 	}

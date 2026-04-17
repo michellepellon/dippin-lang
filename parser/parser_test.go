@@ -1582,3 +1582,61 @@ func TestParseHumanTimeout(t *testing.T) {
 		t.Errorf("TimeoutAction = %q, want default", cfg.TimeoutAction)
 	}
 }
+
+func TestParseHumanTimeoutRoundTrip(t *testing.T) {
+	w1 := parseFixture(t, "human_timeout.dip")
+	formatted := formatter.Format(w1)
+	w2, err := NewParser(formatted, "roundtrip").Parse()
+	if err != nil {
+		t.Fatalf("re-parse error: %v\nformatted:\n%s", err, formatted)
+	}
+	gate := findNode(t, w2, "Gate")
+	cfg, ok := gate.Config.(ir.HumanConfig)
+	if !ok {
+		t.Fatal("round-trip: Gate is not HumanConfig")
+	}
+	if cfg.Timeout != 5*time.Minute {
+		t.Errorf("round-trip: Timeout = %v, want 5m0s", cfg.Timeout)
+	}
+	if cfg.TimeoutAction != "default" {
+		t.Errorf("round-trip: TimeoutAction = %q, want default", cfg.TimeoutAction)
+	}
+}
+
+func TestParseHumanTimeoutActionInvalid(t *testing.T) {
+	src := `workflow Test
+  start: Gate
+  exit: Gate
+
+  human Gate
+    mode: choice
+    timeout_action: explode
+`
+	p := NewParser(src, "test.dip")
+	_, err := p.Parse()
+	if err == nil {
+		t.Fatal("expected parse error for invalid timeout_action, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid timeout_action") {
+		t.Errorf("expected error to mention invalid timeout_action, got: %v", err)
+	}
+}
+
+func TestParseDefaultsBudgetRoundTrip(t *testing.T) {
+	w1 := parseFixture(t, "defaults_budget.dip")
+	formatted := formatter.Format(w1)
+	w2, err := NewParser(formatted, "roundtrip").Parse()
+	if err != nil {
+		t.Fatalf("re-parse error: %v\nformatted:\n%s", err, formatted)
+	}
+	d := w2.Defaults
+	if d.MaxTotalTokens != 500000 {
+		t.Errorf("round-trip: max_total_tokens = %d, want 500000", d.MaxTotalTokens)
+	}
+	if d.MaxCostCents != 1000 {
+		t.Errorf("round-trip: max_cost_cents = %d, want 1000", d.MaxCostCents)
+	}
+	if d.MaxWallTime != 30*time.Minute {
+		t.Errorf("round-trip: max_wall_time = %v, want 30m0s", d.MaxWallTime)
+	}
+}

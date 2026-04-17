@@ -61,6 +61,7 @@ var reservedGraphAttrs = map[string]bool{
 	"goal": true, "rankdir": true, "model": true, "provider": true,
 	"fidelity": true, "default_fidelity": true,
 	"max_retries": true, "default_max_retry": true, "max_restarts": true,
+	"max_total_tokens": true, "max_cost_cents": true, "max_wall_time": true,
 }
 
 // writeDOTHeader writes the digraph opening and global attributes.

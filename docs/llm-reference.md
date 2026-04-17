@@ -15,6 +15,9 @@ workflow <Name>
   [defaults
     model: <string>
     provider: <string>
+    max_total_tokens: <int>
+    max_cost_cents: <int>
+    max_wall_time: <duration>
     ...]
 
   [vars
@@ -40,7 +43,7 @@ workflow <Name>
 | Kind | Required Fields | Optional Fields |
 |------|----------------|-----------------|
 | `agent` | `prompt` | `model`, `provider`, `backend`, `working_dir`, `auto_status`, `goal_gate`, `reasoning_effort`, `fidelity`, `max_turns`, `system_prompt` |
-| `human` | `mode` (freeform\|choice) | `default` |
+| `human` | `mode` (freeform\|choice) | `default`, `timeout` (Duration, e.g. 5m), `timeout_action` (String: fail\|default) |
 | `tool` | `command` | `timeout` (e.g. 30s, 5m) |
 | `parallel` | `-> Target1, Target2` (inline) | — |
 | `fan_in` | `<- Source1, Source2` (inline) | — |
