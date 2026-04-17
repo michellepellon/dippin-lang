@@ -183,9 +183,12 @@ func TestExtractBinary(t *testing.T) {
 		{"pipe", "cat file | grep pattern", "cat"},
 		{"if_builtins_only", "if true; then echo yes; fi", ""},
 		{"mkdir_preamble", "mkdir -p .ai/cache\nshellcheck script.sh", "shellcheck"},
-		{"multi_preamble", "mkdir -p /tmp/out\ntouch /tmp/out/file\ncurl http://x", "curl"},
+		{"mkdir_then_touch", "mkdir -p /tmp/out\ntouch /tmp/out/file", "touch"},
+		{"command_v_query", "command -v shellcheck", ""},
 		{"command_v_check", "if command -v shellcheck >/dev/null 2>&1; then shellcheck script.sh; fi", "shellcheck"},
 		{"command_v_and", "command -v git && git status", "git"},
+		{"command_exec", "command git status", "git"},
+		{"command_p_exec", "command -p git status", "git"},
 		{"heredoc", "cat <<'EOF'\nhello\nEOF", "cat"},
 		{"arithmetic", "count=$((count + 1))\nprintf '%s' $count", ""},
 	}

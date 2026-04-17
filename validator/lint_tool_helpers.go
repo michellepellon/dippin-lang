@@ -46,21 +46,32 @@ func checkToolCtxVars(n *ir.Node) []Diagnostic {
 // extractBinary parses a shell command and returns the first non-builtin,
 // non-preamble command name. Uses a proper shell AST parser to correctly
 // handle variable assignments, pipes, subshells, command substitution, etc.
-// Shell builtins (set, cd, echo, etc.) and preamble commands (mkdir, touch,
-// etc.) are skipped to find the primary tool binary.
+// Shell builtins and preamble commands (mkdir) are skipped to find the
+// primary tool binary. Falls back to token-based extraction on parse errors.
 func extractBinary(command string) string {
 	parser := syntax.NewParser(syntax.KeepComments(false))
 	prog, err := parser.Parse(strings.NewReader(command), "")
 	if err != nil {
-		return ""
+		return extractBinaryFallback(command)
 	}
 	var bin string
 	syntax.Walk(prog, walkForBinary(&bin))
 	return bin
 }
 
-// walkForBinary returns a walk function that captures the first non-builtin
-// command binary into bin.
+// extractBinaryFallback performs best-effort extraction when shell parsing
+// fails. Skips builtins and preamble, returns the first plausible binary.
+func extractBinaryFallback(command string) string {
+	for _, field := range strings.Fields(command) {
+		if !isSkippableCommand(field) {
+			return field
+		}
+	}
+	return ""
+}
+
+// walkForBinary returns a walk function that captures the first non-builtin,
+// non-preamble command binary into bin.
 func walkForBinary(bin *string) func(syntax.Node) bool {
 	return func(node syntax.Node) bool {
 		if *bin != "" {
@@ -75,14 +86,44 @@ func walkForBinary(bin *string) func(syntax.Node) bool {
 	}
 }
 
-// callExprBinary returns the literal binary name of a CallExpr node,
-// or "" if the node is not a non-empty CallExpr with a literal first arg.
+// callExprBinary returns the literal binary name of a CallExpr node.
+// Handles "command" specially: "command -v foo" is a query (returns ""),
+// "command foo" executes foo (returns "foo").
 func callExprBinary(node syntax.Node) string {
 	call, ok := node.(*syntax.CallExpr)
 	if !ok || len(call.Args) == 0 {
 		return ""
 	}
-	return extractWordLiteral(call.Args[0])
+	name := extractWordLiteral(call.Args[0])
+	if name == "command" {
+		return commandTarget(call.Args[1:])
+	}
+	return name
+}
+
+// commandTarget resolves the actual binary from "command" arguments.
+// "command -v foo" / "command -V foo" → "" (query only, not execution).
+// "command foo args..." → "foo" (executes foo).
+func commandTarget(args []*syntax.Word) string {
+	for _, arg := range args {
+		lit := extractWordLiteral(arg)
+		if lit == "" {
+			return ""
+		}
+		if !strings.HasPrefix(lit, "-") {
+			return lit // first non-flag arg is the binary
+		}
+		if isCommandQueryFlag(lit) {
+			return "" // -v/-V means this is a lookup, not execution
+		}
+	}
+	return ""
+}
+
+// isCommandQueryFlag returns true if the flag makes "command" a query
+// rather than an execution (i.e., -v or -V).
+func isCommandQueryFlag(flag string) bool {
+	return strings.ContainsAny(flag, "vV")
 }
 
 // extractWordLiteral returns the literal string of a simple Word,
@@ -108,13 +149,12 @@ var shellBuiltins = map[string]bool{
 	"trap": true, "wait": true, "true": true, "false": true,
 	"source": true, ".": true, "local": true, "declare": true,
 	"set": true, "cd": true, "export": true, "unset": true,
-	"command": true,
 }
 
-// preambleCommands are external binaries commonly used for setup that
-// should be skipped when finding the "real" tool binary in a command block.
+// preambleCommands are external setup binaries skipped when finding
+// the primary tool binary. Matches documented DIP125 behavior.
 var preambleCommands = map[string]bool{
-	"mkdir": true, "touch": true, "chmod": true, "rm": true, "cp": true, "mv": true,
+	"mkdir": true,
 }
 
 // isShellBuiltin returns true if the command is a shell builtin.
