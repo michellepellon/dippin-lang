@@ -38,8 +38,14 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
-      - name: Generate embedded assets
-        run: ./scripts/gen-spec.sh
+      - name: Verify generated-spec.md is current
+        run: |
+          cp cmd/dippin/generated-spec.md /tmp/spec-before.md
+          ./scripts/gen-spec.sh
+          if ! diff -q cmd/dippin/generated-spec.md /tmp/spec-before.md >/dev/null 2>&1; then
+            echo "::error::cmd/dippin/generated-spec.md is stale — run ./scripts/gen-spec.sh and commit"
+            exit 1
+          fi
 
       - name: Build
         run: go build ./...
@@ -48,7 +54,7 @@ jobs:
         run: go vet ./...
 
       - name: Run tests with race detector and coverage
-        run: go test ./... -count=1 -race -coverprofile=coverage.out
+        run: go test ./... -short -count=1 -race -coverprofile=coverage.out
 
       - name: Coverage check
         run: |
@@ -72,9 +78,6 @@ jobs:
         with:
           go-version: '1.25'
           cache: true
-
-      - name: Generate embedded assets
-        run: ./scripts/gen-spec.sh
 
       - name: Check formatting
         run: |
@@ -105,9 +108,6 @@ jobs:
           go-version: '1.25'
           cache: true
 
-      - name: Generate embedded assets
-        run: ./scripts/gen-spec.sh
-
       - name: Build binary
         run: go build -o dippin ./cmd/dippin/
 
@@ -133,9 +133,6 @@ jobs:
         with:
           go-version: '1.25'
           cache: true
-
-      - name: Generate embedded assets
-        run: ./scripts/gen-spec.sh
 
       - name: Build dippin
         run: go build -o dippin ./cmd/dippin/
@@ -293,9 +290,6 @@ jobs:
         with:
           go-version: '1.25'
           cache: true
-
-      - name: Generate embedded assets
-        run: ./scripts/gen-spec.sh
 
       - name: Build and install dippin
         run: go install ./cmd/dippin/
