@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/2389-research/dippin-lang/ir"
+	"mvdan.cc/sh/v3/syntax"
 )
 
 // ctxVarPattern matches ${ctx.*} references in tool commands.
@@ -42,30 +43,100 @@ func checkToolCtxVars(n *ir.Node) []Diagnostic {
 	return diags
 }
 
-// shellPreamble patterns that should be skipped when finding the binary.
-var shellPreamble = regexp.MustCompile(
-	`^(set\s+-\w+|cd\s+\S+|export\s+\S+|mkdir\s+-p\s+\S+|#.*)$`,
-)
-
-// extractBinary finds the first non-preamble command's binary name.
+// extractBinary parses a shell command and returns the first non-builtin,
+// non-preamble command name. Uses a proper shell AST parser to correctly
+// handle variable assignments, pipes, subshells, command substitution, etc.
+// Shell builtins and preamble commands (mkdir) are skipped to find the
+// primary tool binary. Falls back to token-based extraction on parse errors.
 func extractBinary(command string) string {
-	for _, line := range strings.Split(command, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || shellPreamble.MatchString(line) {
-			continue
+	parser := syntax.NewParser(syntax.KeepComments(false))
+	prog, err := parser.Parse(strings.NewReader(command), "")
+	if err != nil {
+		return extractBinaryFallback(command)
+	}
+	var bin string
+	syntax.Walk(prog, walkForBinary(&bin))
+	return bin
+}
+
+// extractBinaryFallback performs best-effort extraction when shell parsing
+// fails. Skips builtins and preamble, returns the first plausible binary.
+func extractBinaryFallback(command string) string {
+	for _, field := range strings.Fields(command) {
+		if !isSkippableCommand(field) {
+			return field
 		}
-		return firstToken(line)
 	}
 	return ""
 }
 
-// firstToken returns the first whitespace-delimited token of a line.
-func firstToken(line string) string {
-	fields := strings.Fields(line)
-	if len(fields) == 0 {
+// walkForBinary returns a walk function that captures the first non-builtin,
+// non-preamble command binary into bin.
+func walkForBinary(bin *string) func(syntax.Node) bool {
+	return func(node syntax.Node) bool {
+		if *bin != "" {
+			return false
+		}
+		name := callExprBinary(node)
+		if name != "" && !isSkippableCommand(name) {
+			*bin = name
+			return false
+		}
+		return true
+	}
+}
+
+// callExprBinary returns the literal binary name of a CallExpr node.
+// Handles "command" specially: "command -v foo" is a query (returns ""),
+// "command foo" executes foo (returns "foo").
+func callExprBinary(node syntax.Node) string {
+	call, ok := node.(*syntax.CallExpr)
+	if !ok || len(call.Args) == 0 {
 		return ""
 	}
-	return fields[0]
+	name := extractWordLiteral(call.Args[0])
+	if name == "command" {
+		return commandTarget(call.Args[1:])
+	}
+	return name
+}
+
+// commandTarget resolves the actual binary from "command" arguments.
+// "command -v foo" / "command -V foo" → "" (query only, not execution).
+// "command foo args..." → "foo" (executes foo).
+func commandTarget(args []*syntax.Word) string {
+	for _, arg := range args {
+		lit := extractWordLiteral(arg)
+		if lit == "" {
+			return ""
+		}
+		if !strings.HasPrefix(lit, "-") {
+			return lit // first non-flag arg is the binary
+		}
+		if isCommandQueryFlag(lit) {
+			return "" // -v/-V means this is a lookup, not execution
+		}
+	}
+	return ""
+}
+
+// isCommandQueryFlag returns true if the flag makes "command" a query
+// rather than an execution (i.e., -v or -V).
+func isCommandQueryFlag(flag string) bool {
+	return strings.ContainsAny(flag, "vV")
+}
+
+// extractWordLiteral returns the literal string of a simple Word,
+// or "" if it contains expansions/substitutions.
+func extractWordLiteral(w *syntax.Word) string {
+	if len(w.Parts) != 1 {
+		return ""
+	}
+	lit, ok := w.Parts[0].(*syntax.Lit)
+	if !ok {
+		return ""
+	}
+	return lit.Value
 }
 
 // shellBuiltins are commands handled by the shell, not found on PATH.
@@ -77,11 +148,24 @@ var shellBuiltins = map[string]bool{
 	"exec": true, "exit": true, "return": true, "shift": true,
 	"trap": true, "wait": true, "true": true, "false": true,
 	"source": true, ".": true, "local": true, "declare": true,
+	"set": true, "cd": true, "export": true, "unset": true,
+}
+
+// preambleCommands are external setup binaries skipped when finding
+// the primary tool binary. Matches documented DIP125 behavior.
+var preambleCommands = map[string]bool{
+	"mkdir": true,
 }
 
 // isShellBuiltin returns true if the command is a shell builtin.
 func isShellBuiltin(cmd string) bool {
 	return shellBuiltins[cmd]
+}
+
+// isSkippableCommand returns true if the command should be skipped
+// when looking for the primary tool binary (builtins + preamble).
+func isSkippableCommand(cmd string) bool {
+	return shellBuiltins[cmd] || preambleCommands[cmd]
 }
 
 // strQuote wraps a string in double quotes for diagnostic messages.

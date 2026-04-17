@@ -165,20 +165,55 @@ func TestLintToolBinary_SkipsPreamble(t *testing.T) {
 
 func TestExtractBinary(t *testing.T) {
 	tests := []struct {
+		name string
 		cmd  string
 		want string
 	}{
-		{"echo hello", "echo"},
-		{"set -eu\nls -la", "ls"},
-		{"set -eu\ncd /tmp\ngit status", "git"},
-		{"# comment\nset -eu\ncurl http://x", "curl"},
-		{"", ""},
+		{"builtin_echo", "echo hello", ""},
+		{"preamble_then_ls", "set -eu\nls -la", "ls"},
+		{"cd_then_git", "set -eu\ncd /tmp\ngit status", "git"},
+		{"comment_then_curl", "# comment\nset -eu\ncurl http://x", "curl"},
+		{"empty", "", ""},
+		{"var_assign_then_echo", "COUNTER='.ai/count.txt'\necho done", ""},
+		{"var_assign_then_printf", "count=0\nprintf '%s' $count", ""},
+		{"pure_assignment", "FOO=bar", ""},
+		{"multiple_assignments", "FOO=bar\nBAZ=qux", ""},
+		{"inline_assign_with_cmd", "FOO=bar ls -la", "ls"},
+		{"cmd_subst_in_assign", "count=$(cat file)\necho $count", "cat"},
+		{"pipe", "cat file | grep pattern", "cat"},
+		{"if_builtins_only", "if true; then echo yes; fi", ""},
+		{"mkdir_preamble", "mkdir -p .ai/cache\nshellcheck script.sh", "shellcheck"},
+		{"mkdir_then_touch", "mkdir -p /tmp/out\ntouch /tmp/out/file", "touch"},
+		{"command_v_query", "command -v shellcheck", ""},
+		{"command_v_check", "if command -v shellcheck >/dev/null 2>&1; then shellcheck script.sh; fi", "shellcheck"},
+		{"command_v_and", "command -v git && git status", "git"},
+		{"command_exec", "command git status", "git"},
+		{"command_p_exec", "command -p git status", "git"},
+		{"heredoc", "cat <<'EOF'\nhello\nEOF", "cat"},
+		{"arithmetic", "count=$((count + 1))\nprintf '%s' $count", ""},
 	}
 	for _, tt := range tests {
-		got := extractBinary(tt.cmd)
-		if got != tt.want {
-			t.Errorf("extractBinary(%q) = %q, want %q", tt.cmd, got, tt.want)
-		}
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractBinary(tt.cmd)
+			if got != tt.want {
+				t.Errorf("extractBinary(%q) = %q, want %q", tt.cmd, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLintToolBinary_VariableAssignment(t *testing.T) {
+	w := &ir.Workflow{
+		Name: "test", Start: "T", Exit: "T",
+		Nodes: []*ir.Node{
+			{ID: "T", Kind: ir.NodeTool, Config: ir.ToolConfig{
+				Command: "set -eu\nCOUNTER='.ai/ralph/iteration-count.txt'\ncount=0\n[ -f \"$COUNTER\" ] && count=$(cat \"$COUNTER\")\ncount=$((count + 1))\nprintf '%s' \"$count\" > \"$COUNTER\"\nprintf '%s' \"$count\"",
+			}},
+		},
+	}
+	diags := lintToolBinary(w)
+	if len(diags) != 0 {
+		t.Errorf("expected no DIP125 for variable assignments, got %d: %v", len(diags), diags)
 	}
 }
 
