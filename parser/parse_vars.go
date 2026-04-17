@@ -25,6 +25,8 @@ func (p *Parser) parseVarsBody() {
 		if t.Type == TokenIdentifier {
 			p.parseVarField(t)
 		} else {
+			p.diagnostics = append(p.diagnostics,
+				fmt.Sprintf("unexpected token in vars block at %d:%d", t.Location.Line, t.Location.Column))
 			p.lexer.NextToken()
 		}
 	}

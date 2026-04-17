@@ -7,7 +7,7 @@ subtitle: "Complete syntax for .dip workflow files."
 
 ## File Structure
 
-Every `.dip` file contains exactly one workflow. The top-level structure has five sections that must appear in order:
+Every `.dip` file contains exactly one workflow. The top-level structure has up to five sections, in this order:
 
 <div class="flow-diagram">
   <div class="flow-step">workflow &lt;name&gt;</div>

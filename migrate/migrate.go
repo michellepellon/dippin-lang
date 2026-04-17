@@ -148,8 +148,8 @@ func applyUnknownGraphAttr(k, v string, w *ir.Workflow) {
 }
 
 // dippinIdentPattern matches valid Dippin identifiers:
-// alphanumeric start, followed by alphanumeric, underscore, or dash.
-var dippinIdentPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
+// alphanumeric start, followed by alphanumeric, underscore, dash, dot, or slash.
+var dippinIdentPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_\-./]*$`)
 
 // isDippinIdentifier returns true if s is a valid Dippin identifier.
 func isDippinIdentifier(s string) bool {

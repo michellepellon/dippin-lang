@@ -441,7 +441,7 @@ Each entry is a key-value pair. Values follow the same syntax as other field val
     my_name: bare-identifier
 ```
 
-Keys must be unique within the block. Duplicate keys cause a parse error.
+Keys should be unique within the block. Duplicate keys emit a parse diagnostic (last value wins).
 
 ### DOT Export
 

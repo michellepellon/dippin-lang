@@ -1245,9 +1245,11 @@ func TestExportVarsSkipsDefaultsCollision(t *testing.T) {
 	out := ExportDOT(w, ExportOptions{})
 
 	// "model" and "rankdir" are reserved — they must not appear as extra graph attrs
-	// (rankdir appears as the layout directive, model must not appear separately)
 	if strings.Contains(out, `model="should-be-skipped"`) {
 		t.Errorf("reserved key 'model' should be skipped, got:\n%s", out)
+	}
+	if strings.Contains(out, `rankdir="also-skipped"`) {
+		t.Errorf("reserved key 'rankdir' should be skipped, got:\n%s", out)
 	}
 	// Non-reserved key must appear
 	if !strings.Contains(out, `env="staging"`) {
