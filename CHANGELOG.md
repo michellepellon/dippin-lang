@@ -2,6 +2,20 @@
 
 All notable changes to dippin-lang are documented here. Versions follow [semver](https://semver.org/).
 
+## [v0.21.0] — 2026-04-20
+
+### Added
+- **`HumanConfig.Timeout` / `TimeoutAction`** on human nodes (tracker#112). Pairs with edge labels like `when: timeout` for auto-advance semantics. Round-trips through parser, formatter, DOT export, and migrate. ([#22](https://github.com/2389-research/dippin-lang/pull/22))
+- **`WorkflowDefaults` budget fields** (tracker#67): `max_total_tokens`, `max_cost_cents`, `max_wall_time`. Allow workflows to declare global budget caps consumed by the runtime. ([#22](https://github.com/2389-research/dippin-lang/pull/22))
+- **Scoped context reads** — `ctx.node.<id>.*` now validates as a legitimate read pattern in DIP121/DIP122, eliminating lint false-positives for cross-node state access (tracker#75). ([#23](https://github.com/2389-research/dippin-lang/pull/23))
+- **Agent-readiness discovery endpoints** on the docs site: `.well-known/agent-skills/index.json`, `.well-known/mcp/server-card.json`, `.well-known/api-catalog`, `robots.txt`, and hosted `skill.md`. Lets coding agents auto-discover dippin-lang tooling. ([#24](https://github.com/2389-research/dippin-lang/pull/24))
+- **`reasoning_effort` expansion** — DIP119 now accepts `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max` to cover Opus 4.7 and GPT-5.4.
+- **Model catalog update** (verified 2026-04-17): `claude-opus-4-7` (Anthropic, $5/$25), `mistral-small-2603` (Mistral Small 4), `command-a-03-2025` (Cohere flagship, $2.50/$10).
+
+### Fixed
+- **Syntax grammars** (VS Code TextMate, language-configuration, site highlight.js) updated to cover the `conditional` node kind and `vars` section introduced in v0.20.0.
+- **`claude-haiku-3-5` deprecation comment** corrected — retired 2026-02-19, not 2026-04-19.
+
 ## [v0.20.0] — 2026-04-17
 
 ### Added
