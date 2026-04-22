@@ -2361,3 +2361,103 @@ func TestMigrateGraphAttrsToVars(t *testing.T) {
 		t.Errorf("goal should not be in Vars, but it is: %q", w.Vars["goal"])
 	}
 }
+
+func TestMigrate_ManagerLoop(t *testing.T) {
+	dot := `digraph W {
+  S [shape=Mdiamond, label="S"];
+  M [shape=house, label="Supervisor", subgraph_ref="inner", poll_interval="30s", max_cycles="12", stop_condition="stack.child.cycles = 10", steer_condition="stack.child.cycles = 5", steer_context="hint=speed_up,priority=high"];
+  E [shape=Msquare, label="E"];
+  S -> M;
+  M -> E;
+}`
+	w, err := Migrate(dot)
+	if err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	var n *ir.Node
+	for _, node := range w.Nodes {
+		if node.ID == "M" {
+			n = node
+		}
+	}
+	if n == nil {
+		t.Fatalf("node M not found in workflow")
+	}
+	if n.Kind != ir.NodeManagerLoop {
+		t.Fatalf("Kind = %v, want NodeManagerLoop", n.Kind)
+	}
+	cfg, ok := n.Config.(ir.ManagerLoopConfig)
+	if !ok {
+		t.Fatalf("Config = %T, want ManagerLoopConfig", n.Config)
+	}
+	if cfg.SubgraphRef != "inner" {
+		t.Errorf("SubgraphRef = %q, want %q", cfg.SubgraphRef, "inner")
+	}
+	if cfg.MaxCycles != 12 {
+		t.Errorf("MaxCycles = %d, want 12", cfg.MaxCycles)
+	}
+	if cfg.PollInterval != 30*time.Second {
+		t.Errorf("PollInterval = %v, want 30s", cfg.PollInterval)
+	}
+	if cfg.StopCondition == nil || cfg.StopCondition.Raw != "stack.child.cycles = 10" {
+		t.Errorf("StopCondition = %+v", cfg.StopCondition)
+	}
+	if cfg.SteerCondition == nil || cfg.SteerCondition.Raw != "stack.child.cycles = 5" {
+		t.Errorf("SteerCondition = %+v", cfg.SteerCondition)
+	}
+	if cfg.SteerContext["hint"] != "speed_up" || cfg.SteerContext["priority"] != "high" {
+		t.Errorf("SteerContext = %v", cfg.SteerContext)
+	}
+}
+
+func TestMigrate_ManagerLoop_Minimal(t *testing.T) {
+	// A manager_loop node with only subgraph_ref set should migrate cleanly
+	// with zero-value PollInterval, MaxCycles, and nil condition pointers.
+	// Exercises the attr-presence guards in applyManagerLoopScalarMigrate
+	// and applyManagerLoopConditionMigrate.
+	dot := `digraph W {
+  S [shape=Mdiamond, label="S"];
+  M [shape=house, label="Minimal", subgraph_ref="inner"];
+  E [shape=Msquare, label="E"];
+  S -> M;
+  M -> E;
+}`
+	w, err := Migrate(dot)
+	if err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	var n *ir.Node
+	for _, node := range w.Nodes {
+		if node.ID == "M" {
+			n = node
+		}
+	}
+	if n == nil || n.Kind != ir.NodeManagerLoop {
+		t.Fatalf("node M wrong: %+v", n)
+	}
+	cfg, ok := n.Config.(ir.ManagerLoopConfig)
+	if !ok {
+		t.Fatalf("Config = %T", n.Config)
+	}
+	if cfg.SubgraphRef != "inner" {
+		t.Errorf("SubgraphRef = %q", cfg.SubgraphRef)
+	}
+	if cfg.PollInterval != 0 {
+		t.Errorf("PollInterval = %v, want 0", cfg.PollInterval)
+	}
+	if cfg.MaxCycles != 0 {
+		t.Errorf("MaxCycles = %d, want 0", cfg.MaxCycles)
+	}
+	if cfg.StopCondition != nil {
+		t.Errorf("StopCondition = %+v, want nil", cfg.StopCondition)
+	}
+	if cfg.SteerCondition != nil {
+		t.Errorf("SteerCondition = %+v, want nil", cfg.SteerCondition)
+	}
+	if cfg.SteerContext == nil {
+		t.Errorf("SteerContext should be non-nil empty map")
+	}
+	if len(cfg.SteerContext) != 0 {
+		t.Errorf("SteerContext should be empty; got %v", cfg.SteerContext)
+	}
+}
