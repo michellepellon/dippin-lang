@@ -82,7 +82,7 @@ Not touching the existing `Model`/`Provider`/`MaxRetries` emission gap — that'
 
 ### DOT → dip migrate (`migrate/migrate.go`)
 
-Add two entries to the `defaultSetters` key-map:
+Add two entries to the `graphDefaultsHandlers` map:
 
 ```go
 "tool_commands_allow": func(v string, w *ir.Workflow) { w.Defaults.ToolCommandsAllow = v },
