@@ -1,0 +1,22 @@
+workflow ManagerLoopDemo
+  goal: "Supervise a child pipeline with periodic steering."
+  start: Supervise
+  exit: Done
+
+  manager_loop Supervise
+    label: "Quality Gate Supervisor"
+    subgraph_ref: child_pipeline.dip
+    poll_interval: 30s
+    max_cycles: 12
+    stop_condition: stack.child.outcome = success
+    steer_condition: stack.child.cycles = 5
+    steer_context:
+      hint: halfway_through
+      priority: high
+
+  agent Done
+    prompt:
+      Summarize the supervised run's final outcome.
+
+  edges
+    Supervise -> Done
