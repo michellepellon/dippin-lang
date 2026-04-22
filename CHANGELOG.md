@@ -2,7 +2,7 @@
 
 All notable changes to dippin-lang are documented here. Versions follow [semver](https://semver.org/).
 
-## [Unreleased]
+## [v0.23.0] — 2026-04-22
 
 ### Added
 - **`WorkflowDefaults` tool-safety fields** (tracker#164 / tracker#169): `tool_commands_allow` (glob allowlist for tool-node shell commands) and `tool_denylist_add` (globs appended to tracker's default denylist). Both round-trip through parser → formatter → DOT export → migrate. Values pass through verbatim — tracker owns split and glob semantics. ([#28](https://github.com/2389-research/dippin-lang/issues/28))

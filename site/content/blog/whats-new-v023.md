@@ -1,12 +1,11 @@
 ---
 title: "What's New in Dippin v0.23"
-date: "2026-04-23"
+date: "2026-04-22"
 description: "First-class tool_commands_allow and tool_denylist_add defaults for constraining what tool nodes can shell out. Plus a cleaner DOT header format."
 tagStyle: "release"
 tagLabel: "RELEASE"
 category: "Releases"
 readTime: "3 min read"
-draft: true
 related:
   - url: "whats-new-v021-v022.html"
     title: "What's New in v0.21–v0.22"
