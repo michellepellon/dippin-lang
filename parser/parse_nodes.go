@@ -476,15 +476,29 @@ func (p *Parser) applyManagerLoopParsedField(cfg *ir.ManagerLoopConfig, key, val
 //
 // Disambiguates forms by looking at the first separator: ":" → block form
 // (including single-entry block which has no embedded newline), "=" → inline.
+//
+// Post-parse: keys containing ':', ',', or '=' are dropped with a diagnostic
+// because they break the block-form round-trip (splitKeyValue splits on the
+// first colon) or the DOT flat-attr delimiter convention.
 func (p *Parser) parseSteerContext(raw string) map[string]string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return map[string]string{}
 	}
+	var result map[string]string
 	if isSteerContextBlockForm(raw) {
-		return p.parseParamsBlock(raw)
+		result = p.parseParamsBlock(raw)
+	} else {
+		result = p.parseSteerContextInline(raw)
 	}
-	return p.parseSteerContextInline(raw)
+	for k := range result {
+		if strings.ContainsAny(k, ":,=") {
+			p.diagnostics = append(p.diagnostics,
+				fmt.Sprintf("steer_context key %q contains reserved character (':', ',', or '=')", k))
+			delete(result, k)
+		}
+	}
+	return result
 }
 
 // isSteerContextBlockForm returns true when raw looks like block-form content

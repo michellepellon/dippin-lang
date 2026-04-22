@@ -1834,3 +1834,42 @@ func TestParseManagerLoop_SteerContextBlock_SingleEntry(t *testing.T) {
 		t.Errorf("SteerContext size = %d, want 1: %v", len(cfg.SteerContext), cfg.SteerContext)
 	}
 }
+
+func TestParseManagerLoop_SteerContextKeyWithColon(t *testing.T) {
+	// Keys containing ':' break the block-form round-trip (splitKeyValue splits
+	// on first colon), so the parser rejects them with a diagnostic and drops
+	// the entry. Valid keys in the same entry are still parsed.
+	//
+	// Note: isSteerContextBlockForm routes to block form when ':' comes before '='
+	// in the raw string. To get a ':'-containing key into the inline parser, '='
+	// must appear before ':' in the first token — e.g. "hint=ok, ns:weird=value".
+	src := `workflow W
+  start: M
+  exit: M
+
+  manager_loop M
+    subgraph_ref: inner
+    steer_context: hint=ok, ns:weird=value
+
+  edges
+    M -> M
+`
+	p := NewParser(src, "")
+	_, _ = p.Parse()
+	cfg := p.workflow.Nodes[0].Config.(ir.ManagerLoopConfig)
+	if _, bad := cfg.SteerContext["ns:weird"]; bad {
+		t.Errorf("key with ':' should have been dropped, got %v", cfg.SteerContext)
+	}
+	if cfg.SteerContext["hint"] != "ok" {
+		t.Errorf("hint should still parse: %v", cfg.SteerContext)
+	}
+	found := false
+	for _, d := range p.diagnostics {
+		if strings.Contains(d, `"ns:weird"`) && strings.Contains(d, "reserved") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected diagnostic about key with ':'; got %v", p.diagnostics)
+	}
+}
