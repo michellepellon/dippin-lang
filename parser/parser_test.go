@@ -1873,3 +1873,14 @@ func TestParseManagerLoop_SteerContextKeyWithColon(t *testing.T) {
 		t.Errorf("expected diagnostic about key with ':'; got %v", p.diagnostics)
 	}
 }
+
+func TestParseDefaultsToolSafety(t *testing.T) {
+	w := parseFixture(t, "defaults_tool_safety.dip")
+	d := w.Defaults
+	if d.ToolCommandsAllow != "git *,make *,npm test" {
+		t.Errorf("tool_commands_allow = %q, want %q", d.ToolCommandsAllow, "git *,make *,npm test")
+	}
+	if d.ToolDenylistAdd != "rm -rf /,dd *" {
+		t.Errorf("tool_denylist_add = %q, want %q", d.ToolDenylistAdd, "rm -rf /,dd *")
+	}
+}
