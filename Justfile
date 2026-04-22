@@ -93,7 +93,7 @@ releasecheck:
     go test ./releasecheck/ -count=1 -race
 
 # Run the full pre-commit check suite (mirrors CI exactly)
-check: spec-check build vet fmt-check lint-go test-race releasecheck complexity validate-examples
+check: spec-check build vet fmt-check lint-go test-race releasecheck complexity validate-examples tree-sitter-test
     @echo "All checks passed."
 
 # Generate test coverage report (excludes untestable files: main.go, cmd_lsp.go)

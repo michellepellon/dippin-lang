@@ -267,7 +267,7 @@ jobs:
 
   deploy-site:
     name: Deploy Site
-    needs: [test, lint, build, validate-examples]
+    needs: [test, lint, build, validate-examples, tree-sitter]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
