@@ -402,7 +402,7 @@ error[DIP003]: unknown node reference "InterpretX" in edge
 | DIP126 | Subgraph ref file does not exist |
 | DIP135 | Manager loop subgraph_ref missing or file does not exist |
 | DIP136 | Manager loop control field has invalid value |
-| DIP137 | Manager loop with max_cycles: 0 (unbounded) |
+| DIP137 | Manager loop is unbounded (no `stop_condition` AND `max_cycles: 0`) |
 
 ## Simulation
 
