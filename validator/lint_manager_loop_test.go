@@ -145,3 +145,31 @@ func TestLintManagerLoop_NonManagerNodeIgnored(t *testing.T) {
 		t.Errorf("expected 0 diagnostics on non-manager workflow, got %v", diags)
 	}
 }
+
+// TestLintConditions_StackChildNamespace is a pinning test: a manager_loop
+// stop_condition that references stack.child.* must never fire DIP120
+// (variable missing namespace prefix). The stack.* namespace is valid for
+// supervisor-exposed runtime variables such as stack.child.cycles and
+// stack.child.outcome. This test exercises the full Lint() path so it will
+// catch regressions if DIP120 is later extended to walk node-level conditions.
+func TestLintConditions_StackChildNamespace(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "W",
+		Start: "M",
+		Exit:  "M",
+		Nodes: []*ir.Node{
+			{ID: "M", Kind: ir.NodeManagerLoop, Config: ir.ManagerLoopConfig{
+				SubgraphRef:   "inner.dip",
+				MaxCycles:     5,
+				StopCondition: &ir.Condition{Raw: "stack.child.cycles = 10"},
+			}},
+		},
+		Edges: []*ir.Edge{{From: "M", To: "M"}},
+	}
+	res := Lint(w)
+	for _, d := range res.Diagnostics {
+		if d.Code == DIP120 {
+			t.Errorf("stack.child.* should be a recognized namespace, got DIP120: %s", d.Message)
+		}
+	}
+}
