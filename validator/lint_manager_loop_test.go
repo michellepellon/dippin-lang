@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/2389-research/dippin-lang/ir"
+	"github.com/2389-research/dippin-lang/simulate"
 )
 
 func managerLoopWorkflow(cfg ir.ManagerLoopConfig) *ir.Workflow {
@@ -188,5 +189,22 @@ func TestLintManagerLoop_DIP136_SteerContextReservedChar(t *testing.T) {
 	diags := lintManagerLoop(w)
 	if !diagHasCode(diags, DIP136) {
 		t.Errorf("expected DIP136 for steer_context with reserved delimiters, got %v", diags)
+	}
+}
+
+func TestLintManagerLoop_DIP137_NotFiredWhenStopConditionOnlyInParsed(t *testing.T) {
+	// Mirrors the formatter/exporter Parsed-fallback: a stop_condition with
+	// only Parsed populated (Raw empty) still counts as a bounding signal.
+	parsed, err := simulate.ParseCondition("stack.child.outcome = success")
+	if err != nil {
+		t.Fatalf("ParseCondition: %v", err)
+	}
+	w := managerLoopWorkflow(ir.ManagerLoopConfig{
+		SubgraphRef:   "inner.dip",
+		StopCondition: &ir.Condition{Parsed: parsed}, // Raw intentionally empty
+	})
+	diags := lintManagerLoop(w)
+	if diagHasCode(diags, DIP137) {
+		t.Errorf("DIP137 should NOT fire when StopCondition.Parsed is set: %v", diags)
 	}
 }

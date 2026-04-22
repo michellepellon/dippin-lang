@@ -86,11 +86,10 @@ func checkManagerLoopSteerContextDelimiters(n *ir.Node, cfg ir.ManagerLoopConfig
 // checkManagerLoopUnbounded emits DIP137 when both stop_condition and
 // max_cycles are unset — supervision can run forever.
 func checkManagerLoopUnbounded(n *ir.Node, cfg ir.ManagerLoopConfig) *Diagnostic {
-	hasStop := cfg.StopCondition != nil && cfg.StopCondition.Raw != ""
 	// Any non-zero MaxCycles (including invalid negative) indicates the user
 	// expressed bounding intent; DIP136 owns the invalid-value diagnosis.
 	hasMax := cfg.MaxCycles != 0
-	if hasStop || hasMax {
+	if conditionPresent(cfg.StopCondition) || hasMax {
 		return nil
 	}
 	return &Diagnostic{
@@ -100,4 +99,14 @@ func checkManagerLoopUnbounded(n *ir.Node, cfg ir.ManagerLoopConfig) *Diagnostic
 		Location: n.Source,
 		Help:     "set stop_condition (e.g., stack.child.outcome = success) or max_cycles to bound supervision",
 	}
+}
+
+// conditionPresent reports whether c carries a usable condition expression.
+// Either a populated Raw text (typical for parser-produced workflows) or a
+// non-nil Parsed AST (programmatic construction) counts as "present".
+func conditionPresent(c *ir.Condition) bool {
+	if c == nil {
+		return false
+	}
+	return c.Raw != "" || c.Parsed != nil
 }
