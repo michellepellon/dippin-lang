@@ -558,35 +558,21 @@ func applyManagerLoopConditionMigrate(cfg *ir.ManagerLoopConfig, attrs map[strin
 	}
 }
 
+// steerContextDecoder reverses steerContextEncoder from export/dot.go.
+// Sequences are listed longest-first so the replacer matches greedily.
+var steerContextDecoder = strings.NewReplacer(
+	"%25", "%",
+	"%2C", ",",
+	"%3D", "=",
+)
+
 // decodeSteerContextToken reverses encodeSteerContextToken from export.
 // Returns the input unchanged when it contains no '%' escapes.
 func decodeSteerContextToken(s string) string {
 	if !strings.Contains(s, "%") {
 		return s
 	}
-	var b strings.Builder
-	b.Grow(len(s))
-	for i := 0; i < len(s); {
-		if i+3 <= len(s) && s[i] == '%' {
-			switch s[i : i+3] {
-			case "%25":
-				b.WriteByte('%')
-				i += 3
-				continue
-			case "%2C":
-				b.WriteByte(',')
-				i += 3
-				continue
-			case "%3D":
-				b.WriteByte('=')
-				i += 3
-				continue
-			}
-		}
-		b.WriteByte(s[i])
-		i++
-	}
-	return b.String()
+	return steerContextDecoder.Replace(s)
 }
 
 // parseFlattenedSteerContext splits "k=v,k=v" (canonical form from DOT export)

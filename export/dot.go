@@ -631,10 +631,30 @@ func applyManagerLoopAttrs(attrs map[string]string, cfg ir.ManagerLoopConfig) {
 	applyManagerLoopConditionAttrs(attrs, cfg)
 }
 
+// steerContextEncoder replaces reserved steer_context delimiter characters with
+// their percent-encoded equivalents. '%' must be replaced first so it is not
+// double-encoded.
+var steerContextEncoder = strings.NewReplacer(
+	"%", "%25",
+	",", "%2C",
+	"=", "%3D",
+)
+
+// encodeSteerContextToken percent-encodes the three reserved characters
+// used as delimiters in the flattened steer_context representation (',', '=')
+// and the escape character itself ('%'). This keeps DOT round-trip lossless
+// even when keys or values contain reserved characters.
+func encodeSteerContextToken(s string) string {
+	if !strings.ContainsAny(s, ",=%") {
+		return s
+	}
+	return steerContextEncoder.Replace(s)
+}
+
 // flattenSteerContext produces canonical sorted "k=v,k=v" from the map.
 // Empty map returns empty string (caller suppresses the attr).
-// Callers must validate that keys/values contain no ',' or '='; the linter
-// catches this at DIP136.
+// Reserved characters (',', '=', '%') in keys and values are percent-encoded
+// so the round-trip through DOT → migrate stays lossless.
 func flattenSteerContext(m map[string]string) string {
 	if len(m) == 0 {
 		return ""
@@ -646,7 +666,7 @@ func flattenSteerContext(m map[string]string) string {
 	sortStrings(keys)
 	parts := make([]string, 0, len(keys))
 	for _, k := range keys {
-		parts = append(parts, k+"="+m[k])
+		parts = append(parts, encodeSteerContextToken(k)+"="+encodeSteerContextToken(m[k]))
 	}
 	return strings.Join(parts, ",")
 }
