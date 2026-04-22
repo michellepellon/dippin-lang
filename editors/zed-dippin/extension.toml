@@ -9,7 +9,7 @@ repository = "https://github.com/2389-research/dippin-lang"
 [grammars.dippin]
 repository = "https://github.com/2389-research/dippin-lang"
 path = "editors/tree-sitter-dippin"
-commit = "8190145ed959ca65529dc427a051d51d80df4d73"
+commit = "686b7e4962b5c6528f5bb52d5bc86d172fca357d"
 
 [language_servers.dippin-lsp]
 languages = ["Dippin"]
