@@ -155,7 +155,7 @@ Inline syntax only. Every `parallel` must have a matching `fan_in` with identica
 
 Spawns a child `.dip` pipeline, polls it on a cadence, and can steer it by injecting context. Maps to `stack.manager_loop` in Tracker; DOT shape `house`. Full reference: [docs/nodes.md](https://github.com/2389-research/dippin-lang/blob/main/docs/nodes.md).
 
-```
+```dip
   manager_loop QualityGate
     label: "Quality Gate Supervisor"
     subgraph_ref: quality_loop.dip
@@ -282,7 +282,7 @@ Use `dippin help` (not `--help`) to see all commands.
 |---------|---------|
 | `dippin parse <file>` | Output IR as JSON |
 | `dippin validate <file>` | Structural checks only (DIP001-DIP009) |
-| `dippin lint <file>` | Full validation + semantic warnings (DIP001-DIP133) |
+| `dippin lint <file>` | Full validation + semantic warnings (DIP001-DIP137) |
 | `dippin check <file>` | All-in-one. JSON output by default — **use this for automated workflows** |
 | `dippin fmt <file>` | Print canonical format to stdout |
 | `dippin fmt --check <file>` | Exit 1 if not formatted |

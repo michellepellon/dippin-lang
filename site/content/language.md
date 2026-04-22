@@ -195,7 +195,7 @@ Subgraph nodes embed another workflow as a single step. Parameters are passed vi
 
 Manager loop nodes supervise a child sub-pipeline: they spawn it, poll it on a configurable cadence, and can steer it by injecting additional context during execution. They map to Tracker's `stack.manager_loop` construct and export as DOT shape `house`.
 
-```
+```dippin
   manager_loop QualityGate
     label: "Quality Gate Supervisor"
     subgraph_ref: quality_loop.dip

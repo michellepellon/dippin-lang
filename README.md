@@ -253,7 +253,7 @@ workflow <Name>
 
 **`manager_loop`** — supervises a child sub-pipeline, polling it on a cadence and optionally steering it by injecting context during execution. Maps to Tracker's `stack.manager_loop` and DOT shape `house`.
 
-```
+```dippin
   manager_loop QualityGate
     label: "Quality Gate Supervisor"
     subgraph_ref: quality_loop.dip

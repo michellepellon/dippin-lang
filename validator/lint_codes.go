@@ -1,6 +1,6 @@
 package validator
 
-// Diagnostic codes for semantic quality warnings (DIP101–DIP134).
+// Diagnostic codes for semantic quality warnings (DIP101–DIP137).
 const (
 	DIP101 = "DIP101" // unreachable nodes after conditional branches
 	DIP102 = "DIP102" // routing node without default/unconditional edge
