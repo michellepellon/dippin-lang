@@ -633,6 +633,8 @@ func applyManagerLoopAttrs(attrs map[string]string, cfg ir.ManagerLoopConfig) {
 
 // flattenSteerContext produces canonical sorted "k=v,k=v" from the map.
 // Empty map returns empty string (caller suppresses the attr).
+// Callers must validate that keys/values contain no ',' or '='; the linter
+// catches this at DIP136.
 func flattenSteerContext(m map[string]string) string {
 	if len(m) == 0 {
 		return ""

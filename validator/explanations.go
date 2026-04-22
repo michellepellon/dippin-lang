@@ -378,10 +378,10 @@ func nodeValidationExplanations() map[string]Explanation {
 		},
 		DIP136: {
 			Code:    DIP136,
-			Summary: "manager_loop control field has invalid value (poll_interval or max_cycles)",
-			Trigger: "A manager_loop control field failed validation: poll_interval is negative, or max_cycles is negative.",
-			Fix:     "Use a non-negative duration for poll_interval (e.g., 30s; 0 means event-driven) and a non-negative integer for max_cycles (0 means unbounded).",
-			Example: "manager_loop Supervise\n  subgraph_ref: inner\n  poll_interval: 30s\n  max_cycles: 12",
+			Summary: "manager_loop control field has invalid value (poll_interval, max_cycles, or steer_context delimiter)",
+			Trigger: "A manager_loop control field failed validation: poll_interval is negative, max_cycles is negative, or steer_context contains a key/value with reserved delimiters ',' or '='.",
+			Fix:     "Use non-negative values for poll_interval and max_cycles. For steer_context, ensure no key or value contains ',' or '=' — those are delimiters in the DOT flat-attr form.",
+			Example: "manager_loop Supervise\n  subgraph_ref: inner\n  poll_interval: -30s    // DIP136: negative\n  max_cycles: -1          // DIP136: negative",
 		},
 		DIP137: {
 			Code:    DIP137,
