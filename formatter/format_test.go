@@ -1768,9 +1768,13 @@ func TestFormatManagerLoop_RoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reparse of formatted output: err=%v\n%s", err, out)
 	}
-	cfg, ok := w2.Nodes[0].Config.(ir.ManagerLoopConfig)
+	mNode := w2.Node("M")
+	if mNode == nil {
+		t.Fatalf("node M not found after round-trip")
+	}
+	cfg, ok := mNode.Config.(ir.ManagerLoopConfig)
 	if !ok {
-		t.Fatalf("Config = %T, want ManagerLoopConfig", w2.Nodes[0].Config)
+		t.Fatalf("Config = %T, want ManagerLoopConfig", mNode.Config)
 	}
 	if cfg.SubgraphRef != "quality_loop" {
 		t.Errorf("SubgraphRef = %q", cfg.SubgraphRef)
@@ -1790,8 +1794,8 @@ func TestFormatManagerLoop_RoundTrip(t *testing.T) {
 	if cfg.SteerContext["hint"] != "speed_up" || cfg.SteerContext["priority"] != "high" || cfg.SteerContext["urgency"] != "low" {
 		t.Errorf("SteerContext round-trip failed: %v", cfg.SteerContext)
 	}
-	if w2.Nodes[0].Label != "Quality Gate" {
-		t.Errorf("Label = %q, want %q", w2.Nodes[0].Label, "Quality Gate")
+	if mNode.Label != "Quality Gate" {
+		t.Errorf("Label = %q, want %q", mNode.Label, "Quality Gate")
 	}
 
 	// Idempotency: formatting the formatted output produces the same string.

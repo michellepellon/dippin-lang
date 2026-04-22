@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/2389-research/dippin-lang/ir"
 )
@@ -72,7 +73,7 @@ func TestLintManagerLoop_DIP135_RefExists(t *testing.T) {
 func TestLintManagerLoop_DIP136_NegativePollInterval(t *testing.T) {
 	w := managerLoopWorkflow(ir.ManagerLoopConfig{
 		SubgraphRef:  "inner.dip",
-		PollInterval: -5,
+		PollInterval: -5 * time.Second,
 		MaxCycles:    5,
 	})
 	// Avoid DIP135 for nonexistent file by not setting Source.

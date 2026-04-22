@@ -2374,12 +2374,7 @@ func TestMigrate_ManagerLoop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
-	var n *ir.Node
-	for _, node := range w.Nodes {
-		if node.ID == "M" {
-			n = node
-		}
-	}
+	n := w.Node("M")
 	if n == nil {
 		t.Fatalf("node M not found in workflow")
 	}
@@ -2426,12 +2421,7 @@ func TestMigrate_ManagerLoop_Minimal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
-	var n *ir.Node
-	for _, node := range w.Nodes {
-		if node.ID == "M" {
-			n = node
-		}
-	}
+	n := w.Node("M")
 	if n == nil || n.Kind != ir.NodeManagerLoop {
 		t.Fatalf("node M wrong: %+v", n)
 	}
