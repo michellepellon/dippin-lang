@@ -1317,3 +1317,82 @@ func TestExportVarsSkipsDefaultsCollision(t *testing.T) {
 		t.Errorf("expected env graph attr, got:\n%s", out)
 	}
 }
+
+func TestExportToolSafetyDefaults(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "ToolSafety",
+		Start: "A",
+		Exit:  "B",
+		Defaults: ir.WorkflowDefaults{
+			ToolCommandsAllow: "git *,make *",
+			ToolDenylistAdd:   "rm -rf /",
+		},
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "a"}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "b"}},
+		},
+		Edges: []*ir.Edge{{From: "A", To: "B"}},
+	}
+	out := ExportDOT(w, ExportOptions{})
+
+	if !strings.Contains(out, `tool_commands_allow="git *,make *"`) {
+		t.Errorf("expected tool_commands_allow graph attr, got:\n%s", out)
+	}
+	if !strings.Contains(out, `tool_denylist_add="rm -rf /"`) {
+		t.Errorf("expected tool_denylist_add graph attr, got:\n%s", out)
+	}
+}
+
+func TestExportToolSafetyDefaultsOmitEmpty(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "Empty",
+		Start: "A",
+		Exit:  "B",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "a"}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "b"}},
+		},
+		Edges: []*ir.Edge{{From: "A", To: "B"}},
+	}
+	out := ExportDOT(w, ExportOptions{})
+
+	if strings.Contains(out, "tool_commands_allow") {
+		t.Errorf("empty field should not emit tool_commands_allow:\n%s", out)
+	}
+	if strings.Contains(out, "tool_denylist_add") {
+		t.Errorf("empty field should not emit tool_denylist_add:\n%s", out)
+	}
+}
+
+func TestExportToolSafetyVarsCollision(t *testing.T) {
+	// A user mis-specifies the keys in vars:; export sets them from Defaults and
+	// must not also emit them from Vars (double-emit would be invalid DOT).
+	w := &ir.Workflow{
+		Name:  "Collision",
+		Start: "A",
+		Exit:  "B",
+		Defaults: ir.WorkflowDefaults{
+			ToolCommandsAllow: "git *",
+		},
+		Vars: map[string]string{
+			"tool_commands_allow": "should-be-skipped",
+			"tool_denylist_add":   "also-skipped",
+		},
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "a"}},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "b"}},
+		},
+		Edges: []*ir.Edge{{From: "A", To: "B"}},
+	}
+	out := ExportDOT(w, ExportOptions{})
+
+	if strings.Contains(out, `tool_commands_allow="should-be-skipped"`) {
+		t.Errorf("vars 'tool_commands_allow' should be skipped, got:\n%s", out)
+	}
+	if strings.Contains(out, `tool_denylist_add="also-skipped"`) {
+		t.Errorf("vars 'tool_denylist_add' should be skipped, got:\n%s", out)
+	}
+	if !strings.Contains(out, `tool_commands_allow="git *"`) {
+		t.Errorf("expected tool_commands_allow from Defaults, got:\n%s", out)
+	}
+}

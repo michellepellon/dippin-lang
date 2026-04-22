@@ -62,6 +62,7 @@ var reservedGraphAttrs = map[string]bool{
 	"fidelity": true, "default_fidelity": true,
 	"max_retries": true, "default_max_retry": true, "max_restarts": true,
 	"max_total_tokens": true, "max_cost_cents": true, "max_wall_time": true,
+	"tool_commands_allow": true, "tool_denylist_add": true,
 }
 
 // writeDOTHeader writes the digraph opening and global attributes.
@@ -81,6 +82,7 @@ func writeDOTHeader(b *strings.Builder, w *ir.Workflow, opts ExportOptions) {
 	if len(w.Vars) > 0 {
 		writeVarsAttrs(b, w.Vars)
 	}
+	writeToolSafetyAttrs(b, w.Defaults)
 }
 
 // writeVarsAttrs emits workflow vars as DOT graph-level attributes,
@@ -95,6 +97,17 @@ func writeVarsAttrs(b *strings.Builder, vars map[string]string) {
 	sortStrings(keys)
 	for _, k := range keys {
 		fmt.Fprintf(b, "  %s=%s;\n", dotID(k), dotQuote(vars[k]))
+	}
+}
+
+// writeToolSafetyAttrs emits tool-safety defaults as DOT graph-level attributes.
+// Empty fields are skipped.
+func writeToolSafetyAttrs(b *strings.Builder, d ir.WorkflowDefaults) {
+	if d.ToolCommandsAllow != "" {
+		fmt.Fprintf(b, "  tool_commands_allow=%s;\n", dotQuote(d.ToolCommandsAllow))
+	}
+	if d.ToolDenylistAdd != "" {
+		fmt.Fprintf(b, "  tool_denylist_add=%s;\n", dotQuote(d.ToolDenylistAdd))
 	}
 }
 
