@@ -71,6 +71,7 @@ var nodeSymbolKinds = map[ir.NodeKind]protocol.SymbolKind{
 	ir.NodeParallel:    protocol.SymbolKindStruct,
 	ir.NodeFanIn:       protocol.SymbolKindStruct,
 	ir.NodeConditional: protocol.SymbolKindEnum,
+	ir.NodeManagerLoop: protocol.SymbolKindClass,
 }
 
 // nodeSymbolKind maps a node kind to its LSP symbol kind.
