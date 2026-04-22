@@ -499,6 +499,32 @@ func TestMigrateGraphDefaults(t *testing.T) {
 	}
 }
 
+func TestMigrateToolSafetyDefaults(t *testing.T) {
+	dot := `digraph G {
+		graph [tool_commands_allow="git *,make *", tool_denylist_add="rm -rf /"];
+		Start [shape=Mdiamond];
+		Exit [shape=Msquare];
+		Start -> Exit;
+	}`
+	w, err := Migrate(dot)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if w.Defaults.ToolCommandsAllow != "git *,make *" {
+		t.Errorf("tool_commands_allow = %q, want %q", w.Defaults.ToolCommandsAllow, "git *,make *")
+	}
+	if w.Defaults.ToolDenylistAdd != "rm -rf /" {
+		t.Errorf("tool_denylist_add = %q, want %q", w.Defaults.ToolDenylistAdd, "rm -rf /")
+	}
+	// Must not leak into Vars.
+	if _, ok := w.Vars["tool_commands_allow"]; ok {
+		t.Errorf("tool_commands_allow should route to Defaults, not Vars")
+	}
+	if _, ok := w.Vars["tool_denylist_add"]; ok {
+		t.Errorf("tool_denylist_add should route to Defaults, not Vars")
+	}
+}
+
 func TestMigrateParallelInference(t *testing.T) {
 	dot := `digraph G {
 		Start [shape=Mdiamond];
