@@ -2,6 +2,20 @@
 
 All notable changes to dippin-lang are documented here. Versions follow [semver](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **`manager_loop` node kind** for supervising a child sub-pipeline with polling and mid-run context steering. Maps to Tracker's `stack.manager_loop` and DOT `shape=house`. Fields: `subgraph_ref`, `poll_interval`, `max_cycles`, `stop_condition`, `steer_condition`, `steer_context` (inline `k=v,k=v` or block form). Round-trips losslessly through parser → formatter → DOT export → migrate. Requires a parallel Tracker adapter update. ([#26](https://github.com/2389-research/dippin-lang/issues/26))
+- **DIP135-137** lint codes for `manager_loop` validation: missing/nonexistent `subgraph_ref` (DIP135), invalid control field — negative `poll_interval` or `max_cycles` (DIP136), unbounded supervision with no `stop_condition` and no `max_cycles` (DIP137 — the manager_loop analog of DIP104).
+- **`stack.*` namespace** recognized by DIP120 so `stop_condition` and `steer_condition` can reference `stack.child.cycles`, `stack.child.outcome`, `stack.child.status` without namespace warnings.
+- **`dippin scaffold manager_loop`** template emits a starter supervisor workflow.
+- **Tree-sitter grammar** — `manager_loop` node rule, highlights coverage, corpus test, committed generated parser (`src/parser.c` et al.), new `just tree-sitter-generate` / `just tree-sitter-test` recipes, and CI drift check so generated files can't drift from `grammar.js` without being caught.
+- **VS Code TextMate grammar** — `manager_loop` keyword, new field names, `stack.*` namespace recognition.
+
+### Fixed
+- **Parser `steer_context` block-form routing** — a single-entry block-form `steer_context` (one `k: v` line under the indent) lexes without an embedded newline; the previous newline-based heuristic mis-routed it to the inline CSV handler. Replaced with a separator-position check (`:` before `=` means block, `=` before `:` means inline).
+- **VS Code TextMate node-declaration regex** was missing `parallel` and `fan_in`; block-form declarations of those kinds went unhighlighted. Bundled with the `manager_loop` grammar update.
+
 ## [v0.21.0] — 2026-04-20
 
 ### Added

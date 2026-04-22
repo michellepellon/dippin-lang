@@ -4,15 +4,31 @@ description: "Version history and release notes for dippin-lang."
 navActive: "changelog"
 layout: "changelog"
 ---
+## [v0.21.0] — 2026-04-20
+
+### Added
+- **`HumanConfig.Timeout` / `TimeoutAction`** on human nodes (tracker#112). Pairs with edge labels like `when: timeout` for auto-advance semantics. Round-trips through parser, formatter, DOT export, and migrate. ([#22](https://github.com/2389-research/dippin-lang/pull/22))
+- **`WorkflowDefaults` budget fields** (tracker#67): `max_total_tokens`, `max_cost_cents`, `max_wall_time`. Allow workflows to declare global budget caps consumed by the runtime. ([#22](https://github.com/2389-research/dippin-lang/pull/22))
+- **Scoped context reads** — `ctx.node.<id>.*` now validates as a legitimate read pattern in DIP121/DIP122, eliminating lint false-positives for cross-node state access (tracker#75). ([#23](https://github.com/2389-research/dippin-lang/pull/23))
+- **Agent-readiness discovery endpoints** on the docs site: `.well-known/agent-skills/index.json`, `.well-known/mcp/server-card.json`, `.well-known/api-catalog`, `robots.txt`, and hosted `skill.md`. Lets coding agents auto-discover dippin-lang tooling. ([#24](https://github.com/2389-research/dippin-lang/pull/24))
+- **`reasoning_effort` expansion** — DIP119 now accepts `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max` to cover Opus 4.7 and GPT-5.4.
+- **Model catalog update** (verified 2026-04-17): `claude-opus-4-7` (Anthropic, $5/$25), `mistral-small-2603` (Mistral Small 4), `command-a-03-2025` (Cohere flagship, $2.50/$10).
+
+### Fixed
+- **Syntax grammars** (VS Code TextMate, language-configuration, site highlight.js) updated to cover the `conditional` node kind and `vars` section introduced in v0.20.0.
+- **`claude-haiku-3-5` deprecation comment** corrected — retired 2026-02-19, not 2026-04-19.
+
 ## [v0.20.0] — 2026-04-17
 
 ### Added
 - **`vars` block** at the workflow level for declaring user-defined variables. Vars export as DOT graph-level attributes and round-trip through parse → format → export → migrate.
-- **DIP134 lint rule**: warns on `max_retries` vs `max_restarts` confusion.
+- **DIP134 lint rule**: warns when `max_retries` is set in defaults with `restart: true` edges but no `max_restarts` — catches the common confusion between per-node LLM retries and loop restart budget.
+- **Release invariant checks** (`releasecheck/`) — validates the embedded spec is tracked, current, and buildable from a source tree without `.git`.
 
 ### Fixed
-- **DIP125 false positives on shell variable assignments** (tracker#87). Shell AST parsing via `mvdan.cc/sh/v3` replaces regex-based extraction.
-- **`go install ...@latest` broken** — embedded spec now checked in.
+- **DIP125 false positives on shell variable assignments** (tracker#87). Replaced regex-based binary extraction with proper shell AST parsing via `mvdan.cc/sh/v3`. Variable assignments, command substitutions, and `command -v` checks are now correctly identified. Preamble commands (`mkdir`) are skipped to find the real tool binary.
+- **`go install ...@latest` broken** — `cmd/dippin/generated-spec.md` is now checked into the repo so the `go:embed` directive resolves from module proxy downloads.
+- **Pre-commit hook and `just check` now mirror CI exactly** — spec freshness, release checks, complexity exclusions all aligned.
 
 ## [v0.19.1] — 2026-04-16
 
