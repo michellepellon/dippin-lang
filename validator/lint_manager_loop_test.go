@@ -176,22 +176,6 @@ func TestLintConditions_StackChildNamespace(t *testing.T) {
 	}
 }
 
-func TestLintManagerLoop_DIP136_SteerContextReservedChar(t *testing.T) {
-	// A steer_context key containing '=' or value containing ',' should fire DIP136.
-	w := managerLoopWorkflow(ir.ManagerLoopConfig{
-		SubgraphRef: "inner.dip",
-		MaxCycles:   5,
-		SteerContext: map[string]string{
-			"bad=key": "value",
-			"good":    "val,ue",
-		},
-	})
-	diags := lintManagerLoop(w)
-	if !diagHasCode(diags, DIP136) {
-		t.Errorf("expected DIP136 for steer_context with reserved delimiters, got %v", diags)
-	}
-}
-
 func TestLintManagerLoop_DIP137_NotFiredWhenStopConditionOnlyInParsed(t *testing.T) {
 	// Mirrors the formatter/exporter Parsed-fallback: a stop_condition with
 	// only Parsed populated (Raw empty) still counts as a bounding signal.

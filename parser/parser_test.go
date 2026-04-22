@@ -1865,7 +1865,7 @@ func TestParseManagerLoop_SteerContextKeyWithColon(t *testing.T) {
 	}
 	found := false
 	for _, d := range p.diagnostics {
-		if strings.Contains(d, `"ns:weird"`) && strings.Contains(d, "reserved") {
+		if strings.Contains(d, `"ns:weird"`) && strings.Contains(d, ":") {
 			found = true
 		}
 	}

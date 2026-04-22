@@ -450,7 +450,7 @@ Manager loop nodes supervise a child sub-pipeline, polling it on a cadence and o
 | `max_cycles` | Integer | No | Hard cap on child cycles. `0` means unbounded — unless `stop_condition` is set, this triggers DIP137. |
 | `stop_condition` | Condition | No | Terminates supervision when true. Uses `stack.child.*` runtime variables. |
 | `steer_condition` | Condition | No | Injects `steer_context` into the child when true. |
-| `steer_context` | Map | No | Key-value hints. Inline form (`key=val, key=val`) or block form (one `key: val` per line). Inline form does not support values containing commas — use the block form for such values. Keys and values must not contain `,` or `=` — these are reserved as flat-attr delimiters in DOT export. |
+| `steer_context` | Map | No | Key-value hints. Inline form (`key=val, key=val`) or block form (one `key: val` per line). Inline form does not support values containing commas — use the block form for such values. Keys must not contain `:` (it is the block-form separator); other reserved characters (`,`, `=`) are percent-encoded transparently at the DOT export/migrate boundary. |
 
 ### Supervisor State
 
@@ -465,7 +465,7 @@ Use these in `stop_condition` and `steer_condition` expressions.
 ### Lint Checks
 
 - **DIP135** — `subgraph_ref` missing or points to a nonexistent file
-- **DIP136** — invalid control field (negative `poll_interval` or `max_cycles`, or `steer_context` key/value containing reserved delimiter `,` or `=`)
+- **DIP136** — invalid control field (negative `poll_interval` or `max_cycles`)
 - **DIP137** — unbounded supervisor (no `stop_condition` and no `max_cycles`)
 
 See `examples/manager_loop_demo.dip` for a complete working example.

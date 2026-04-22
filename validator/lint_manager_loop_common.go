@@ -5,7 +5,6 @@ package validator
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/2389-research/dippin-lang/ir"
 )
@@ -59,26 +58,6 @@ func checkManagerLoopControl(n *ir.Node, cfg ir.ManagerLoopConfig) []Diagnostic 
 			Location: n.Source,
 			Help:     "use a positive integer; 0 means unbounded",
 		})
-	}
-	out = append(out, checkManagerLoopSteerContextDelimiters(n, cfg)...)
-	return out
-}
-
-// checkManagerLoopSteerContextDelimiters emits DIP136 when a steer_context key
-// or value contains ',' or '=' — those characters are delimiters in the DOT
-// flat-attr form and would corrupt round-trips through DOT export/migrate.
-func checkManagerLoopSteerContextDelimiters(n *ir.Node, cfg ir.ManagerLoopConfig) []Diagnostic {
-	var out []Diagnostic
-	for k, v := range cfg.SteerContext {
-		if strings.ContainsAny(k, ",=") || strings.ContainsAny(v, ",=") {
-			out = append(out, Diagnostic{
-				Code:     DIP136,
-				Severity: SeverityWarning,
-				Message:  fmt.Sprintf("manager_loop %q steer_context key/value contains reserved delimiter (',' or '='): %s=%s", n.ID, k, v),
-				Location: n.Source,
-				Help:     "steer_context keys and values must not contain ',' or '=' — those characters are used as delimiters in the DOT flat-attr form",
-			})
-		}
 	}
 	return out
 }
