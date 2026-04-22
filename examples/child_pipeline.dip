@@ -1,0 +1,17 @@
+workflow ChildPipeline
+  goal: "A minimal child pipeline supervised by manager_loop_demo."
+  start: DoWork
+  exit: Done
+
+  agent DoWork
+    auto_status: true
+    prompt:
+      Perform one cycle of supervised work.
+      End your response with STATUS: success if done, STATUS: fail if more cycles are needed.
+
+  agent Done
+    prompt:
+      Finalize this cycle's result.
+
+  edges
+    DoWork -> Done

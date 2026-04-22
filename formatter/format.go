@@ -292,13 +292,15 @@ func writePrimaryConfigFields(wr *writer, n *ir.Node) bool {
 	return true
 }
 
-// writeSecondaryConfigFields handles tool, subgraph, and conditional config.
+// writeSecondaryConfigFields handles tool, subgraph, manager_loop, and conditional config.
 func writeSecondaryConfigFields(wr *writer, n *ir.Node) {
 	switch cfg := n.Config.(type) {
 	case ir.ToolConfig:
 		writeToolFields(wr, n, cfg)
 	case ir.SubgraphConfig:
 		writeSubgraphFields(wr, n, cfg)
+	case ir.ManagerLoopConfig:
+		writeManagerLoopFields(wr, n, cfg)
 	case ir.ConditionalConfig:
 		writeConditionalFields(wr, n)
 	}
@@ -313,7 +315,7 @@ func writeAgentFields(wr *writer, n *ir.Node, cfg ir.AgentConfig) {
 	writeAgentCompactionFields(wr, cfg)
 	writeRetryFields(wr, n)
 	writeIOFields(wr, n)
-	writeSubgraphParams(wr, cfg.Params)
+	writeSortedMapBlock(wr, "params", cfg.Params)
 
 	if cfg.Prompt != "" {
 		wr.multilineBlock("prompt", cfg.Prompt)
@@ -493,25 +495,74 @@ func writeSubgraphFields(wr *writer, n *ir.Node, cfg ir.SubgraphConfig) {
 	if cfg.Ref != "" {
 		wr.line("ref: %s", quoteValue(cfg.Ref))
 	}
-	writeSubgraphParams(wr, cfg.Params)
+	writeSortedMapBlock(wr, "params", cfg.Params)
 }
 
-// writeSubgraphParams writes sorted params block if non-empty.
-func writeSubgraphParams(wr *writer, params map[string]string) {
-	if len(params) == 0 {
+// writeSortedMapBlock emits a named block containing sorted "key: value"
+// lines. Used for any map[string]string field (subgraph params, manager_loop
+// steer_context) so the output is deterministic and idempotent.
+func writeSortedMapBlock(wr *writer, header string, m map[string]string) {
+	if len(m) == 0 {
 		return
 	}
-	wr.line("params:")
+	wr.line("%s:", header)
 	wr.push()
-	keys := make([]string, 0, len(params))
-	for k := range params {
+	keys := make([]string, 0, len(m))
+	for k := range m {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		wr.line("%s: %s", k, quoteValue(params[k]))
+		wr.line("%s: %s", k, quoteValue(m[k]))
 	}
 	wr.pop()
+}
+
+// writeManagerLoopFields writes the fields of a manager_loop node in canonical order.
+func writeManagerLoopFields(wr *writer, n *ir.Node, cfg ir.ManagerLoopConfig) {
+	writeCommonNodeFields(wr, n)
+	writeRetryFields(wr, n)
+	writeIOFields(wr, n)
+	if cfg.SubgraphRef != "" {
+		wr.line("subgraph_ref: %s", quoteValue(cfg.SubgraphRef))
+	}
+	if cfg.PollInterval != 0 {
+		wr.line("poll_interval: %s", formatDuration(cfg.PollInterval))
+	}
+	if cfg.MaxCycles != 0 {
+		wr.line("max_cycles: %d", cfg.MaxCycles)
+	}
+	writeManagerLoopConditions(wr, cfg)
+	writeSortedMapBlock(wr, "steer_context", cfg.SteerContext)
+}
+
+// writeManagerLoopConditions writes stop_condition and steer_condition if set.
+// Raw already contains any quoting/escaping required by the condition-expression
+// syntax (e.g., "success" as a literal), so it is emitted as-is without
+// additional quoting.
+func writeManagerLoopConditions(wr *writer, cfg ir.ManagerLoopConfig) {
+	if s := managerLoopConditionText(cfg.StopCondition); s != "" {
+		wr.line("stop_condition: %s", s)
+	}
+	if s := managerLoopConditionText(cfg.SteerCondition); s != "" {
+		wr.line("steer_condition: %s", s)
+	}
+}
+
+// managerLoopConditionText returns the best textual form of a node condition:
+// prefers Raw when populated; otherwise formats Parsed via the same helper
+// the edge path uses. Returns "" when the condition is nil/empty.
+func managerLoopConditionText(c *ir.Condition) string {
+	if c == nil {
+		return ""
+	}
+	if c.Raw != "" {
+		return c.Raw
+	}
+	if c.Parsed != nil {
+		return formatCondition(c.Parsed)
+	}
+	return ""
 }
 
 // selectorSpecificity returns a numeric specificity for sorting.

@@ -262,12 +262,18 @@ func isWordBreak(ch byte) bool {
 	return ch == ' ' || ch == '\t' || isOperatorChar(ch)
 }
 
-// EnsureConditionsParsed walks all edges in a workflow and ensures that any
-// Condition with a Raw string but nil Parsed field gets parsed. This is needed
-// because the .dip parser may not always populate the Parsed AST.
+// EnsureConditionsParsed walks all edges and manager_loop nodes in a workflow
+// and ensures that any Condition with a Raw string but nil Parsed field gets
+// parsed. This is needed because the .dip parser stores Raw text only; the
+// AST is lazily populated before lint checks run and before simulation.
 func EnsureConditionsParsed(w *ir.Workflow) error {
 	for _, e := range w.Edges {
 		if err := ensureEdgeConditionParsed(e); err != nil {
+			return err
+		}
+	}
+	for _, n := range w.Nodes {
+		if err := ensureNodeConditionsParsed(n); err != nil {
 			return err
 		}
 	}
@@ -284,5 +290,30 @@ func ensureEdgeConditionParsed(e *ir.Edge) error {
 		return fmt.Errorf("edge %s -> %s: invalid condition %q: %w", e.From, e.To, e.Condition.Raw, err)
 	}
 	e.Condition.Parsed = parsed
+	return nil
+}
+
+// ensureNodeConditionsParsed walks node-level conditions (currently manager_loop only).
+func ensureNodeConditionsParsed(n *ir.Node) error {
+	cfg, ok := n.Config.(ir.ManagerLoopConfig)
+	if !ok {
+		return nil
+	}
+	if err := ensureConditionParsed(cfg.StopCondition, n.ID, "stop_condition"); err != nil {
+		return err
+	}
+	return ensureConditionParsed(cfg.SteerCondition, n.ID, "steer_condition")
+}
+
+// ensureConditionParsed parses a single Condition if it has Raw but no Parsed.
+func ensureConditionParsed(c *ir.Condition, nodeID, field string) error {
+	if c == nil || c.Parsed != nil || c.Raw == "" {
+		return nil
+	}
+	parsed, err := ParseCondition(c.Raw)
+	if err != nil {
+		return fmt.Errorf("node %s %s: invalid condition %q: %w", nodeID, field, c.Raw, err)
+	}
+	c.Parsed = parsed
 	return nil
 }

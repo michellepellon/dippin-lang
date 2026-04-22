@@ -75,6 +75,7 @@ const (
 	NodeFanIn       NodeKind = "fan_in"
 	NodeSubgraph    NodeKind = "subgraph"
 	NodeConditional NodeKind = "conditional"
+	NodeManagerLoop NodeKind = "manager_loop"
 )
 
 // NodeConfig is implemented by kind-specific configuration types.
@@ -165,6 +166,21 @@ func (SubgraphConfig) nodeConfig() {}
 type ConditionalConfig struct{}
 
 func (ConditionalConfig) nodeConfig() {}
+
+// ManagerLoopConfig holds configuration for manager_loop supervisor nodes.
+// A manager_loop runs a child subgraph, polls at PollInterval, and may
+// steer the child by injecting SteerContext when SteerCondition evaluates
+// true against stack.child.* variables exposed by the runtime.
+type ManagerLoopConfig struct {
+	SubgraphRef    string            // Child subgraph to supervise (required)
+	PollInterval   time.Duration     // Polling cadence; 0 = event-driven
+	MaxCycles      int               // Hard cap on child cycles; 0 = unbounded
+	StopCondition  *Condition        // Terminate supervision when true
+	SteerCondition *Condition        // Inject SteerContext when true
+	SteerContext   map[string]string // Key-value hints injected into child
+}
+
+func (ManagerLoopConfig) nodeConfig() {}
 
 // RetryConfig specifies retry behavior for a node.
 type RetryConfig struct {

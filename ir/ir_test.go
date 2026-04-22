@@ -385,3 +385,43 @@ func TestNodeIDs(t *testing.T) {
 		t.Errorf("NodeIDs() = %v, want [Begin End]", ids)
 	}
 }
+
+func TestManagerLoopConfig_ImplementsNodeConfig(t *testing.T) {
+	// Compile-time interface satisfaction check; if ManagerLoopConfig does
+	// not implement NodeConfig, this assignment won't compile.
+	var _ ir.NodeConfig = ir.ManagerLoopConfig{}
+
+	cfg := ir.ManagerLoopConfig{
+		SubgraphRef:    "quality_loop",
+		PollInterval:   30 * time.Second,
+		MaxCycles:      12,
+		StopCondition:  &ir.Condition{Raw: "stack.child.cycles = 10"},
+		SteerCondition: &ir.Condition{Raw: "stack.child.cycles = 5"},
+		SteerContext:   map[string]string{"hint": "speed_up", "priority": "high"},
+	}
+
+	if cfg.SubgraphRef != "quality_loop" {
+		t.Errorf("SubgraphRef = %q, want %q", cfg.SubgraphRef, "quality_loop")
+	}
+	if cfg.PollInterval != 30*time.Second {
+		t.Errorf("PollInterval = %v, want 30s", cfg.PollInterval)
+	}
+	if got := cfg.SteerContext["hint"]; got != "speed_up" {
+		t.Errorf("SteerContext[hint] = %q, want %q", got, "speed_up")
+	}
+	if cfg.MaxCycles != 12 {
+		t.Errorf("MaxCycles = %d, want 12", cfg.MaxCycles)
+	}
+	if cfg.StopCondition == nil || cfg.StopCondition.Raw != "stack.child.cycles = 10" {
+		t.Errorf("StopCondition.Raw = %q, want %q", cfg.StopCondition.Raw, "stack.child.cycles = 10")
+	}
+	if cfg.SteerCondition == nil || cfg.SteerCondition.Raw != "stack.child.cycles = 5" {
+		t.Errorf("SteerCondition.Raw = %q, want %q", cfg.SteerCondition.Raw, "stack.child.cycles = 5")
+	}
+}
+
+func TestNodeManagerLoop_IsNodeKind(t *testing.T) {
+	if ir.NodeManagerLoop != "manager_loop" {
+		t.Errorf("NodeManagerLoop = %q, want %q", ir.NodeManagerLoop, "manager_loop")
+	}
+}

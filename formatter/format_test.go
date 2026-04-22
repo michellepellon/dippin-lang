@@ -1737,3 +1737,102 @@ func TestFormatVarsEmptyOmitted(t *testing.T) {
 		t.Errorf("expected no vars block for empty vars map, got:\n%s", out)
 	}
 }
+
+func TestFormatManagerLoop_RoundTrip(t *testing.T) {
+	src := `workflow W
+  start: M
+  exit: M
+
+  manager_loop M
+    label: "Quality Gate"
+    subgraph_ref: quality_loop
+    poll_interval: 30s
+    max_cycles: 12
+    stop_condition: stack.child.cycles = 10
+    steer_condition: stack.child.cycles = 5
+    steer_context: hint=speed_up, priority=high, urgency=low
+
+  edges
+    M -> M
+`
+	p := parser.NewParser(src, "test.dip")
+	w, err := p.Parse()
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	out := Format(w)
+
+	// Round-trip: reparse the formatted output.
+	p2 := parser.NewParser(out, "formatted.dip")
+	w2, err := p2.Parse()
+	if err != nil {
+		t.Fatalf("reparse of formatted output: err=%v\n%s", err, out)
+	}
+	mNode := w2.Node("M")
+	if mNode == nil {
+		t.Fatalf("node M not found after round-trip")
+	}
+	cfg, ok := mNode.Config.(ir.ManagerLoopConfig)
+	if !ok {
+		t.Fatalf("Config = %T, want ManagerLoopConfig", mNode.Config)
+	}
+	if cfg.SubgraphRef != "quality_loop" {
+		t.Errorf("SubgraphRef = %q", cfg.SubgraphRef)
+	}
+	if cfg.MaxCycles != 12 {
+		t.Errorf("MaxCycles = %d", cfg.MaxCycles)
+	}
+	if cfg.PollInterval != 30*time.Second {
+		t.Errorf("PollInterval = %v", cfg.PollInterval)
+	}
+	if cfg.StopCondition == nil || cfg.StopCondition.Raw != "stack.child.cycles = 10" {
+		t.Errorf("StopCondition = %+v", cfg.StopCondition)
+	}
+	if cfg.SteerCondition == nil || cfg.SteerCondition.Raw != "stack.child.cycles = 5" {
+		t.Errorf("SteerCondition = %+v", cfg.SteerCondition)
+	}
+	if cfg.SteerContext["hint"] != "speed_up" || cfg.SteerContext["priority"] != "high" || cfg.SteerContext["urgency"] != "low" {
+		t.Errorf("SteerContext round-trip failed: %v", cfg.SteerContext)
+	}
+	if mNode.Label != "Quality Gate" {
+		t.Errorf("Label = %q, want %q", mNode.Label, "Quality Gate")
+	}
+
+	// Idempotency: formatting the formatted output produces the same string.
+	if Format(w2) != out {
+		t.Errorf("format is not idempotent\n---first---\n%s\n---second---\n%s", out, Format(w2))
+	}
+}
+
+// TestFormatManagerLoop_ParsedConditionFallback verifies that a ManagerLoopConfig
+// with only Parsed (no Raw) on StopCondition still emits a stop_condition line.
+// This covers programmatically-built IR where Raw is never populated.
+func TestFormatManagerLoop_ParsedConditionFallback(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "W",
+		Start: "M",
+		Exit:  "M",
+		Nodes: []*ir.Node{
+			{
+				ID:   "M",
+				Kind: ir.NodeManagerLoop,
+				Config: ir.ManagerLoopConfig{
+					SubgraphRef: "inner.dip",
+					MaxCycles:   5,
+					// Parsed set, Raw intentionally empty — simulates programmatic IR construction.
+					StopCondition: &ir.Condition{
+						Parsed: ir.CondCompare{Variable: "stack.child.outcome", Op: "=", Value: "success"},
+					},
+				},
+			},
+		},
+		Edges: []*ir.Edge{{From: "M", To: "M"}},
+	}
+	out := Format(w)
+	if !strings.Contains(out, "stop_condition:") {
+		t.Errorf("expected stop_condition in formatted output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "stack.child.outcome = success") {
+		t.Errorf("expected condition text in output, got:\n%s", out)
+	}
+}

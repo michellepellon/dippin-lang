@@ -30,7 +30,7 @@ graph LR
 | Shell scripts | `tool_command="#!/bin/sh\nset -eu\nif..."` | Real multiline, real syntax |
 | Model config | Untyped `llm_model="..."` attribute | Typed `model:` field with validation |
 | Branching | `condition="context.x!=y && context.a==b"` | `when ctx.x != "y" and ctx.a == "b"` |
-| Validation | Silent — typos in attrs are ignored | 39 diagnostic codes (DIP001–DIP009, DIP101–DIP133) |
+| Validation | Silent — typos in attrs are ignored | Diagnostic codes (DIP001–DIP009, DIP101–DIP137) |
 | Node types | Shape overloading (`box`=agent, `hexagon`=human) | Explicit `agent`, `tool`, `human` keywords |
 | Composition | No import/include system | `subgraph` with ref (v2) |
 
@@ -251,6 +251,23 @@ workflow <Name>
     ref: other_workflow.dip
 ```
 
+**`manager_loop`** — supervises a child sub-pipeline, polling it on a cadence and optionally steering it by injecting context during execution. Maps to Tracker's `stack.manager_loop` and DOT shape `house`.
+
+```dippin
+  manager_loop QualityGate
+    label: "Quality Gate Supervisor"
+    subgraph_ref: quality_loop.dip
+    poll_interval: 30s
+    max_cycles: 12
+    stop_condition: stack.child.outcome = success
+    steer_condition: stack.child.cycles = 5
+    steer_context:
+      hint: halfway_through
+      priority: high
+```
+
+See [`docs/nodes.md`](docs/nodes.md) for the full field reference and lint codes (DIP135–DIP137).
+
 ### Edges and Conditions
 
 ```
@@ -383,6 +400,9 @@ error[DIP003]: unknown node reference "InterpretX" in edge
 | DIP124 | Tool command references runtime-only `${ctx.*}` variable |
 | DIP125 | Tool command binary not found on PATH |
 | DIP126 | Subgraph ref file does not exist |
+| DIP135 | Manager loop subgraph_ref missing or file does not exist |
+| DIP136 | Manager loop control field has invalid value |
+| DIP137 | Manager loop is unbounded (no `stop_condition` AND `max_cycles: 0`) |
 
 ## Simulation
 

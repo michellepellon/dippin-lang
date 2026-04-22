@@ -1,6 +1,6 @@
 package validator
 
-// Diagnostic codes for semantic quality warnings (DIP101–DIP134).
+// Diagnostic codes for semantic quality warnings (DIP101–DIP137).
 const (
 	DIP101 = "DIP101" // unreachable nodes after conditional branches
 	DIP102 = "DIP102" // routing node without default/unconditional edge
@@ -36,6 +36,9 @@ const (
 	DIP132 = "DIP132" // response_schema is not valid JSON
 	DIP133 = "DIP133" // agent params key shadows a first-class field
 	DIP134 = "DIP134" // max_retries set with restart edges but no max_restarts
+	DIP135 = "DIP135" // manager_loop subgraph_ref missing or file does not exist
+	DIP136 = "DIP136" // manager_loop control field has invalid value (poll_interval or max_cycles)
+	DIP137 = "DIP137" // unbounded manager_loop: no stop_condition and no max_cycles
 )
 
 func init() {
@@ -74,4 +77,7 @@ func init() {
 	CodeDescription[DIP132] = "response_schema is not valid JSON"
 	CodeDescription[DIP133] = "agent params key shadows a first-class field"
 	CodeDescription[DIP134] = "max_retries set in defaults with restart edges but no max_restarts — did you mean max_restarts?"
+	CodeDescription[DIP135] = "manager_loop subgraph_ref missing or file does not exist"
+	CodeDescription[DIP136] = "manager_loop control field has invalid value (poll_interval or max_cycles)"
+	CodeDescription[DIP137] = "unbounded manager_loop: no stop_condition and no max_cycles"
 }

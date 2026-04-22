@@ -235,9 +235,39 @@ jobs:
             ./dippin optimize "$f" 2>&1 || true
           done
 
+  tree-sitter:
+    name: Tree-sitter parser
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install tree-sitter-cli
+        run: npm install -g tree-sitter-cli@^0.24.0
+
+      - name: Regenerate parser from grammar.js
+        working-directory: editors/tree-sitter-dippin
+        run: tree-sitter generate
+
+      - name: Check for generated-file drift
+        run: |
+          if ! git diff --exit-code editors/tree-sitter-dippin/src; then
+            echo "::error::tree-sitter generated files are stale -- run 'just tree-sitter-generate' and commit"
+            exit 1
+          fi
+
+      - name: Run tree-sitter corpus tests
+        working-directory: editors/tree-sitter-dippin
+        run: tree-sitter test
+
   deploy-site:
     name: Deploy Site
-    needs: [test, lint, build, validate-examples]
+    needs: [test, lint, build, validate-examples, tree-sitter]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:

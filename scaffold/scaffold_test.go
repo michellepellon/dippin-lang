@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/2389-research/dippin-lang/formatter"
+	"github.com/2389-research/dippin-lang/ir"
 	"github.com/2389-research/dippin-lang/parser"
 	"github.com/2389-research/dippin-lang/validator"
 )
@@ -71,7 +72,46 @@ func TestBuild_UnknownTemplate(t *testing.T) {
 
 func TestTemplateNames(t *testing.T) {
 	names := TemplateNames()
-	if len(names) != 5 {
-		t.Errorf("expected 5 templates, got %d: %v", len(names), names)
+	if len(names) != 6 {
+		t.Errorf("expected 6 templates, got %d: %v", len(names), names)
 	}
+}
+
+func TestBuildManagerLoop(t *testing.T) {
+	w, err := Build("manager_loop", "Supervisor")
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if w.Name != "Supervisor" {
+		t.Errorf("Name = %q, want %q", w.Name, "Supervisor")
+	}
+	hasManager := false
+	for _, n := range w.Nodes {
+		if n.Kind == ir.NodeManagerLoop {
+			hasManager = true
+			cfg, ok := n.Config.(ir.ManagerLoopConfig)
+			if !ok {
+				t.Fatalf("manager_loop node Config = %T, want ManagerLoopConfig", n.Config)
+			}
+			if cfg.SubgraphRef == "" {
+				t.Errorf("ManagerLoopConfig.SubgraphRef is empty in template output")
+			}
+			if cfg.MaxCycles == 0 && cfg.StopCondition == nil {
+				t.Errorf("template is unbounded — would trigger DIP137")
+			}
+		}
+	}
+	if !hasManager {
+		t.Errorf("no NodeManagerLoop node in template output")
+	}
+}
+
+func TestTemplateNames_IncludesManagerLoop(t *testing.T) {
+	names := TemplateNames()
+	for _, n := range names {
+		if n == "manager_loop" {
+			return
+		}
+	}
+	t.Errorf("manager_loop missing from TemplateNames: %v", names)
 }

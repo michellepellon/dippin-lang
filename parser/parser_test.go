@@ -1640,3 +1640,236 @@ func TestParseDefaultsBudgetRoundTrip(t *testing.T) {
 		t.Errorf("round-trip: max_wall_time = %v, want 30m0s", d.MaxWallTime)
 	}
 }
+
+func TestParseManagerLoopNode(t *testing.T) {
+	src := `workflow W
+  start: M
+  exit: M
+
+  manager_loop M
+    label: "Quality Gate Supervisor"
+    subgraph_ref: quality_loop
+    poll_interval: 30s
+    max_cycles: 12
+    stop_condition: stack.child.cycles = 10
+    steer_condition: stack.child.cycles = 5
+
+  edges
+    M -> M
+`
+	p := NewParser(src, "")
+	w, err := p.Parse()
+	if err != nil {
+		t.Fatalf("Parse error: %v", err)
+	}
+	if len(w.Nodes) != 1 {
+		t.Fatalf("got %d nodes, want 1", len(w.Nodes))
+	}
+	n := w.Nodes[0]
+	if n.Kind != ir.NodeManagerLoop {
+		t.Errorf("Kind = %q, want %q", n.Kind, ir.NodeManagerLoop)
+	}
+	cfg, ok := n.Config.(ir.ManagerLoopConfig)
+	if !ok {
+		t.Fatalf("Config = %T, want ManagerLoopConfig", n.Config)
+	}
+	if cfg.SubgraphRef != "quality_loop" {
+		t.Errorf("SubgraphRef = %q, want %q", cfg.SubgraphRef, "quality_loop")
+	}
+	if cfg.PollInterval != 30*time.Second {
+		t.Errorf("PollInterval = %v, want 30s", cfg.PollInterval)
+	}
+	if cfg.MaxCycles != 12 {
+		t.Errorf("MaxCycles = %d, want 12", cfg.MaxCycles)
+	}
+	if n.Label != "Quality Gate Supervisor" {
+		t.Errorf("Label = %q", n.Label)
+	}
+	if cfg.StopCondition == nil || cfg.StopCondition.Raw != "stack.child.cycles = 10" {
+		t.Errorf("StopCondition.Raw = %+v", cfg.StopCondition)
+	}
+	if cfg.SteerCondition == nil || cfg.SteerCondition.Raw != "stack.child.cycles = 5" {
+		t.Errorf("SteerCondition.Raw = %+v", cfg.SteerCondition)
+	}
+}
+
+func TestParseManagerLoop_SteerContextInline(t *testing.T) {
+	src := `workflow W
+  start: M
+  exit: M
+
+  manager_loop M
+    subgraph_ref: inner
+    steer_context: hint=speed_up, priority=high
+
+  edges
+    M -> M
+`
+	p := NewParser(src, "")
+	w, err := p.Parse()
+	if err != nil {
+		t.Fatalf("Parse error: %v", err)
+	}
+	cfg := w.Nodes[0].Config.(ir.ManagerLoopConfig)
+	if cfg.SteerContext["hint"] != "speed_up" || cfg.SteerContext["priority"] != "high" {
+		t.Errorf("SteerContext = %v", cfg.SteerContext)
+	}
+}
+
+func TestParseManagerLoop_SteerContextBlock(t *testing.T) {
+	src := `workflow W
+  start: M
+  exit: M
+
+  manager_loop M
+    subgraph_ref: inner
+    steer_context:
+      hint: speed_up
+      priority: high
+
+  edges
+    M -> M
+`
+	p := NewParser(src, "")
+	w, err := p.Parse()
+	if err != nil {
+		t.Fatalf("Parse error: %v", err)
+	}
+	cfg := w.Nodes[0].Config.(ir.ManagerLoopConfig)
+	if cfg.SteerContext["hint"] != "speed_up" || cfg.SteerContext["priority"] != "high" {
+		t.Errorf("SteerContext = %v", cfg.SteerContext)
+	}
+}
+
+func TestParseManagerLoop_UnknownFieldHint(t *testing.T) {
+	src := `workflow W
+  start: M
+  exit: M
+
+  manager_loop M
+    subgraph_ref: inner
+    bogus_field: value
+
+  edges
+    M -> M
+`
+	p := NewParser(src, "")
+	_, err := p.Parse()
+	if err == nil {
+		t.Fatalf("expected parse error containing unknown-field hint; got nil")
+	}
+	if !strings.Contains(err.Error(), "manager_loop") || !strings.Contains(err.Error(), "bogus_field") {
+		t.Errorf("expected error mentioning manager_loop and bogus_field; got %v", err)
+	}
+}
+
+func TestParseManagerLoop_SteerContextInline_CommaInValueTruncates(t *testing.T) {
+	// Documents the limitation of the inline form: a value containing a comma
+	// is split at that comma. Users needing comma-containing values must use
+	// the block form. This test exists so future refactors don't silently
+	// change the behavior without a deliberate decision.
+	src := `workflow W
+  start: M
+  exit: M
+
+  manager_loop M
+    subgraph_ref: inner
+    steer_context: hint="speed, up", priority=high
+
+  edges
+    M -> M
+`
+	p := NewParser(src, "")
+	_, _ = p.Parse() // non-nil err expected (malformed entry diagnostic)
+	cfg := p.workflow.Nodes[0].Config.(ir.ManagerLoopConfig)
+	// hint is truncated to `"speed` (the part before the comma, quote preserved).
+	if cfg.SteerContext["hint"] != `"speed` {
+		t.Errorf("hint = %q, want %q (documents inline-form truncation)", cfg.SteerContext["hint"], `"speed`)
+	}
+	// priority parses normally because it's after the second comma.
+	if cfg.SteerContext["priority"] != "high" {
+		t.Errorf("priority = %q, want %q", cfg.SteerContext["priority"], "high")
+	}
+	// A "malformed entry" diagnostic is emitted for the middle fragment.
+	gotMalformed := false
+	for _, d := range p.diagnostics {
+		if strings.Contains(d, "must be key=value") {
+			gotMalformed = true
+		}
+	}
+	if !gotMalformed {
+		t.Errorf("expected malformed-entry diagnostic; got %v", p.diagnostics)
+	}
+}
+
+func TestParseManagerLoop_SteerContextBlock_SingleEntry(t *testing.T) {
+	// Regression: a single-entry block-form steer_context produces a raw
+	// block value with no embedded newline. The pre-fix parser routed that
+	// to the inline CSV handler and emitted a "must be key=value" diagnostic.
+	src := `workflow W
+  start: M
+  exit: M
+
+  manager_loop M
+    subgraph_ref: inner
+    steer_context:
+      hint: halfway_through
+
+  edges
+    M -> M
+`
+	p := NewParser(src, "")
+	_, err := p.Parse()
+	if err != nil {
+		t.Fatalf("Parse returned error (diagnostics): %v", err)
+	}
+	if len(p.diagnostics) != 0 {
+		t.Fatalf("unexpected diagnostics on single-entry block form: %v", p.diagnostics)
+	}
+	cfg := p.workflow.Nodes[0].Config.(ir.ManagerLoopConfig)
+	if cfg.SteerContext["hint"] != "halfway_through" {
+		t.Errorf("SteerContext[hint] = %q, want %q", cfg.SteerContext["hint"], "halfway_through")
+	}
+	if len(cfg.SteerContext) != 1 {
+		t.Errorf("SteerContext size = %d, want 1: %v", len(cfg.SteerContext), cfg.SteerContext)
+	}
+}
+
+func TestParseManagerLoop_SteerContextKeyWithColon(t *testing.T) {
+	// Keys containing ':' break the block-form round-trip (splitKeyValue splits
+	// on first colon), so the parser rejects them with a diagnostic and drops
+	// the entry. Valid keys in the same entry are still parsed.
+	//
+	// Note: isSteerContextBlockForm routes to block form when ':' comes before '='
+	// in the raw string. To get a ':'-containing key into the inline parser, '='
+	// must appear before ':' in the first token — e.g. "hint=ok, ns:weird=value".
+	src := `workflow W
+  start: M
+  exit: M
+
+  manager_loop M
+    subgraph_ref: inner
+    steer_context: hint=ok, ns:weird=value
+
+  edges
+    M -> M
+`
+	p := NewParser(src, "")
+	_, _ = p.Parse()
+	cfg := p.workflow.Nodes[0].Config.(ir.ManagerLoopConfig)
+	if _, bad := cfg.SteerContext["ns:weird"]; bad {
+		t.Errorf("key with ':' should have been dropped, got %v", cfg.SteerContext)
+	}
+	if cfg.SteerContext["hint"] != "ok" {
+		t.Errorf("hint should still parse: %v", cfg.SteerContext)
+	}
+	found := false
+	for _, d := range p.diagnostics {
+		if strings.Contains(d, `"ns:weird"`) && strings.Contains(d, ":") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected diagnostic about key with ':'; got %v", p.diagnostics)
+	}
+}

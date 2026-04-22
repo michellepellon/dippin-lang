@@ -93,7 +93,7 @@ releasecheck:
     go test ./releasecheck/ -count=1 -race
 
 # Run the full pre-commit check suite (mirrors CI exactly)
-check: spec-check build vet fmt-check lint-go test-race releasecheck complexity validate-examples
+check: spec-check build vet fmt-check lint-go test-race releasecheck complexity validate-examples tree-sitter-test
     @echo "All checks passed."
 
 # Generate test coverage report (excludes untestable files: main.go, cmd_lsp.go)
@@ -138,6 +138,14 @@ wasm:
     GOOS=js GOARCH=wasm go build -o site/static/dippin.wasm ./cmd/wasm/
     cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" site/static/wasm_exec.js
     @echo "WASM built: site/static/dippin.wasm"
+
+# Regenerate tree-sitter parser from grammar.js
+tree-sitter-generate:
+    cd editors/tree-sitter-dippin && npx tree-sitter generate
+
+# Run tree-sitter corpus tests (after regenerate)
+tree-sitter-test: tree-sitter-generate
+    cd editors/tree-sitter-dippin && npx tree-sitter test
 
 # Clean build artifacts
 clean:

@@ -4,22 +4,24 @@ package scaffold
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/2389-research/dippin-lang/ir"
 )
 
 // TemplateNames returns the sorted list of available template names.
 func TemplateNames() []string {
-	return []string{"conditional", "human-gate", "minimal", "parallel", "review-loop"}
+	return []string{"conditional", "human-gate", "manager_loop", "minimal", "parallel", "review-loop"}
 }
 
 // templateBuilders maps template names to their builder functions.
 var templateBuilders = map[string]func(string) *ir.Workflow{
-	"minimal":     buildMinimal,
-	"parallel":    buildParallel,
-	"conditional": buildConditional,
-	"review-loop": buildReviewLoop,
-	"human-gate":  buildHumanGate,
+	"minimal":      buildMinimal,
+	"parallel":     buildParallel,
+	"conditional":  buildConditional,
+	"review-loop":  buildReviewLoop,
+	"human-gate":   buildHumanGate,
+	"manager_loop": buildManagerLoop,
 }
 
 // Build constructs an ir.Workflow for the named template.
@@ -188,6 +190,31 @@ func buildHumanGate(name string) *ir.Workflow {
 			{From: "Gate", To: "Rejected", Label: "reject"},
 			{From: "Approved", To: "Done"},
 			{From: "Rejected", To: "Done"},
+		},
+	}
+}
+
+func buildManagerLoop(name string) *ir.Workflow {
+	return &ir.Workflow{
+		Name:  name,
+		Goal:  "Supervise a child pipeline with periodic steering",
+		Start: "Supervise",
+		Exit:  "Done",
+		Nodes: []*ir.Node{
+			{ID: "Supervise", Kind: ir.NodeManagerLoop, Label: "Quality Gate Supervisor", Config: ir.ManagerLoopConfig{
+				SubgraphRef:    "child_pipeline.dip",
+				PollInterval:   30 * time.Second,
+				MaxCycles:      10,
+				StopCondition:  &ir.Condition{Raw: "stack.child.outcome = success"},
+				SteerCondition: &ir.Condition{Raw: "stack.child.cycles = 5"},
+				SteerContext:   map[string]string{"hint": "halfway_through"},
+			}},
+			{ID: "Done", Kind: ir.NodeAgent, Config: ir.AgentConfig{
+				Prompt: "Summarize the supervised run outcome.",
+			}},
+		},
+		Edges: []*ir.Edge{
+			{From: "Supervise", To: "Done"},
 		},
 	}
 }

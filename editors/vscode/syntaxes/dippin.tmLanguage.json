@@ -27,7 +27,7 @@
     },
 
     "node-declaration": {
-      "match": "^\\s*(agent|tool|human|subgraph|conditional)\\s+(\\w+)",
+      "match": "^\\s*(agent|tool|human|subgraph|conditional|manager_loop)\\s+(\\w+)",
       "captures": {
         "1": { "name": "keyword.control.node.dippin" },
         "2": { "name": "entity.name.function.node.dippin" }
@@ -118,7 +118,7 @@
           "name": "keyword.operator.comparison.dippin"
         },
         {
-          "match": "\\b(ctx|graph|params)(\\.)([\\w.-]+)\\b",
+          "match": "\\b(ctx|graph|params|stack)(\\.)([\\w.-]+)\\b",
           "captures": {
             "1": { "name": "variable.language.namespace.dippin" },
             "2": { "name": "punctuation.accessor.dippin" },
@@ -145,7 +145,7 @@
           }
         },
         {
-          "match": "^\\s*(label|model|provider|mode|default|ref|timeout|fidelity|reasoning_effort|goal_gate|auto_status|max_turns|max_retries|base_delay|retry_policy|retry_target|fallback_target|max_restarts|restart_target|cache_tools|compaction|class|reads|writes)\\s*(:)",
+          "match": "^\\s*(label|model|provider|mode|default|ref|subgraph_ref|timeout|poll_interval|max_cycles|fidelity|reasoning_effort|goal_gate|auto_status|max_turns|max_retries|base_delay|retry_policy|retry_target|fallback_target|max_restarts|restart_target|cache_tools|compaction|stop_condition|steer_condition|steer_context|class|reads|writes)\\s*(:)",
           "captures": {
             "1": { "name": "entity.name.tag.field.dippin" },
             "2": { "name": "punctuation.separator.key-value.dippin" }

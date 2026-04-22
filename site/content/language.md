@@ -87,7 +87,7 @@ Vars are exported as graph-level DOT attributes so they round-trip through `dipp
 
 ## Node Kinds
 
-There are 7 node kinds, each with its own syntax and configuration:
+There are 8 node kinds, each with its own syntax and configuration:
 
 <div class="flow-diagram">
   <div class="pipeline-box lavender">agent<br>LLM interaction</div>
@@ -97,6 +97,7 @@ There are 7 node kinds, each with its own syntax and configuration:
   <div class="pipeline-box green">fan_in<br>Join</div>
   <div class="pipeline-box yellow">subgraph<br>Sub-pipeline</div>
   <div class="pipeline-box cream">conditional<br>Pure routing</div>
+  <div class="pipeline-box lavender">manager_loop<br>Child supervisor</div>
 </div>
 
 ### agent
@@ -189,6 +190,38 @@ Subgraph nodes embed another workflow as a single step. Parameters are passed vi
       strict: true
       model: gpt-5.4
 ```
+
+### manager_loop
+
+Manager loop nodes supervise a child sub-pipeline: they spawn it, poll it on a configurable cadence, and can steer it by injecting additional context during execution. They map to Tracker's `stack.manager_loop` construct and export as DOT shape `house`.
+
+```dippin
+  manager_loop QualityGate
+    label: "Quality Gate Supervisor"
+    subgraph_ref: quality_loop.dip
+    poll_interval: 30s
+    max_cycles: 12
+    stop_condition: stack.child.outcome = success
+    steer_condition: stack.child.cycles = 5
+    steer_context:
+      hint: halfway_through
+      priority: high
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `subgraph_ref` | String | **Required.** Path to the child `.dip` file (DIP135 if missing or not found) |
+| `poll_interval` | Duration | How often to poll the child (e.g. `30s`, `5m`). `0` means event-driven |
+| `max_cycles` | Integer | Maximum poll cycles before the node exits. `0` = unbounded — triggers DIP137 |
+| `stop_condition` | Condition | Expression over `stack.child.*` evaluated each cycle; when true the loop exits |
+| `steer_condition` | Condition | When true, inject `steer_context` into the running child |
+| `steer_context` | map[string]string | Key-value pairs injected on steer. Inline `k=v, k=v` or indented block form. Inline values may not contain commas |
+
+**Runtime state** exposed as context variables: `stack.child.cycles`, `stack.child.outcome`, `stack.child.status`.
+
+**Lint codes:** DIP135 (subgraph_ref missing or file not found), DIP136 (invalid control field value), DIP137 (unbounded loop — max_cycles: 0).
+
+See [docs/nodes.md](https://github.com/2389-research/dippin-lang/blob/main/docs/nodes.md) for the complete field reference.
 
 ### Conditional Nodes
 

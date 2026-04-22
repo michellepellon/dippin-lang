@@ -6,7 +6,7 @@ Nodes are the building blocks of a Dippin workflow. Each node represents a singl
 
 ## Node Kinds
 
-There are 6 node kinds, each with its own syntax and configuration:
+There are 8 node kinds, each with its own syntax and configuration:
 
 ```mermaid
 graph TB
@@ -18,9 +18,11 @@ graph TB
     subgraph Control Flow Nodes
         parallel["parallel<br>Fan-out"]
         fan_in["fan_in<br>Join"]
+        conditional["conditional<br>Pure branching"]
     end
     subgraph Composition Nodes
         subgraph_node["subgraph<br>Sub-pipeline"]
+        manager_loop["manager_loop<br>Supervisor"]
     end
 ```
 
@@ -31,7 +33,9 @@ graph TB
 | `tool` | Shell command execution | Block with command |
 | `parallel` | Fan-out to concurrent branches | Inline declaration |
 | `fan_in` | Join concurrent branches | Inline declaration |
+| `conditional` | Pure branching (no LLM call) | Block with label |
 | `subgraph` | Embed a sub-pipeline | Block with ref |
+| `manager_loop` | Supervise a child subgraph | Block with subgraph_ref |
 
 ---
 
@@ -417,6 +421,54 @@ The `interview_loop.dip` example is a pre-built subgraph that collects structure
 ```
 
 The subgraph handles the full interview lifecycle: generating questions with suggested options, collecting structured answers via `huh` forms, assessing completeness, and looping until requirements are clear. See `examples/interview_loop.dip` for the full source.
+
+---
+
+## Manager Loop Nodes
+
+Manager loop nodes supervise a child sub-pipeline, polling it on a cadence and optionally steering it by injecting context during execution. They map to Tracker's `stack.manager_loop` and DOT `shape=house`.
+
+```dippin
+  manager_loop QualityGate
+    label: "Quality Gate Supervisor"
+    subgraph_ref: quality_loop.dip
+    poll_interval: 30s
+    max_cycles: 12
+    stop_condition: stack.child.outcome = success
+    steer_condition: stack.child.cycles = 5
+    steer_context:
+      hint: halfway_through
+      priority: high
+```
+
+### Manager-Loop-Specific Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `subgraph_ref` | String | **Yes** | Path to the `.dip` file of the child pipeline to supervise. Lints DIP135 if missing or the file does not exist. |
+| `poll_interval` | Duration | No | How often the supervisor wakes to check child state (e.g., `30s`, `5m`). `0` means event-driven (no polling). |
+| `max_cycles` | Integer | No | Hard cap on child cycles. `0` means unbounded — unless `stop_condition` is set, this triggers DIP137. |
+| `stop_condition` | Condition | No | Terminates supervision when true. Uses `stack.child.*` runtime variables. |
+| `steer_condition` | Condition | No | Injects `steer_context` into the child when true. |
+| `steer_context` | Map | No | Key-value hints. Inline form (`key=val, key=val`) or block form (one `key: val` per line). Inline form does not support values containing commas — use the block form for such values. Keys must not contain `:` (it is the block-form separator); other reserved characters (`,`, `=`) are percent-encoded transparently at the DOT export/migrate boundary. |
+
+### Supervisor State
+
+While supervision runs, the runtime exposes the child's state under the `stack.child.*` namespace:
+
+- `stack.child.cycles` — how many iterations the child has run
+- `stack.child.outcome` — the child's last reported outcome
+- `stack.child.status` — `running`, `stopped`, `failed`
+
+Use these in `stop_condition` and `steer_condition` expressions.
+
+### Lint Checks
+
+- **DIP135** — `subgraph_ref` missing or points to a nonexistent file
+- **DIP136** — invalid control field (negative `poll_interval` or `max_cycles`)
+- **DIP137** — unbounded supervisor (no `stop_condition` and no `max_cycles`)
+
+See `examples/manager_loop_demo.dip` for a complete working example.
 
 ---
 

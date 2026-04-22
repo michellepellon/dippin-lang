@@ -109,7 +109,8 @@ func buildExecOrder(path []string) map[string][]int {
 
 // nodeShapes maps NodeKind to the corresponding DOT shape attribute.
 // Per §15: agent→box, human→hexagon, tool→parallelogram,
-// parallel→component, fan_in→tripleoctagon, subgraph→tab, conditional→diamond.
+// parallel→component, fan_in→tripleoctagon, subgraph→tab, conditional→diamond,
+// manager_loop→house.
 var nodeShapes = map[ir.NodeKind]string{
 	ir.NodeAgent:       "box",
 	ir.NodeHuman:       "hexagon",
@@ -118,6 +119,7 @@ var nodeShapes = map[ir.NodeKind]string{
 	ir.NodeFanIn:       "tripleoctagon",
 	ir.NodeSubgraph:    "tab",
 	ir.NodeConditional: "diamond",
+	ir.NodeManagerLoop: "house",
 }
 
 // nodeShape returns the DOT shape for a given NodeKind.
@@ -213,7 +215,7 @@ func applySemanticNodeAttrs(attrs map[string]string, cfg interface{}) bool {
 	return true
 }
 
-// applySemanticStructuralAttrs handles subgraph, parallel, and fan-in semantic attrs.
+// applySemanticStructuralAttrs handles subgraph, parallel, fan-in, and manager_loop semantic attrs.
 func applySemanticStructuralAttrs(attrs map[string]string, cfg interface{}) {
 	switch c := cfg.(type) {
 	case ir.SubgraphConfig:
@@ -222,6 +224,8 @@ func applySemanticStructuralAttrs(attrs map[string]string, cfg interface{}) {
 		applyParallelAttrs(attrs, c)
 	case ir.FanInConfig:
 		applyFanInAttrs(attrs, c)
+	case ir.ManagerLoopConfig:
+		applyManagerLoopAttrs(attrs, c)
 	}
 }
 
@@ -575,4 +579,94 @@ func sortStrings(s []string) {
 			s[j], s[j-1] = s[j-1], s[j]
 		}
 	}
+}
+
+// applyManagerLoopScalarAttrs writes scalar manager_loop config fields as DOT node attributes.
+func applyManagerLoopScalarAttrs(attrs map[string]string, cfg ir.ManagerLoopConfig) {
+	if cfg.SubgraphRef != "" {
+		attrs["subgraph_ref"] = cfg.SubgraphRef
+	}
+	if cfg.PollInterval != 0 {
+		attrs["poll_interval"] = formatDuration(cfg.PollInterval)
+	}
+	if cfg.MaxCycles != 0 {
+		attrs["max_cycles"] = fmt.Sprintf("%d", cfg.MaxCycles)
+	}
+	if s := flattenSteerContext(cfg.SteerContext); s != "" {
+		attrs["steer_context"] = s
+	}
+}
+
+// applyManagerLoopConditionAttrs writes condition manager_loop config fields as DOT node attributes.
+func applyManagerLoopConditionAttrs(attrs map[string]string, cfg ir.ManagerLoopConfig) {
+	if s := dotManagerLoopConditionText(cfg.StopCondition); s != "" {
+		attrs["stop_condition"] = s
+	}
+	if s := dotManagerLoopConditionText(cfg.SteerCondition); s != "" {
+		attrs["steer_condition"] = s
+	}
+}
+
+// dotManagerLoopConditionText returns the best textual form of a node condition:
+// prefers Raw when populated; otherwise formats Parsed via formatConditionExpr.
+// Returns "" when the condition is nil/empty.
+func dotManagerLoopConditionText(c *ir.Condition) string {
+	if c == nil {
+		return ""
+	}
+	if c.Raw != "" {
+		return c.Raw
+	}
+	if c.Parsed != nil {
+		return formatCondition(c.Parsed)
+	}
+	return ""
+}
+
+// applyManagerLoopAttrs writes manager_loop config fields as DOT node attributes.
+// The steer_context map is flattened to canonical sorted "k=v,k=v" so the
+// round-trip through DOT → migrate → IR is lossless.
+func applyManagerLoopAttrs(attrs map[string]string, cfg ir.ManagerLoopConfig) {
+	applyManagerLoopScalarAttrs(attrs, cfg)
+	applyManagerLoopConditionAttrs(attrs, cfg)
+}
+
+// steerContextEncoder replaces reserved steer_context delimiter characters with
+// their percent-encoded equivalents. '%' must be replaced first so it is not
+// double-encoded.
+var steerContextEncoder = strings.NewReplacer(
+	"%", "%25",
+	",", "%2C",
+	"=", "%3D",
+)
+
+// encodeSteerContextToken percent-encodes the three reserved characters
+// used as delimiters in the flattened steer_context representation (',', '=')
+// and the escape character itself ('%'). This keeps DOT round-trip lossless
+// even when keys or values contain reserved characters.
+func encodeSteerContextToken(s string) string {
+	if !strings.ContainsAny(s, ",=%") {
+		return s
+	}
+	return steerContextEncoder.Replace(s)
+}
+
+// flattenSteerContext produces canonical sorted "k=v,k=v" from the map.
+// Empty map returns empty string (caller suppresses the attr).
+// Reserved characters (',', '=', '%') in keys and values are percent-encoded
+// so the round-trip through DOT → migrate stays lossless.
+func flattenSteerContext(m map[string]string) string {
+	if len(m) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sortStrings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, encodeSteerContextToken(k)+"="+encodeSteerContextToken(m[k]))
+	}
+	return strings.Join(parts, ",")
 }

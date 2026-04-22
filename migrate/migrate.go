@@ -48,6 +48,7 @@ var shapeToKind = map[string]ir.NodeKind{
 	"component":     ir.NodeParallel,
 	"tripleoctagon": ir.NodeFanIn,
 	"tab":           ir.NodeSubgraph,
+	"house":         ir.NodeManagerLoop,
 }
 
 // convertDOTGraph transforms a parsed DOT graph into an IR workflow.
@@ -253,7 +254,7 @@ func buildNodeConfig(node *ir.Node, kind ir.NodeKind, attrs map[string]string) (
 	}
 }
 
-// buildOtherConfig builds config for parallel, fan_in, subgraph, conditional, or fallback.
+// buildOtherConfig builds config for parallel, fan_in, subgraph, conditional, manager_loop, or fallback.
 func buildOtherConfig(kind ir.NodeKind, attrs map[string]string) ir.NodeConfig {
 	switch kind {
 	case ir.NodeParallel:
@@ -262,8 +263,18 @@ func buildOtherConfig(kind ir.NodeKind, attrs map[string]string) ir.NodeConfig {
 		return buildFanInConfig(attrs)
 	case ir.NodeSubgraph:
 		return buildSubgraphConfig(attrs)
+	default:
+		return buildFlowControlConfig(kind, attrs)
+	}
+}
+
+// buildFlowControlConfig handles conditional, manager_loop, and the agent fallback.
+func buildFlowControlConfig(kind ir.NodeKind, attrs map[string]string) ir.NodeConfig {
+	switch kind {
 	case ir.NodeConditional:
 		return ir.ConditionalConfig{}
+	case ir.NodeManagerLoop:
+		return buildManagerLoopConfig(attrs)
 	default:
 		return ir.AgentConfig{}
 	}
@@ -272,13 +283,46 @@ func buildOtherConfig(kind ir.NodeKind, attrs map[string]string) ir.NodeConfig {
 // resolveKind determines the IR node kind from the DOT shape and attributes.
 func resolveKind(shape string, attrs map[string]string) ir.NodeKind {
 	if shape == "Mdiamond" || shape == "Msquare" {
-		return ir.NodeAgent
+		return resolveStartExitKind(attrs)
 	}
 	if shape == "diamond" {
 		return resolveDiamondKind(attrs)
 	}
 	if kind, ok := shapeToKind[shape]; ok {
 		return kind
+	}
+	return ir.NodeAgent
+}
+
+// hasManagerLoopAttrs reports whether attrs contain any manager_loop-specific
+// key. Used to detect manager_loop nodes when their kind-based shape was
+// overridden to Mdiamond/Msquare by start/exit marker export.
+func hasManagerLoopAttrs(attrs map[string]string) bool {
+	managerLoopKeys := []string{
+		"subgraph_ref",
+		"poll_interval",
+		"max_cycles",
+		"stop_condition",
+		"steer_condition",
+		"steer_context",
+	}
+	for _, key := range managerLoopKeys {
+		if _, ok := attrs[key]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// resolveStartExitKind disambiguates start/exit-marker shapes (Mdiamond, Msquare)
+// by checking for any manager_loop-specific attribute. Start/exit override the
+// kind-based shape in export, so migrate has to recover the original kind from
+// attrs. Checking any manager_loop key (not just subgraph_ref) ensures partial
+// configurations (e.g., poll_interval set but subgraph_ref missing) are not
+// silently downgraded to NodeAgent, losing all configured fields.
+func resolveStartExitKind(attrs map[string]string) ir.NodeKind {
+	if hasManagerLoopAttrs(attrs) {
+		return ir.NodeManagerLoop
 	}
 	return ir.NodeAgent
 }
@@ -484,6 +528,91 @@ func buildSubgraphConfig(attrs map[string]string) ir.SubgraphConfig {
 		cfg.Ref = v
 	}
 	return cfg
+}
+
+// buildManagerLoopConfig constructs a ManagerLoopConfig from DOT node attrs.
+// Mirrors the flat-attr format produced by export.applyManagerLoopAttrs.
+func buildManagerLoopConfig(attrs map[string]string) ir.ManagerLoopConfig {
+	cfg := ir.ManagerLoopConfig{SteerContext: map[string]string{}}
+	applyManagerLoopScalarMigrate(&cfg, attrs)
+	applyManagerLoopConditionMigrate(&cfg, attrs)
+	return cfg
+}
+
+// applyManagerLoopScalarMigrate populates subgraph_ref, poll_interval,
+// max_cycles, and steer_context (flattened form) from DOT attrs.
+func applyManagerLoopScalarMigrate(cfg *ir.ManagerLoopConfig, attrs map[string]string) {
+	if v, ok := attrs["subgraph_ref"]; ok {
+		cfg.SubgraphRef = v
+	}
+	applyScalarDuration(&cfg.PollInterval, attrs, "poll_interval")
+	applyScalarInt(&cfg.MaxCycles, attrs, "max_cycles")
+	if v, ok := attrs["steer_context"]; ok && v != "" {
+		cfg.SteerContext = parseFlattenedSteerContext(v)
+	}
+}
+
+// applyScalarDuration reads attrs[key] and parses into *target if present and valid.
+// Thin wrapper over tryApplyDurationDefault that also handles the attr-lookup.
+func applyScalarDuration(target *time.Duration, attrs map[string]string, key string) {
+	if v, ok := attrs[key]; ok {
+		_ = tryApplyDurationDefault(v, target)
+	}
+}
+
+// applyScalarInt reads attrs[key] and parses into *target if present and valid.
+// Thin wrapper over tryApplyIntDefault that also handles the attr-lookup.
+func applyScalarInt(target *int, attrs map[string]string, key string) {
+	if v, ok := attrs[key]; ok {
+		_ = tryApplyIntDefault(v, target)
+	}
+}
+
+// applyManagerLoopConditionMigrate populates StopCondition and SteerCondition
+// as *ir.Condition with Raw set; Parsed remains nil until simulate.EnsureConditionsParsed runs.
+func applyManagerLoopConditionMigrate(cfg *ir.ManagerLoopConfig, attrs map[string]string) {
+	if v, ok := attrs["stop_condition"]; ok && v != "" {
+		cfg.StopCondition = &ir.Condition{Raw: v}
+	}
+	if v, ok := attrs["steer_condition"]; ok && v != "" {
+		cfg.SteerCondition = &ir.Condition{Raw: v}
+	}
+}
+
+// steerContextDecoder reverses steerContextEncoder from export/dot.go.
+// Sequences are listed longest-first so the replacer matches greedily.
+var steerContextDecoder = strings.NewReplacer(
+	"%25", "%",
+	"%2C", ",",
+	"%3D", "=",
+)
+
+// decodeSteerContextToken reverses encodeSteerContextToken from export.
+// Returns the input unchanged when it contains no '%' escapes.
+func decodeSteerContextToken(s string) string {
+	if !strings.Contains(s, "%") {
+		return s
+	}
+	return steerContextDecoder.Replace(s)
+}
+
+// parseFlattenedSteerContext splits "k=v,k=v" (canonical form from DOT export)
+// into a map. Malformed entries are silently skipped — they cannot occur from
+// our own exporter and strict rejection would break migrations of manually
+// edited DOT files. Percent-encoded tokens (produced by encodeSteerContextToken
+// in export) are decoded back to their original values.
+func parseFlattenedSteerContext(s string) map[string]string {
+	out := map[string]string{}
+	for _, part := range strings.Split(s, ",") {
+		kv := strings.SplitN(strings.TrimSpace(part), "=", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		k := decodeSteerContextToken(strings.TrimSpace(kv[0]))
+		v := decodeSteerContextToken(strings.TrimSpace(kv[1]))
+		out[k] = v
+	}
+	return out
 }
 
 func buildRetryConfig(attrs map[string]string) ir.RetryConfig {

@@ -15,6 +15,7 @@
   "conditional"
   "parallel"
   "fan_in"
+  "manager_loop"
 ] @type
 
 ; Edge / condition keywords
@@ -71,6 +72,8 @@
 (parallel_node
   (identifier) @function)
 (fan_in_node
+  (identifier) @function)
+(manager_loop_node
   (identifier) @function)
 
 ; Edge source/target

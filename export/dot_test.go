@@ -1226,6 +1226,67 @@ func TestExportVarsAsGraphAttrs(t *testing.T) {
 	}
 }
 
+func TestExportDOT_ManagerLoop(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "W",
+		Start: "S",
+		Exit:  "E",
+		Nodes: []*ir.Node{
+			{ID: "S", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "start"}},
+			{ID: "M", Kind: ir.NodeManagerLoop, Label: "Supervisor", Config: ir.ManagerLoopConfig{
+				SubgraphRef:    "inner",
+				PollInterval:   30 * time.Second,
+				MaxCycles:      12,
+				StopCondition:  &ir.Condition{Raw: "stack.child.cycles = 10"},
+				SteerCondition: &ir.Condition{Raw: "stack.child.cycles = 5"},
+				SteerContext:   map[string]string{"hint": "speed_up", "priority": "high"},
+			}},
+			{ID: "E", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "end"}},
+		},
+		Edges: []*ir.Edge{
+			{From: "S", To: "M"},
+			{From: "M", To: "E"},
+		},
+	}
+	out := ExportDOT(w, ExportOptions{})
+	assertContains(t, out, `shape="house"`)
+	assertContains(t, out, `subgraph_ref="inner"`)
+	assertContains(t, out, `poll_interval="30s"`)
+	assertContains(t, out, `max_cycles="12"`)
+	assertContains(t, out, `stop_condition="stack.child.cycles = 10"`)
+	assertContains(t, out, `steer_condition="stack.child.cycles = 5"`)
+	// steer_context flattens to canonical sorted "k=v,k=v"
+	assertContains(t, out, `steer_context="hint=speed_up,priority=high"`)
+}
+
+func TestExportDOT_ManagerLoop_MinimalOmitsEmptyAttrs(t *testing.T) {
+	// A manager_loop with only subgraph_ref set should emit shape=house and
+	// subgraph_ref but no poll_interval, max_cycles, stop/steer_condition,
+	// or steer_context attrs. Exercises the guard clauses in
+	// applyManagerLoopScalarAttrs and applyManagerLoopConditionAttrs.
+	w := &ir.Workflow{
+		Name:  "W",
+		Start: "S",
+		Exit:  "E",
+		Nodes: []*ir.Node{
+			{ID: "S", Kind: ir.NodeAgent, Config: ir.AgentConfig{}},
+			{ID: "M", Kind: ir.NodeManagerLoop, Config: ir.ManagerLoopConfig{
+				SubgraphRef: "inner",
+			}},
+			{ID: "E", Kind: ir.NodeAgent, Config: ir.AgentConfig{}},
+		},
+		Edges: []*ir.Edge{{From: "S", To: "M"}, {From: "M", To: "E"}},
+	}
+	out := ExportDOT(w, ExportOptions{})
+	assertContains(t, out, `shape="house"`)
+	assertContains(t, out, `subgraph_ref="inner"`)
+	for _, attr := range []string{"poll_interval", "max_cycles", "stop_condition", "steer_condition", "steer_context"} {
+		if strings.Contains(out, attr+"=") {
+			t.Errorf("unexpected %s attr in minimal output:\n%s", attr, out)
+		}
+	}
+}
+
 func TestExportVarsSkipsDefaultsCollision(t *testing.T) {
 	w := &ir.Workflow{
 		Name:  "Test",

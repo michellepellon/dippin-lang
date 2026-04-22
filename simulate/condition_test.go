@@ -1,6 +1,7 @@
 package simulate
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/2389-research/dippin-lang/ir"
@@ -213,5 +214,55 @@ func TestEnsureConditionsParsed(t *testing.T) {
 	// Third edge should remain as-is (already parsed).
 	if w.Edges[2].Condition.Parsed == nil {
 		t.Error("edge C->D condition should still be parsed")
+	}
+}
+
+func TestEnsureConditionsParsed_ManagerLoop(t *testing.T) {
+	stop := &ir.Condition{Raw: "stack.child.cycles = 10"}
+	steer := &ir.Condition{Raw: "stack.child.cycles = 5"}
+	w := &ir.Workflow{
+		Name:  "W",
+		Start: "M",
+		Exit:  "M",
+		Nodes: []*ir.Node{
+			{ID: "M", Kind: ir.NodeManagerLoop, Config: ir.ManagerLoopConfig{
+				SubgraphRef:    "inner",
+				StopCondition:  stop,
+				SteerCondition: steer,
+			}},
+		},
+	}
+	if err := EnsureConditionsParsed(w); err != nil {
+		t.Fatalf("EnsureConditionsParsed error: %v", err)
+	}
+	if stop.Parsed == nil {
+		t.Errorf("StopCondition.Parsed still nil after EnsureConditionsParsed")
+	}
+	if steer.Parsed == nil {
+		t.Errorf("SteerCondition.Parsed still nil after EnsureConditionsParsed")
+	}
+}
+
+func TestEnsureConditionsParsed_ManagerLoop_InvalidCondition(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "W",
+		Start: "M",
+		Exit:  "M",
+		Nodes: []*ir.Node{
+			{ID: "Supervisor", Kind: ir.NodeManagerLoop, Config: ir.ManagerLoopConfig{
+				SubgraphRef:   "inner",
+				StopCondition: &ir.Condition{Raw: "stack.child.cycles ="},
+			}},
+		},
+	}
+	err := EnsureConditionsParsed(w)
+	if err == nil {
+		t.Fatal("expected error for invalid condition, got nil")
+	}
+	if !strings.Contains(err.Error(), "node Supervisor stop_condition") {
+		t.Errorf("error %q does not contain %q", err.Error(), "node Supervisor stop_condition")
+	}
+	if !strings.Contains(err.Error(), `"stack.child.cycles ="`) {
+		t.Errorf("error %q does not include the offending raw condition", err.Error())
 	}
 }

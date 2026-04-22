@@ -30,3 +30,14 @@ func assertFieldNonEmpty(t *testing.T, code, field, value string) {
 		t.Errorf("%s: %s is empty", code, field)
 	}
 }
+
+func TestManagerLoopCodesRegistered(t *testing.T) {
+	for _, code := range []string{DIP135, DIP136, DIP137} {
+		if _, ok := CodeDescription[code]; !ok {
+			t.Errorf("%s missing from CodeDescription", code)
+		}
+		if _, ok := Explanations[code]; !ok {
+			t.Errorf("%s missing from Explanations", code)
+		}
+	}
+}
