@@ -473,15 +473,33 @@ func (p *Parser) applyManagerLoopParsedField(cfg *ir.ManagerLoopConfig, key, val
 // (one "k: v" per line, same as parseParamsBlock). The inline form splits on
 // comma without quote-awareness — values containing commas MUST use the block
 // form or they will be truncated at the first comma.
+//
+// Disambiguates forms by looking at the first separator: ":" → block form
+// (including single-entry block which has no embedded newline), "=" → inline.
 func (p *Parser) parseSteerContext(raw string) map[string]string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return map[string]string{}
 	}
-	if strings.Contains(raw, "\n") {
+	if isSteerContextBlockForm(raw) {
 		return p.parseParamsBlock(raw)
 	}
 	return p.parseSteerContextInline(raw)
+}
+
+// isSteerContextBlockForm returns true when raw looks like block-form content
+// (one or more "k: v" lines) rather than inline "k=v,k=v". Decides by finding
+// the first ":" or "=" — whichever comes first wins.
+func isSteerContextBlockForm(raw string) bool {
+	colon := strings.Index(raw, ":")
+	equals := strings.Index(raw, "=")
+	if colon == -1 {
+		return false // no colon → cannot be block form
+	}
+	if equals == -1 {
+		return true // has colon, no equals → block form
+	}
+	return colon < equals
 }
 
 // parseSteerContextInline parses "k=v, k=v, k=v" into a map. Values containing

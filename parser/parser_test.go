@@ -1801,3 +1801,36 @@ func TestParseManagerLoop_SteerContextInline_CommaInValueTruncates(t *testing.T)
 		t.Errorf("expected malformed-entry diagnostic; got %v", p.diagnostics)
 	}
 }
+
+func TestParseManagerLoop_SteerContextBlock_SingleEntry(t *testing.T) {
+	// Regression: a single-entry block-form steer_context produces a raw
+	// block value with no embedded newline. The pre-fix parser routed that
+	// to the inline CSV handler and emitted a "must be key=value" diagnostic.
+	src := `workflow W
+  start: M
+  exit: M
+
+  manager_loop M
+    subgraph_ref: inner
+    steer_context:
+      hint: halfway_through
+
+  edges
+    M -> M
+`
+	p := NewParser(src, "")
+	_, err := p.Parse()
+	if err != nil {
+		t.Fatalf("Parse returned error (diagnostics): %v", err)
+	}
+	if len(p.diagnostics) != 0 {
+		t.Fatalf("unexpected diagnostics on single-entry block form: %v", p.diagnostics)
+	}
+	cfg := p.workflow.Nodes[0].Config.(ir.ManagerLoopConfig)
+	if cfg.SteerContext["hint"] != "halfway_through" {
+		t.Errorf("SteerContext[hint] = %q, want %q", cfg.SteerContext["hint"], "halfway_through")
+	}
+	if len(cfg.SteerContext) != 1 {
+		t.Errorf("SteerContext size = %d, want 1: %v", len(cfg.SteerContext), cfg.SteerContext)
+	}
+}
