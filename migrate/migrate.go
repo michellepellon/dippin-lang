@@ -294,13 +294,34 @@ func resolveKind(shape string, attrs map[string]string) ir.NodeKind {
 	return ir.NodeAgent
 }
 
+// hasManagerLoopAttrs reports whether attrs contain any manager_loop-specific
+// key. Used to detect manager_loop nodes when their kind-based shape was
+// overridden to Mdiamond/Msquare by start/exit marker export.
+func hasManagerLoopAttrs(attrs map[string]string) bool {
+	managerLoopKeys := []string{
+		"subgraph_ref",
+		"poll_interval",
+		"max_cycles",
+		"stop_condition",
+		"steer_condition",
+		"steer_context",
+	}
+	for _, key := range managerLoopKeys {
+		if _, ok := attrs[key]; ok {
+			return true
+		}
+	}
+	return false
+}
+
 // resolveStartExitKind disambiguates start/exit-marker shapes (Mdiamond, Msquare)
-// by checking for kind-specific attributes. Start/exit override the kind-based
-// shape in export, so migrate has to recover the original kind from attrs.
-// Currently manager_loop is the only non-agent kind that can be at start/exit
-// (via subgraph_ref); other kinds fall through to agent (legacy behavior).
+// by checking for any manager_loop-specific attribute. Start/exit override the
+// kind-based shape in export, so migrate has to recover the original kind from
+// attrs. Checking any manager_loop key (not just subgraph_ref) ensures partial
+// configurations (e.g., poll_interval set but subgraph_ref missing) are not
+// silently downgraded to NodeAgent, losing all configured fields.
 func resolveStartExitKind(attrs map[string]string) ir.NodeKind {
-	if _, hasSubgraphRef := attrs["subgraph_ref"]; hasSubgraphRef {
+	if hasManagerLoopAttrs(attrs) {
 		return ir.NodeManagerLoop
 	}
 	return ir.NodeAgent

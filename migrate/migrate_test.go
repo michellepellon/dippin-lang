@@ -2476,3 +2476,22 @@ func TestMigrate_ManagerLoop_AsStartNode(t *testing.T) {
 		t.Errorf("fields lost on migrate through Mdiamond: %+v", cfg)
 	}
 }
+
+func TestMigrate_ManagerLoop_PartialConfigAtStartNode(t *testing.T) {
+	// A manager_loop with only poll_interval + max_cycles set (no subgraph_ref yet)
+	// must still be recognized as NodeManagerLoop when at start, so the config
+	// isn't silently dropped during migrate.
+	dot := `digraph W {
+  Supervise [shape=Mdiamond, label="Supervisor", poll_interval="10s", max_cycles="5"];
+  Done [shape=Msquare, label="Done"];
+  Supervise -> Done;
+}`
+	w, err := Migrate(dot)
+	if err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	n := w.Node("Supervise")
+	if n == nil || n.Kind != ir.NodeManagerLoop {
+		t.Fatalf("Supervise kind = %v, want NodeManagerLoop (partial manager_loop attrs should still resolve)", n)
+	}
+}
