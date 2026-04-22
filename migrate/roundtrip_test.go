@@ -8,6 +8,7 @@ import (
 
 	"github.com/2389-research/dippin-lang/export"
 	"github.com/2389-research/dippin-lang/ir"
+	dipparser "github.com/2389-research/dippin-lang/parser"
 )
 
 // TestExportDOT_ManagerLoop_SteerContextReservedCharsRoundTrip verifies that
@@ -127,4 +128,41 @@ func extractDOTAttr(dot, key string) string {
 		return ""
 	}
 	return dot[start : start+end]
+}
+
+// TestRoundTripToolSafetyDefaults verifies that tool-safety defaults
+// round-trip losslessly through parse → ExportDOT → Migrate.
+func TestRoundTripToolSafetyDefaults(t *testing.T) {
+	src := `workflow ToolSafety
+  goal: "round trip"
+  start: A
+  exit: A
+
+  defaults
+    tool_commands_allow: "git *,make *"
+    tool_denylist_add: "rm -rf /"
+
+  agent A
+    prompt: "Do it."
+
+  edges
+    A -> A
+`
+	w1, err := dipparser.NewParser(src, "rt.dip").Parse()
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	dot := export.ExportDOT(w1, export.ExportOptions{})
+	w2, err := Migrate(dot)
+	if err != nil {
+		t.Fatalf("migrate: %v\nDOT:\n%s", err, dot)
+	}
+	if w2.Defaults.ToolCommandsAllow != "git *,make *" {
+		t.Errorf("tool_commands_allow after round-trip = %q, want %q; DOT:\n%s",
+			w2.Defaults.ToolCommandsAllow, "git *,make *", dot)
+	}
+	if w2.Defaults.ToolDenylistAdd != "rm -rf /" {
+		t.Errorf("tool_denylist_add after round-trip = %q, want %q; DOT:\n%s",
+			w2.Defaults.ToolDenylistAdd, "rm -rf /", dot)
+	}
 }
