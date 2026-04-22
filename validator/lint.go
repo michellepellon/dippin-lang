@@ -48,6 +48,7 @@ func Lint(w *ir.Workflow) Result {
 	diags = append(diags, lintToolCtxVars(w)...)
 	diags = append(diags, lintToolBinary(w)...)
 	diags = append(diags, lintSubgraphRef(w)...)
+	diags = append(diags, lintManagerLoop(w)...)
 	diags = append(diags, lintHumanMode(w)...)
 	diags = append(diags, lintInterviewDefault(w)...)
 	diags = append(diags, lintInterviewLabeledEdges(w)...)
