@@ -31,3 +31,6 @@ site/static/wasm_exec.js
 .DS_Store
 .worktrees/
 site/.hugo_build.lock
+
+# Tree-sitter build deps
+editors/tree-sitter-dippin/node_modules/

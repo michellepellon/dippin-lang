@@ -53,7 +53,8 @@ module.exports = grammar({
         $.subgraph_node,
         $.conditional_node,
         $.parallel_node,
-        $.fan_in_node
+        $.fan_in_node,
+        $.manager_loop_node
       ),
 
     agent_node: ($) =>
@@ -70,6 +71,9 @@ module.exports = grammar({
 
     conditional_node: ($) =>
       seq("conditional", $.identifier, $._indent, repeat1(choice($.node_field, $._newline)), $._dedent),
+
+    manager_loop_node: ($) =>
+      seq("manager_loop", $.identifier, $._indent, repeat1(choice($.node_field, $._newline)), $._dedent),
 
     parallel_node: ($) =>
       seq("parallel", $.identifier, "->", $.identifier_list, $._newline),

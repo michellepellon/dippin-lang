@@ -1,0 +1,30 @@
+{
+  "grammars": [
+    {
+      "name": "dippin",
+      "camelcase": "Dippin",
+      "scope": "source.dippin",
+      "path": ".",
+      "file-types": [
+        "dip"
+      ],
+      "highlights": "queries/highlights.scm"
+    }
+  ],
+  "metadata": {
+    "version": "0.1.0",
+    "license": "MIT",
+    "description": "Tree-sitter grammar for the Dippin workflow language",
+    "links": {
+      "repository": "https://github.com/2389-research/dippin-lang"
+    }
+  },
+  "bindings": {
+    "c": true,
+    "go": true,
+    "node": true,
+    "python": true,
+    "rust": true,
+    "swift": true
+  }
+}

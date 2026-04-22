@@ -139,6 +139,14 @@ wasm:
     cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" site/static/wasm_exec.js
     @echo "WASM built: site/static/dippin.wasm"
 
+# Regenerate tree-sitter parser from grammar.js
+tree-sitter-generate:
+    cd editors/tree-sitter-dippin && npx tree-sitter generate
+
+# Run tree-sitter corpus tests (after regenerate)
+tree-sitter-test: tree-sitter-generate
+    cd editors/tree-sitter-dippin && npx tree-sitter test
+
 # Clean build artifacts
 clean:
     rm -f dippin cover.out cover_filtered.out cover_check.out site/static/dippin.wasm site/static/wasm_exec.js
