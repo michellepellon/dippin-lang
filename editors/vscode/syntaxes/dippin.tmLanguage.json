@@ -27,7 +27,7 @@
     },
 
     "node-declaration": {
-      "match": "^\\s*(agent|tool|human|subgraph|conditional|parallel|fan_in|manager_loop)\\s+(\\w+)",
+      "match": "^\\s*(agent|tool|human|subgraph|conditional|manager_loop)\\s+(\\w+)",
       "captures": {
         "1": { "name": "keyword.control.node.dippin" },
         "2": { "name": "entity.name.function.node.dippin" }

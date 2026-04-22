@@ -14,7 +14,6 @@ All notable changes to dippin-lang are documented here. Versions follow [semver]
 
 ### Fixed
 - **Parser `steer_context` block-form routing** — a single-entry block-form `steer_context` (one `k: v` line under the indent) lexes without an embedded newline; the previous newline-based heuristic mis-routed it to the inline CSV handler. Replaced with a separator-position check (`:` before `=` means block, `=` before `:` means inline).
-- **VS Code TextMate node-declaration regex** was missing `parallel` and `fan_in`; block-form declarations of those kinds went unhighlighted. Bundled with the `manager_loop` grammar update.
 
 ## [v0.21.0] — 2026-04-20
 
