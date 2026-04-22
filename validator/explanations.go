@@ -369,5 +369,26 @@ func nodeValidationExplanations() map[string]Explanation {
 			Fix:     "If you want to control loop iterations, set max_restarts instead of (or in addition to) max_retries.",
 			Example: "defaults\n  max_retries: 5  // but no max_restarts!\n\nedges\n  Review -> Implement  restart: true",
 		},
+		DIP135: {
+			Code:    DIP135,
+			Summary: "manager_loop subgraph_ref missing or file does not exist",
+			Trigger: "A manager_loop node either has no subgraph_ref field set, or the referenced file cannot be found on disk.",
+			Fix:     "Set subgraph_ref to the path of an existing .dip file that defines the child pipeline.",
+			Example: "manager_loop Supervise\n  subgraph_ref: quality_loop.dip  // file must exist relative to this workflow",
+		},
+		DIP136: {
+			Code:    DIP136,
+			Summary: "manager_loop control field has invalid value",
+			Trigger: "A manager_loop field failed validation: poll_interval is negative, max_cycles is negative, or steer_context entries are not valid key=value pairs.",
+			Fix:     "Use a non-negative duration for poll_interval (e.g., 30s), a positive integer for max_cycles, and comma-separated key=value pairs (or a block) for steer_context.",
+			Example: "manager_loop Supervise\n  subgraph_ref: inner\n  poll_interval: 30s\n  max_cycles: 12\n  steer_context: hint=speed_up, priority=high",
+		},
+		DIP137: {
+			Code:    DIP137,
+			Summary: "unbounded manager_loop: no stop_condition and no max_cycles",
+			Trigger: "A manager_loop node has neither a stop_condition nor a max_cycles cap, so supervision can run forever.",
+			Fix:     "Set stop_condition (e.g., stack.child.outcome = success) or max_cycles to bound supervision.",
+			Example: "manager_loop Supervise\n  subgraph_ref: inner\n  stop_condition: stack.child.outcome = success  // or: max_cycles: 20",
+		},
 	}
 }
