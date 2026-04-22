@@ -2451,3 +2451,28 @@ func TestMigrate_ManagerLoop_Minimal(t *testing.T) {
 		t.Errorf("SteerContext should be empty; got %v", cfg.SteerContext)
 	}
 }
+
+func TestMigrate_ManagerLoop_AsStartNode(t *testing.T) {
+	// A manager_loop node at Start gets shape=Mdiamond from export, not shape=house.
+	// migrate must still reconstruct it as NodeManagerLoop by looking at attrs.
+	dot := `digraph W {
+  Supervise [shape=Mdiamond, label="Supervisor", subgraph_ref="inner", max_cycles="5", stop_condition="stack.child.outcome = success"];
+  Done [shape=Msquare, label="Done"];
+  Supervise -> Done;
+}`
+	w, err := Migrate(dot)
+	if err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	n := w.Node("Supervise")
+	if n == nil || n.Kind != ir.NodeManagerLoop {
+		t.Fatalf("Supervise kind = %v, want NodeManagerLoop", n)
+	}
+	cfg, ok := n.Config.(ir.ManagerLoopConfig)
+	if !ok {
+		t.Fatalf("Config = %T", n.Config)
+	}
+	if cfg.SubgraphRef != "inner" || cfg.MaxCycles != 5 {
+		t.Errorf("fields lost on migrate through Mdiamond: %+v", cfg)
+	}
+}

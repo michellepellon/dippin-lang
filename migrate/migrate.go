@@ -283,13 +283,25 @@ func buildFlowControlConfig(kind ir.NodeKind, attrs map[string]string) ir.NodeCo
 // resolveKind determines the IR node kind from the DOT shape and attributes.
 func resolveKind(shape string, attrs map[string]string) ir.NodeKind {
 	if shape == "Mdiamond" || shape == "Msquare" {
-		return ir.NodeAgent
+		return resolveStartExitKind(attrs)
 	}
 	if shape == "diamond" {
 		return resolveDiamondKind(attrs)
 	}
 	if kind, ok := shapeToKind[shape]; ok {
 		return kind
+	}
+	return ir.NodeAgent
+}
+
+// resolveStartExitKind disambiguates start/exit-marker shapes (Mdiamond, Msquare)
+// by checking for kind-specific attributes. Start/exit override the kind-based
+// shape in export, so migrate has to recover the original kind from attrs.
+// Currently manager_loop is the only non-agent kind that can be at start/exit
+// (via subgraph_ref); other kinds fall through to agent (legacy behavior).
+func resolveStartExitKind(attrs map[string]string) ir.NodeKind {
+	if _, hasSubgraphRef := attrs["subgraph_ref"]; hasSubgraphRef {
+		return ir.NodeManagerLoop
 	}
 	return ir.NodeAgent
 }
@@ -546,10 +558,42 @@ func applyManagerLoopConditionMigrate(cfg *ir.ManagerLoopConfig, attrs map[strin
 	}
 }
 
+// decodeSteerContextToken reverses encodeSteerContextToken from export.
+// Returns the input unchanged when it contains no '%' escapes.
+func decodeSteerContextToken(s string) string {
+	if !strings.Contains(s, "%") {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); {
+		if i+3 <= len(s) && s[i] == '%' {
+			switch s[i : i+3] {
+			case "%25":
+				b.WriteByte('%')
+				i += 3
+				continue
+			case "%2C":
+				b.WriteByte(',')
+				i += 3
+				continue
+			case "%3D":
+				b.WriteByte('=')
+				i += 3
+				continue
+			}
+		}
+		b.WriteByte(s[i])
+		i++
+	}
+	return b.String()
+}
+
 // parseFlattenedSteerContext splits "k=v,k=v" (canonical form from DOT export)
 // into a map. Malformed entries are silently skipped — they cannot occur from
 // our own exporter and strict rejection would break migrations of manually
-// edited DOT files.
+// edited DOT files. Percent-encoded tokens (produced by encodeSteerContextToken
+// in export) are decoded back to their original values.
 func parseFlattenedSteerContext(s string) map[string]string {
 	out := map[string]string{}
 	for _, part := range strings.Split(s, ",") {
@@ -557,7 +601,9 @@ func parseFlattenedSteerContext(s string) map[string]string {
 		if len(kv) != 2 {
 			continue
 		}
-		out[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1])
+		k := decodeSteerContextToken(strings.TrimSpace(kv[0]))
+		v := decodeSteerContextToken(strings.TrimSpace(kv[1]))
+		out[k] = v
 	}
 	return out
 }
