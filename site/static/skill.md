@@ -151,6 +151,34 @@ Inline syntax only. Every `parallel` must have a matching `fan_in` with identica
 | `reads` | CSV | Context keys read |
 | `writes` | CSV | Context keys written |
 
+### manager_loop — supervised child pipeline
+
+Spawns a child `.dip` pipeline, polls it on a cadence, and can steer it by injecting context. Maps to `stack.manager_loop` in Tracker; DOT shape `house`. Full reference: [docs/nodes.md](https://github.com/2389-research/dippin-lang/blob/main/docs/nodes.md).
+
+```
+  manager_loop QualityGate
+    label: "Quality Gate Supervisor"
+    subgraph_ref: quality_loop.dip
+    poll_interval: 30s
+    max_cycles: 12
+    stop_condition: stack.child.outcome = success
+    steer_condition: stack.child.cycles = 5
+    steer_context:
+      hint: halfway_through
+      priority: high
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `subgraph_ref` | string | **Required.** Path to child .dip file (DIP135 if missing/not found) |
+| `poll_interval` | duration | Poll cadence (e.g. `30s`). `0` = event-driven |
+| `max_cycles` | int | Max poll cycles. `0` = unbounded → DIP137 |
+| `stop_condition` | condition | Over `stack.child.*`; when true the loop exits |
+| `steer_condition` | condition | When true, inject `steer_context` into child |
+| `steer_context` | map[string]string | Inline `k=v, k=v` or block form. No commas in inline values |
+
+Runtime state: `stack.child.cycles`, `stack.child.outcome`, `stack.child.status`. Lint: DIP135 (bad ref), DIP136 (invalid field), DIP137 (unbounded).
+
 ## Common Fields (all block nodes)
 
 | Field | Notes |
