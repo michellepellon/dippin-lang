@@ -1,0 +1,15 @@
+workflow DefaultsToolSafety
+  goal: "Test tool-safety defaults parsing"
+  start: A
+  exit: A
+
+  defaults
+    model: claude-sonnet-4-6
+    tool_commands_allow: "git *,make *,npm test"
+    tool_denylist_add: "rm -rf /,dd *"
+
+  agent A
+    prompt: "Do it."
+
+  edges
+    A -> A

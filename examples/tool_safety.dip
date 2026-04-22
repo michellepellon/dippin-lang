@@ -1,0 +1,31 @@
+workflow ToolSafety
+  goal: "Demonstrate tool_commands_allow and tool_denylist_add defaults for constrained shell execution"
+  start: Start
+  exit: Done
+
+  defaults
+    model: claude-sonnet-4-6
+    # Restrict tool nodes to a glob allowlist. Tracker parses the comma-separated
+    # list at runtime and rejects commands that don't match any pattern.
+    tool_commands_allow: "git *,make *,npm test,npm run *"
+    # Patterns appended to tracker's default denylist, in addition to its
+    # built-in blocks on destructive commands.
+    tool_denylist_add: "rm -rf /,dd if=*"
+
+  agent Start
+    label: Start
+
+  tool RunTests
+    label: "Run Tests"
+    timeout: 60s
+    command:
+      set -eu
+      npm test
+
+  agent Done
+    label: Done
+    prompt: "Summarize the results."
+
+  edges
+    Start -> RunTests
+    RunTests -> Done

@@ -70,6 +70,28 @@ The optional `defaults` block sets graph-level configuration that applies to all
 | `cache_tools` | Boolean | Whether to cache tool call results |
 | `compaction` | String | Context compaction mode for long pipelines |
 
+### Tool safety
+
+Tool nodes that shell out can be constrained by two defaults consumed by the tracker runtime:
+
+- `tool_commands_allow` — comma-separated glob allowlist. When set, tracker rejects tool-node commands that do not match any pattern.
+- `tool_denylist_add` — comma-separated globs appended to tracker's default denylist (on top of tracker's built-in blocks).
+
+```dippin
+workflow Safe
+  goal: "Constrained tool execution"
+  start: A
+  exit: A
+
+  defaults
+    tool_commands_allow: "git *,make *"
+    tool_denylist_add: "rm -rf /,dd *"
+
+  # ...
+```
+
+Values pass through to tracker verbatim; dippin-lang does not validate glob syntax.
+
 ## Vars Block
 
 The optional `vars` block declares user-defined variables that are substituted wherever `$key` placeholders appear in prompts and commands.

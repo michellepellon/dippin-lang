@@ -18,6 +18,8 @@ workflow <Name>
     max_total_tokens: <int>
     max_cost_cents: <int>
     max_wall_time: <duration>
+    tool_commands_allow: "<glob>,<glob>"
+    tool_denylist_add: "<glob>,<glob>"
     ...]
 
   [vars

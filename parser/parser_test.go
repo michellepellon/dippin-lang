@@ -1873,3 +1873,30 @@ func TestParseManagerLoop_SteerContextKeyWithColon(t *testing.T) {
 		t.Errorf("expected diagnostic about key with ':'; got %v", p.diagnostics)
 	}
 }
+
+func TestParseDefaultsToolSafety(t *testing.T) {
+	w := parseFixture(t, "defaults_tool_safety.dip")
+	d := w.Defaults
+	if d.ToolCommandsAllow != "git *,make *,npm test" {
+		t.Errorf("tool_commands_allow = %q, want %q", d.ToolCommandsAllow, "git *,make *,npm test")
+	}
+	if d.ToolDenylistAdd != "rm -rf /,dd *" {
+		t.Errorf("tool_denylist_add = %q, want %q", d.ToolDenylistAdd, "rm -rf /,dd *")
+	}
+}
+
+func TestParseDefaultsToolSafetyRoundTrip(t *testing.T) {
+	w1 := parseFixture(t, "defaults_tool_safety.dip")
+	formatted := formatter.Format(w1)
+	w2, err := NewParser(formatted, "roundtrip").Parse()
+	if err != nil {
+		t.Fatalf("re-parse error: %v\nformatted:\n%s", err, formatted)
+	}
+	d := w2.Defaults
+	if d.ToolCommandsAllow != "git *,make *,npm test" {
+		t.Errorf("round-trip: tool_commands_allow = %q, want %q", d.ToolCommandsAllow, "git *,make *,npm test")
+	}
+	if d.ToolDenylistAdd != "rm -rf /,dd *" {
+		t.Errorf("round-trip: tool_denylist_add = %q, want %q", d.ToolDenylistAdd, "rm -rf /,dd *")
+	}
+}

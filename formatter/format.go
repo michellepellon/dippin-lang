@@ -194,6 +194,17 @@ func writeDefaultsBudgetFields(wr *writer, d ir.WorkflowDefaults) {
 	if d.MaxWallTime != 0 {
 		wr.line("max_wall_time: %s", formatDuration(d.MaxWallTime))
 	}
+	writeDefaultsToolSafetyFields(wr, d)
+}
+
+// writeDefaultsToolSafetyFields writes tool_commands_allow and tool_denylist_add.
+func writeDefaultsToolSafetyFields(wr *writer, d ir.WorkflowDefaults) {
+	if d.ToolCommandsAllow != "" {
+		wr.line("tool_commands_allow: %s", quoteValue(d.ToolCommandsAllow))
+	}
+	if d.ToolDenylistAdd != "" {
+		wr.line("tool_denylist_add: %s", quoteValue(d.ToolDenylistAdd))
+	}
 }
 
 func writeVars(wr *writer, vars map[string]string) {

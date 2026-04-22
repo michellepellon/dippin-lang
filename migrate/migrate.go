@@ -112,12 +112,14 @@ func buildIREdges(dg *dotGraph, w *ir.Workflow) error {
 
 // graphDefaultsHandlers maps DOT graph attribute keys to handler functions.
 var graphDefaultsHandlers = map[string]func(string, *ir.Workflow){
-	"goal":             func(v string, w *ir.Workflow) { w.Goal = v },
-	"rankdir":          func(_ string, _ *ir.Workflow) { /* presentation-only; ignored */ },
-	"default_fidelity": func(v string, w *ir.Workflow) { w.Defaults.Fidelity = v },
-	"fidelity":         func(v string, w *ir.Workflow) { w.Defaults.Fidelity = v },
-	"model":            func(v string, w *ir.Workflow) { w.Defaults.Model = v },
-	"provider":         func(v string, w *ir.Workflow) { w.Defaults.Provider = v },
+	"goal":                func(v string, w *ir.Workflow) { w.Goal = v },
+	"rankdir":             func(_ string, _ *ir.Workflow) { /* presentation-only; ignored */ },
+	"default_fidelity":    func(v string, w *ir.Workflow) { w.Defaults.Fidelity = v },
+	"fidelity":            func(v string, w *ir.Workflow) { w.Defaults.Fidelity = v },
+	"model":               func(v string, w *ir.Workflow) { w.Defaults.Model = v },
+	"provider":            func(v string, w *ir.Workflow) { w.Defaults.Provider = v },
+	"tool_commands_allow": func(v string, w *ir.Workflow) { w.Defaults.ToolCommandsAllow = v },
+	"tool_denylist_add":   func(v string, w *ir.Workflow) { w.Defaults.ToolDenylistAdd = v },
 }
 
 // extractGraphDefaults populates workflow-level fields from DOT graph attributes.
