@@ -52,7 +52,10 @@ func (p *Parser) applyDefaultStringField(key, val string) bool {
 	if applyDefaultCoreField(&p.workflow.Defaults, key, val) {
 		return true
 	}
-	return applyDefaultExtraField(&p.workflow.Defaults, key, val)
+	if applyDefaultExtraField(&p.workflow.Defaults, key, val) {
+		return true
+	}
+	return applyDefaultToolField(&p.workflow.Defaults, key, val)
 }
 
 // applyDefaultCoreField handles model, provider, retry_policy defaults.
@@ -81,6 +84,20 @@ func applyDefaultExtraField(d *ir.WorkflowDefaults, key, val string) bool {
 		d.Compaction = val
 	case "on_resume":
 		d.OnResume = val
+	default:
+		return false
+	}
+	return true
+}
+
+// applyDefaultToolField handles tool-safety defaults: tool_commands_allow and
+// tool_denylist_add. Values are stored verbatim; tracker owns split/glob semantics.
+func applyDefaultToolField(d *ir.WorkflowDefaults, key, val string) bool {
+	switch key {
+	case "tool_commands_allow":
+		d.ToolCommandsAllow = val
+	case "tool_denylist_add":
+		d.ToolDenylistAdd = val
 	default:
 		return false
 	}
