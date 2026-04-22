@@ -537,16 +537,32 @@ func writeManagerLoopFields(wr *writer, n *ir.Node, cfg ir.ManagerLoopConfig) {
 }
 
 // writeManagerLoopConditions writes stop_condition and steer_condition if set.
-// Raw is emitted unquoted; unquoteRaw has already stripped any surrounding
-// quotes at parse time, and condition expressions do not admit embedded
-// quotes (same invariant the edge formatter relies on).
+// Raw already contains any quoting/escaping required by the condition-expression
+// syntax (e.g., "success" as a literal), so it is emitted as-is without
+// additional quoting.
 func writeManagerLoopConditions(wr *writer, cfg ir.ManagerLoopConfig) {
-	if cfg.StopCondition != nil && cfg.StopCondition.Raw != "" {
-		wr.line("stop_condition: %s", cfg.StopCondition.Raw)
+	if s := managerLoopConditionText(cfg.StopCondition); s != "" {
+		wr.line("stop_condition: %s", s)
 	}
-	if cfg.SteerCondition != nil && cfg.SteerCondition.Raw != "" {
-		wr.line("steer_condition: %s", cfg.SteerCondition.Raw)
+	if s := managerLoopConditionText(cfg.SteerCondition); s != "" {
+		wr.line("steer_condition: %s", s)
 	}
+}
+
+// managerLoopConditionText returns the best textual form of a node condition:
+// prefers Raw when populated; otherwise formats Parsed via the same helper
+// the edge path uses. Returns "" when the condition is nil/empty.
+func managerLoopConditionText(c *ir.Condition) string {
+	if c == nil {
+		return ""
+	}
+	if c.Raw != "" {
+		return c.Raw
+	}
+	if c.Parsed != nil {
+		return formatCondition(c.Parsed)
+	}
+	return ""
 }
 
 // selectorSpecificity returns a numeric specificity for sorting.

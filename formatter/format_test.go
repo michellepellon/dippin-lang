@@ -1799,3 +1799,36 @@ func TestFormatManagerLoop_RoundTrip(t *testing.T) {
 		t.Errorf("format is not idempotent\n---first---\n%s\n---second---\n%s", out, Format(w2))
 	}
 }
+
+// TestFormatManagerLoop_ParsedConditionFallback verifies that a ManagerLoopConfig
+// with only Parsed (no Raw) on StopCondition still emits a stop_condition line.
+// This covers programmatically-built IR where Raw is never populated.
+func TestFormatManagerLoop_ParsedConditionFallback(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "W",
+		Start: "M",
+		Exit:  "M",
+		Nodes: []*ir.Node{
+			{
+				ID:   "M",
+				Kind: ir.NodeManagerLoop,
+				Config: ir.ManagerLoopConfig{
+					SubgraphRef: "inner.dip",
+					MaxCycles:   5,
+					// Parsed set, Raw intentionally empty — simulates programmatic IR construction.
+					StopCondition: &ir.Condition{
+						Parsed: ir.CondCompare{Variable: "stack.child.outcome", Op: "=", Value: "success"},
+					},
+				},
+			},
+		},
+		Edges: []*ir.Edge{{From: "M", To: "M"}},
+	}
+	out := Format(w)
+	if !strings.Contains(out, "stop_condition:") {
+		t.Errorf("expected stop_condition in formatted output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "stack.child.outcome = success") {
+		t.Errorf("expected condition text in output, got:\n%s", out)
+	}
+}

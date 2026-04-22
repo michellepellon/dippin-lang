@@ -599,12 +599,28 @@ func applyManagerLoopScalarAttrs(attrs map[string]string, cfg ir.ManagerLoopConf
 
 // applyManagerLoopConditionAttrs writes condition manager_loop config fields as DOT node attributes.
 func applyManagerLoopConditionAttrs(attrs map[string]string, cfg ir.ManagerLoopConfig) {
-	if cfg.StopCondition != nil && cfg.StopCondition.Raw != "" {
-		attrs["stop_condition"] = cfg.StopCondition.Raw
+	if s := dotManagerLoopConditionText(cfg.StopCondition); s != "" {
+		attrs["stop_condition"] = s
 	}
-	if cfg.SteerCondition != nil && cfg.SteerCondition.Raw != "" {
-		attrs["steer_condition"] = cfg.SteerCondition.Raw
+	if s := dotManagerLoopConditionText(cfg.SteerCondition); s != "" {
+		attrs["steer_condition"] = s
 	}
+}
+
+// dotManagerLoopConditionText returns the best textual form of a node condition:
+// prefers Raw when populated; otherwise formats Parsed via formatConditionExpr.
+// Returns "" when the condition is nil/empty.
+func dotManagerLoopConditionText(c *ir.Condition) string {
+	if c == nil {
+		return ""
+	}
+	if c.Raw != "" {
+		return c.Raw
+	}
+	if c.Parsed != nil {
+		return formatCondition(c.Parsed)
+	}
+	return ""
 }
 
 // applyManagerLoopAttrs writes manager_loop config fields as DOT node attributes.
