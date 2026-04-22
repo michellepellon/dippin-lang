@@ -14,6 +14,7 @@ var defaultNodeConfigs = map[ir.NodeKind]func() ir.NodeConfig{
 	ir.NodeTool:        func() ir.NodeConfig { return ir.ToolConfig{} },
 	ir.NodeSubgraph:    func() ir.NodeConfig { return ir.SubgraphConfig{Params: make(map[string]string)} },
 	ir.NodeConditional: func() ir.NodeConfig { return ir.ConditionalConfig{} },
+	ir.NodeManagerLoop: func() ir.NodeConfig { return ir.ManagerLoopConfig{SteerContext: make(map[string]string)} },
 }
 
 // defaultNodeConfig returns the zero config for a given node kind.
@@ -148,7 +149,7 @@ func (p *Parser) applyPrimaryConfigField(n *ir.Node, key, val string, loc ir.Sou
 	return true
 }
 
-// applySecondaryConfigField handles tool, subgraph, and conditional config fields.
+// applySecondaryConfigField handles tool, subgraph, manager_loop, and conditional config fields.
 func (p *Parser) applySecondaryConfigField(n *ir.Node, key, val string, loc ir.SourceLocation) {
 	switch cfg := n.Config.(type) {
 	case ir.ToolConfig:
@@ -156,6 +157,9 @@ func (p *Parser) applySecondaryConfigField(n *ir.Node, key, val string, loc ir.S
 		n.Config = cfg
 	case ir.SubgraphConfig:
 		p.applySubgraphField(&cfg, key, val, loc)
+		n.Config = cfg
+	case ir.ManagerLoopConfig:
+		p.applyManagerLoopField(&cfg, key, val, loc)
 		n.Config = cfg
 	case ir.ConditionalConfig:
 		p.emitUnknownFieldHint("conditional", key, loc)
@@ -422,6 +426,96 @@ func (p *Parser) applySubgraphField(cfg *ir.SubgraphConfig, key, val string, loc
 	default:
 		p.emitUnknownFieldHint("subgraph", key, loc)
 	}
+}
+
+// applyManagerLoopField applies manager_loop-specific configuration fields.
+func (p *Parser) applyManagerLoopField(cfg *ir.ManagerLoopConfig, key, val string, loc ir.SourceLocation) {
+	if p.applyManagerLoopStringField(cfg, key, val) {
+		return
+	}
+	if p.applyManagerLoopParsedField(cfg, key, val, loc) {
+		return
+	}
+	p.emitUnknownFieldHint("manager_loop", key, loc)
+}
+
+// applyManagerLoopStringField handles string/condition fields. Returns true if handled.
+func (p *Parser) applyManagerLoopStringField(cfg *ir.ManagerLoopConfig, key, val string) bool {
+	switch key {
+	case "subgraph_ref":
+		cfg.SubgraphRef = val
+	case "stop_condition":
+		cfg.StopCondition = &ir.Condition{Raw: val}
+	case "steer_condition":
+		cfg.SteerCondition = &ir.Condition{Raw: val}
+	default:
+		return false
+	}
+	return true
+}
+
+// applyManagerLoopParsedField handles duration/int/map fields. Returns true if handled.
+func (p *Parser) applyManagerLoopParsedField(cfg *ir.ManagerLoopConfig, key, val string, loc ir.SourceLocation) bool {
+	switch key {
+	case "poll_interval":
+		cfg.PollInterval = p.parseDuration(val, key, loc)
+	case "max_cycles":
+		cfg.MaxCycles = p.parseInt(val, key, loc)
+	case "steer_context":
+		cfg.SteerContext = p.parseSteerContext(val)
+	default:
+		return false
+	}
+	return true
+}
+
+// parseSteerContext accepts both inline CSV ("k=v,k=v") and block-form content
+// (one "k: v" per line, same as parseParamsBlock). The inline form splits on
+// comma without quote-awareness — values containing commas MUST use the block
+// form or they will be truncated at the first comma.
+func (p *Parser) parseSteerContext(raw string) map[string]string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return map[string]string{}
+	}
+	if strings.Contains(raw, "\n") {
+		return p.parseParamsBlock(raw)
+	}
+	return p.parseSteerContextInline(raw)
+}
+
+// parseSteerContextInline parses "k=v, k=v, k=v" into a map. Values containing
+// commas are not supported — callers must use the block form for such values.
+func (p *Parser) parseSteerContextInline(raw string) map[string]string {
+	out := make(map[string]string)
+	for _, part := range strings.Split(raw, ",") {
+		p.applySteerContextEntry(out, strings.TrimSpace(part))
+	}
+	return out
+}
+
+// applySteerContextEntry parses a single "k=v" token into out, emitting
+// a diagnostic for malformed entries or duplicate keys.
+func (p *Parser) applySteerContextEntry(out map[string]string, raw string) {
+	if raw == "" {
+		return
+	}
+	kv := strings.SplitN(raw, "=", 2)
+	if len(kv) != 2 {
+		p.diagnostics = append(p.diagnostics,
+			fmt.Sprintf("steer_context entry %q must be key=value", raw))
+		return
+	}
+	k := strings.TrimSpace(kv[0])
+	v := strings.TrimSpace(kv[1])
+	if k == "" {
+		return
+	}
+	if _, exists := out[k]; exists {
+		p.diagnostics = append(p.diagnostics,
+			fmt.Sprintf("duplicate steer_context key %q (last value wins)", k))
+	}
+	out[k] = unquoteRaw(v)
 }
 
 // parseParamsBlock parses a raw block of key: value lines into a map.
