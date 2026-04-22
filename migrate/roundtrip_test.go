@@ -13,13 +13,10 @@ import (
 
 // TestExportDOT_ManagerLoop_SteerContextReservedCharsRoundTrip verifies that
 // steer_context values with reserved delimiters (',', '=', '%') round-trip
-// losslessly through ExportDOT → parseFlattenedSteerContext.
-//
-// Note: ExportDOT and migrate.Migrate() use different DOT formats at the
-// graph-attribute level (ExportDOT emits bare "key=val;" statements while
-// the migrate DOT parser expects "graph [key=val];" blocks), so the test
-// extracts the steer_context attr value directly from the DOT string and
-// passes it through parseFlattenedSteerContext.
+// losslessly through ExportDOT → parseFlattenedSteerContext. The test extracts
+// the steer_context attr value directly from the DOT string and passes it
+// through parseFlattenedSteerContext to isolate the delimiter-escaping logic
+// from the surrounding graph structure.
 func TestExportDOT_ManagerLoop_SteerContextReservedCharsRoundTrip(t *testing.T) {
 	// Values with reserved delimiters (',', '=', '%') must round-trip losslessly
 	// through flattenSteerContext → parseFlattenedSteerContext.
