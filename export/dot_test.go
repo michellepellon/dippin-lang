@@ -153,7 +153,7 @@ func TestExportDOTMinimal(t *testing.T) {
 	out := ExportDOT(minimalWorkflow(), ExportOptions{})
 
 	assertContains(t, out, "digraph minimal {")
-	assertContains(t, out, "rankdir=TB;")
+	assertContains(t, out, "graph [rankdir=TB];")
 	assertContains(t, out, `Begin [label="Begin", mode="freeform", shape="Mdiamond"];`)
 	assertContains(t, out, `End [label="End", shape="Msquare"];`)
 	assertContains(t, out, "Begin -> End;")
@@ -275,9 +275,9 @@ func TestExportDOTRankDir(t *testing.T) {
 		rankDir string
 		want    string
 	}{
-		{"default", "", "rankdir=TB;"},
-		{"LR", "LR", "rankdir=LR;"},
-		{"TB explicit", "TB", "rankdir=TB;"},
+		{"default", "", "graph [rankdir=TB];"},
+		{"LR", "LR", "graph [rankdir=LR];"},
+		{"TB explicit", "TB", "graph [rankdir=TB];"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

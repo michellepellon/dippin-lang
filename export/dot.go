@@ -76,18 +76,39 @@ func writeDOTHeader(b *strings.Builder, w *ir.Workflow, opts ExportOptions) {
 		graphName = "workflow"
 	}
 	fmt.Fprintf(b, "digraph %s {\n", dotID(graphName))
-	fmt.Fprintf(b, "  rankdir=%s;\n", rankDir)
 	b.WriteString("  node [fontname=\"Helvetica\"];\n")
 	b.WriteString("  edge [fontname=\"Helvetica\"];\n")
-	if len(w.Vars) > 0 {
-		writeVarsAttrs(b, w.Vars)
-	}
-	writeToolSafetyAttrs(b, w.Defaults)
+
+	graphAttrs := buildGraphAttrs(w, rankDir)
+	writeGraphAttrs(b, graphAttrs)
 }
 
-// writeVarsAttrs emits workflow vars as DOT graph-level attributes,
-// skipping any key that collides with a reserved graph attribute.
-func writeVarsAttrs(b *strings.Builder, vars map[string]string) {
+// buildGraphAttrs collects all graph attributes (rankdir, defaults, and vars).
+func buildGraphAttrs(w *ir.Workflow, rankDir string) []string {
+	attrs := []string{}
+
+	// Add rankdir first for deterministic ordering
+	attrs = append(attrs, fmt.Sprintf("rankdir=%s", rankDir))
+
+	// Add tool-safety attributes
+	if w.Defaults.ToolCommandsAllow != "" {
+		attrs = append(attrs, fmt.Sprintf("tool_commands_allow=%s", dotQuote(w.Defaults.ToolCommandsAllow)))
+	}
+	if w.Defaults.ToolDenylistAdd != "" {
+		attrs = append(attrs, fmt.Sprintf("tool_denylist_add=%s", dotQuote(w.Defaults.ToolDenylistAdd)))
+	}
+
+	// Add workflow vars (excluding reserved graph attributes)
+	addGraphVarsAttrs(&attrs, w.Vars)
+
+	return attrs
+}
+
+// addGraphVarsAttrs adds workflow vars as graph attributes, excluding reserved keys.
+func addGraphVarsAttrs(attrs *[]string, vars map[string]string) {
+	if len(vars) == 0 {
+		return
+	}
 	keys := make([]string, 0, len(vars))
 	for k := range vars {
 		if !reservedGraphAttrs[k] {
@@ -96,19 +117,20 @@ func writeVarsAttrs(b *strings.Builder, vars map[string]string) {
 	}
 	sortStrings(keys)
 	for _, k := range keys {
-		fmt.Fprintf(b, "  %s=%s;\n", dotID(k), dotQuote(vars[k]))
+		*attrs = append(*attrs, fmt.Sprintf("%s=%s", dotID(k), dotQuote(vars[k])))
 	}
 }
 
-// writeToolSafetyAttrs emits tool-safety defaults as DOT graph-level attributes.
-// Empty fields are skipped.
-func writeToolSafetyAttrs(b *strings.Builder, d ir.WorkflowDefaults) {
-	if d.ToolCommandsAllow != "" {
-		fmt.Fprintf(b, "  tool_commands_allow=%s;\n", dotQuote(d.ToolCommandsAllow))
+// writeGraphAttrs emits the graph attribute block.
+func writeGraphAttrs(b *strings.Builder, attrs []string) {
+	b.WriteString("  graph [")
+	for i, attr := range attrs {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString(attr)
 	}
-	if d.ToolDenylistAdd != "" {
-		fmt.Fprintf(b, "  tool_denylist_add=%s;\n", dotQuote(d.ToolDenylistAdd))
-	}
+	b.WriteString("];\n")
 }
 
 // buildExecOrder builds a map from node ID to execution order indices.
