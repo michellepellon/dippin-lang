@@ -32,14 +32,10 @@
     h = h.replace(/("(?:[^"\\]|\\.)*")/g, function (_, v) { return s("str", v); });
     // ${ctx.*} variables.
     h = h.replace(/(\$\{[^}]+\})/g, function (_, v) { return s("shvar", v); });
-    // Node declarations.
-    h = h.replace(/\b(workflow|agent|human|tool|subgraph|conditional)\s+([A-Z]\w*)/g,
+    // Node declarations — all kinds, with identifier starting uppercase OR lowercase.
+    h = h.replace(/\b(workflow|agent|human|tool|subgraph|conditional|manager_loop|parallel|fan_in)\s+(\w+)/g,
       function (_, kw, n) { return s("kw", kw) + " " + s("node", n); });
-    // Parallel/fan_in.
-    h = h.replace(/\b(parallel)\s+(\w+)\s*(-&gt;)/g,
-      function (_, kw, n, a) { return s("kw", kw) + " " + s("node", n) + " " + s("op", a); });
-    h = h.replace(/\b(fan_in)\s+(\w+)\s*(&lt;-)/g,
-      function (_, kw, n, a) { return s("kw", kw) + " " + s("node", n) + " " + s("op", a); });
+    // Inline edge forms follow via the arrow regex below; no special case needed.
     // Section keywords.
     h = h.replace(/\b(edges|defaults|vars|stylesheet)\b/g, function (_, k) { return s("kw", k); });
     // Condition keywords.
