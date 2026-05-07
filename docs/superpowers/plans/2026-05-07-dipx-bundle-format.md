@@ -18,6 +18,29 @@
 
 ---
 
+## Phase gating policy
+
+Each phase ends with a **gate** before the next phase begins. The orchestrator (the agent running this plan) MUST NOT dispatch the first task of phase N+1 until the gate for phase N has passed.
+
+**Gate procedure:**
+
+1. After the final task of a phase commits cleanly with all tests passing, run `just check` to confirm the full pipeline is green.
+2. Run the **specified gate review** for that phase (see per-phase gate sections). Gate types:
+   - **PAL spot-check** — `mcp__pal__chat` with model `gpt-5.2`, thinking_mode `high`, a focused question + the relevant `dipx/*.go` file paths.
+   - **Squad review** — dispatch one or more `general-purpose` agents in parallel with persona framing (security, crypto discipline, ops, etc.) per the same template used during spec review.
+3. Findings classified:
+   - **Critical / Important** — halt the plan. Create one or more remediation tasks at the end of the current phase. Implement them. Re-run the gate. Only proceed when the gate is clean.
+   - **Minor** — log to a follow-up file (`docs/superpowers/plans/2026-05-07-dipx-followups.md`); do not block progression.
+4. Document the gate's outcome with a single commit on a paper-trail file: append a one-paragraph summary to `docs/superpowers/plans/2026-05-07-dipx-gate-log.md` (create on first gate). Format: `## Phase N gate (YYYY-MM-DD)\n- reviewer: <type>\n- result: PASS|REMEDIATED|HALTED\n- summary: <one paragraph>`.
+
+**Fast-track gates** (Phase 0, Phase 1) skip PAL since the surface is trivial; just confirm the build is clean.
+
+**Mandatory squad review** triggers on the high-risk phases: 2 (path canonicalization — security), 4 (ZIP I/O — security + crypto discipline), 5 (Open orchestrator — crypto discipline), 7 (Pack — security).
+
+**Parallel work prohibited during gates.** Do not start phase N+1 work in parallel with the phase N gate. The whole point is to catch defects before they propagate.
+
+---
+
 ## File structure
 
 | File | Responsibility |
@@ -88,6 +111,13 @@ Expected: success.
 git add go.mod go.sum dipx/doc.go
 git commit -m "feat(dipx): add package skeleton and norm dependency"
 ```
+
+### Phase 0 gate
+
+**Type:** Fast-track (build verification only).
+
+- [ ] Run `just build` and confirm exit 0.
+- [ ] Append phase-0 PASS entry to `docs/superpowers/plans/2026-05-07-dipx-gate-log.md`.
 
 ---
 
@@ -238,6 +268,14 @@ Expected: no issues.
 git add dipx/errors.go dipx/errors_test.go
 git commit -m "feat(dipx): add BundleError type and sentinel errors"
 ```
+
+### Phase 1 gate
+
+**Type:** Fast-track (sentinel surface is purely additive; no security-sensitive logic).
+
+- [ ] Run `just check` (full pipeline). Confirm green.
+- [ ] Verify the sentinel set in `dipx/errors.go` includes every sentinel listed in spec § "Error model" (15 sentinels). Spot-check by grep.
+- [ ] Append phase-1 PASS entry to gate log.
 
 ---
 
@@ -734,6 +772,53 @@ git add dipx/resolve.go dipx/resolve_test.go
 git commit -m "feat(dipx): add tri-color DFS cycle detection with depth cap"
 ```
 
+### Phase 2 gate
+
+**Type:** Mandatory squad review (SECURITY) + PAL spot-check.
+
+Path canonicalization is the front line against zip-slip and Unicode-confusion attacks. A single missed rule here compromises every layer above it. Two parallel reviewers:
+
+- [ ] **Dispatch security subagent.**
+
+```
+Agent({
+  description: "Phase 2 security gate — Canonicalize",
+  subagent_type: "general-purpose",
+  prompt: """
+You are a Path Safety / Zip-Slip Security Reviewer.
+
+Read these files in full:
+- /home/clint/code/2389/dippin-lang/docs/superpowers/specs/2026-05-06-dipx-bundle-format-design.md (spec, focus on § 'Path canonicalization' and § 'Subgraph ref resolution')
+- /home/clint/code/2389/dippin-lang/dipx/resolve.go (implementation)
+- /home/clint/code/2389/dippin-lang/dipx/resolve_test.go (tests)
+
+Audit Canonicalize, resolveLexically, and detectCycles for:
+1. Every spec rule under 'Path canonicalization' (rules 1-9). Is each rule enforced? List any spec rule with no corresponding code path.
+2. Adversarial inputs not covered by tests: NFKC vs NFC confusion, ZWNBSP / U+FEFF, RTL marks, IDN homograph attacks, percent-encoded paths, bidi overrides.
+3. Path-traversal bypass attempts: path.Clean idempotence vs canonicalization, leading dots, tilde, path.Join with empty.
+4. Cycle detection edge cases: empty graph, single node with no edges, depth-cap-off-by-one.
+5. Whether the resolveLexically '..' allowance contradicts the canonicalize '..' rejection (the spec specifically resolves this: refs MAY contain '..' as long as the resolved path is canonical and stays in workflows/; ensure the implementation reflects this).
+
+Do NOT propose new features. Report only spec-vs-implementation gaps and adversarial-input bypasses.
+Format: severity-ranked list (critical / important / minor). Reference file:line.
+"""
+})
+```
+
+- [ ] **PAL spot-check** (parallel with the squad subagent):
+
+```
+mcp__pal__chat({
+  prompt: "Audit dipx/resolve.go vs spec § 'Path canonicalization' and § 'Subgraph ref resolution'. Is the resolveLexically + Canonicalize composition sound under adversarial input? Specific concern: do the regular Canonicalize rules and resolveLexically's `..`-tolerance compose without leaving a window where a clever ref string ends up resolving to a path that bypasses one of Canonicalize's rules?",
+  model: "gpt-5.2",
+  thinking_mode: "high",
+  absolute_file_paths: ["dipx/resolve.go", "dipx/resolve_test.go", "docs/superpowers/specs/2026-05-06-dipx-bundle-format-design.md"]
+})
+```
+
+- [ ] **Triage findings**: critical/important → halt, add remediation tasks; minor → log to followups file.
+- [ ] Append phase-2 outcome to gate log.
+
 ---
 
 ## Phase 3: Manifest
@@ -1206,6 +1291,53 @@ git add dipx/manifest.go dipx/manifest_test.go
 git commit -m "feat(dipx): add manifest shape validation"
 ```
 
+### Phase 3 gate
+
+**Type:** PAL spot-check + crypto-discipline subagent.
+
+The manifest is the trust-on-first-use surface. Bypass here defeats every defense above.
+
+- [ ] **Dispatch crypto-discipline subagent.**
+
+```
+Agent({
+  description: "Phase 3 gate — manifest TOFU hardening",
+  subagent_type: "general-purpose",
+  prompt: """
+You are a Cryptographic Discipline Reviewer auditing the manifest decoder.
+
+Read in full:
+- /home/clint/code/2389/dippin-lang/docs/superpowers/specs/2026-05-06-dipx-bundle-format-design.md (focus on § 'Manifest schema', § 'Manifest JSON encoding', § 'Forward compatibility')
+- /home/clint/code/2389/dippin-lang/dipx/manifest.go
+- /home/clint/code/2389/dippin-lang/dipx/manifest_test.go
+
+Audit decodeManifest, validateJSONStructure, decodeStrictly, and verifyManifestShape for:
+1. JSON parser confusion: duplicate-key rejection at every level (top + nested), depth cap correctly bounds (test depth-32 vs depth-33), trailing-data rejection, BOM rejection.
+2. format_version handling: json.Number used (not float64), integer overflow rejected (2^53+1, 2^31, negative, 0, 1.0, '1', 1e0), canonical literal rule.
+3. signatures key REJECTED in v1 (downgrade-attack defense). Confirm v1 reader rejects manifests with this key, not silently tolerates.
+4. Field length caps (path ≤ 1024, sha256 = 64 chars exactly, lowercase hex).
+5. Per-sentinel error context contract: every error returned from this package matches the spec's 'Per-sentinel error context' table.
+6. The hash format check fires in step 1 (manifest validation), NEVER as ErrHashMismatch in step 5.
+
+Do NOT propose new features. Report only spec-vs-implementation gaps and bypass attempts.
+Format: severity-ranked list (critical / important / minor). Reference file:line.
+"""
+})
+```
+
+- [ ] **PAL spot-check**:
+
+```
+mcp__pal__chat({
+  prompt: "Review dipx/manifest.go end-to-end vs the spec's Manifest schema and JSON encoding sections. Specifically: is the duplicate-key detection algorithm correct (no false negatives on nested objects)? Does the format_version validation match the spec's integer-only rule? Is the signatures-key-rejection rule applied at the correct level (top-level only, or recursively)?",
+  model: "gpt-5.2",
+  thinking_mode: "high",
+  absolute_file_paths: ["dipx/manifest.go", "dipx/manifest_test.go", "docs/superpowers/specs/2026-05-06-dipx-bundle-format-design.md"]
+})
+```
+
+- [ ] Triage; append outcome to gate log.
+
 ---
 
 ## Phase 4: Constrained ZIP I/O
@@ -1583,6 +1715,67 @@ Expected: PASS.
 git add dipx/zipio.go dipx/zipio_test.go
 git commit -m "feat(dipx): add streaming hash verification with per-file cap"
 ```
+
+### Phase 4 gate
+
+**Type:** Mandatory squad review (SECURITY + CRYPTO discipline) — two parallel subagents.
+
+ZIP I/O is the largest attack surface in the entire format. Parser-confusion, zip-slip, zip-bombs, and the verifiedBytes type-encoded-ordering invariant all live here.
+
+- [ ] **Dispatch security subagent.**
+
+```
+Agent({
+  description: "Phase 4 gate — ZIP feature constraints + streaming caps",
+  subagent_type: "general-purpose",
+  prompt: """
+You are a ZIP Format Security Reviewer auditing the constrained zip reader.
+
+Read in full:
+- /home/clint/code/2389/dippin-lang/docs/superpowers/specs/2026-05-06-dipx-bundle-format-design.md (focus on § 'Container: ZIP, constrained' and § 'Streaming cap enforcement')
+- /home/clint/code/2389/dippin-lang/dipx/zipio.go
+- /home/clint/code/2389/dippin-lang/dipx/zipio_test.go
+
+Audit openConstrainedZip, checkZipEntry, verifyAndReadEntry for:
+1. Every banned ZIP feature in the spec (encryption, multi-disk, non-Store/Deflate methods, symlinks, hardlinks, central-dir/local-header mismatch, duplicate entries, case-fold-collisions, CP437 filenames). Are all enforced? Reference Go's archive/zip exposed fields.
+2. Truncation handling: a mid-stream EOF surfaces as ErrZipTruncated, never coerced to ErrHashMismatch.
+3. Streaming cap enforcement: per-file size cap fires DURING decompression (io.LimitedReader), not after. Compression-ratio cap (1000:1) is checkable at all (note: spec doesn't yet require runtime ratio enforcement in the implementation; flag if missing).
+4. Zip-bomb attack vectors: deeply-compressible single entry, many tiny entries, repeated central-directory entries.
+5. Directory entries IGNORED (not rejected) per the spec reversal in v3.
+
+Do NOT propose new features. Format: severity-ranked list. Reference file:line.
+"""
+})
+```
+
+- [ ] **Dispatch crypto-discipline subagent (in parallel with security).**
+
+```
+Agent({
+  description: "Phase 4 gate — verifiedBytes type-encoded ordering",
+  subagent_type: "general-purpose",
+  prompt: """
+You are a Cryptographic State-Machine Reviewer auditing the type-encoded ordering invariant.
+
+Read in full:
+- /home/clint/code/2389/dippin-lang/docs/superpowers/specs/2026-05-06-dipx-bundle-format-design.md (focus on § 'Type-encoded ordering' under Hash computation and verification)
+- /home/clint/code/2389/dippin-lang/dipx/zipio.go (verifiedBytes type, verifyAndReadEntry)
+
+Audit:
+1. Is verifiedBytes unexported and constructible only via newVerifiedBytes inside the package? Spec says: 'no code outside this package can manufacture a verifiedBytes value.'
+2. Does verifyAndReadEntry produce verifiedBytes only after hash verification? Are there any code paths that construct verifiedBytes from un-verified bytes?
+3. Hash verification ordering: SHA-256 is computed via io.TeeReader during a single read (read-once invariant). No re-read from the zip. No TOCTOU.
+4. The error path on hash mismatch returns the zero-value verifiedBytes — confirm callers do NOT use a verifiedBytes if err != nil.
+
+Spec mandates: 'parser.NewParser MUST be invoked from exactly one call site in package dipx.' That call site doesn't exist yet (Phase 5), but verify nothing in zipio.go calls it.
+
+Do NOT propose new features. Format: severity-ranked list.
+"""
+})
+```
+
+- [ ] Triage. Critical/important findings halt the plan.
+- [ ] Append phase-4 outcome to gate log.
 
 ---
 
@@ -2542,6 +2735,55 @@ git add dipx/dipx.go dipx/dipx_test.go
 git commit -m "feat(dipx): add Open/OpenReader/OpenLax/Validate orchestrator"
 ```
 
+### Phase 5 gate
+
+**Type:** Mandatory squad review (CRYPTO discipline) + PAL end-to-end.
+
+This is the highest-risk phase: the Open orchestrator wires every defense together. A wrong step ordering here defeats every prior phase's hardening.
+
+- [ ] **Dispatch crypto-discipline subagent.**
+
+```
+Agent({
+  description: "Phase 5 gate — Open ordering invariants",
+  subagent_type: "general-purpose",
+  prompt: """
+You are a Cryptographic Discipline Reviewer auditing the Open orchestrator.
+
+Read in full:
+- /home/clint/code/2389/dippin-lang/docs/superpowers/specs/2026-05-06-dipx-bundle-format-design.md (focus on § 'Open ordering (normative)' steps 1-9, § 'Open post-conditions', § 'Error precedence')
+- /home/clint/code/2389/dippin-lang/dipx/dipx.go (orchestrator)
+- /home/clint/code/2389/dippin-lang/dipx/helpers.go (decomposed steps)
+- /home/clint/code/2389/dippin-lang/dipx/bundle.go (Bundle methods)
+
+Audit:
+1. The 9-step Open ordering matches spec exactly. Are steps in the right order? Are any steps merged or skipped?
+2. Hash verification (step 5) completes BEFORE parsing (step 6). The verifiedBytes contract holds: parseAllWorkflows takes only verifiedBytes.
+3. parser.NewParser is called from exactly ONE site in dipx (parseAllWorkflows). Run a grep mentally to confirm.
+4. Error precedence (spec section): zip-feature → manifest-decode → manifest-shape → cap → hash → parse → ref. The orchestrator returns at the FIRST error — no later step runs after an earlier failure.
+5. Context cancellation (ctx.Err()) is checked between steps. ctx errors are returned bare for errors.Is(err, context.Canceled).
+6. FD cleanup on every exit path (success and error). defer-based; verify no panic-on-leak.
+7. Open post-conditions (1-9 in spec) are all genuinely satisfied by the orchestrator's flow. List any that are claimed but not actually proven.
+8. Bundle.Manifest() returns a copy (mutation-safe). Bundle.Identity() is SHA-256(manifestBytes).
+
+Do NOT propose new features. Format: severity-ranked list. Reference file:line.
+"""
+})
+```
+
+- [ ] **PAL end-to-end pass:**
+
+```
+mcp__pal__chat({
+  prompt: "Read the dipx/dipx.go orchestrator + helpers.go + bundle.go end-to-end. Independently verify the spec's Open post-conditions (numbered 1-9) hold. For each post-condition, state which line(s) of code prove it. Flag any post-condition that the code claims to satisfy but actually does not.",
+  model: "gpt-5.2",
+  thinking_mode: "high",
+  absolute_file_paths: ["dipx/dipx.go", "dipx/helpers.go", "dipx/bundle.go", "docs/superpowers/specs/2026-05-06-dipx-bundle-format-design.md"]
+})
+```
+
+- [ ] Triage. Append outcome to gate log.
+
 ---
 
 ## Phase 6: Source interface, Load, Extract
@@ -2957,6 +3199,44 @@ git add dipx/dipx.go dipx/dipx_test.go
 git commit -m "feat(dipx): add atomic Extract"
 ```
 
+### Phase 6 gate
+
+**Type:** Tracker-integration squad subagent.
+
+The Source interface is the contract Tracker swaps in. A subtle wrong shape here means Tracker can't migrate.
+
+- [ ] **Dispatch tracker-integration subagent.**
+
+```
+Agent({
+  description: "Phase 6 gate — Source interface and Tracker contract",
+  subagent_type: "general-purpose",
+  prompt: """
+You are a Tracker Integration Reviewer auditing the Source interface and dirSource implementation.
+
+Read in full:
+- /home/clint/code/2389/dippin-lang/docs/superpowers/specs/2026-05-06-dipx-bundle-format-design.md (focus on § 'Tracker integration contract', § 'Source implementations', § 'Path safety on every read')
+- /home/clint/code/2389/dippin-lang/dipx/source.go
+- /home/clint/code/2389/dippin-lang/dipx/source_test.go
+- /home/clint/code/2389/dippin-lang/dipx/bundle.go (Workflow/Resolve methods)
+- /home/clint/code/2389/dippin-lang/flatten/resolver.go (existing flatten.Resolver to compare against)
+
+Audit:
+1. Source.Workflow argument order (refPath, relativeTo) matches flatten.Resolver.Resolve.
+2. dirSource preserves today's filepath-based behavior on Windows (uses filepath.Join, NOT path.Join, for .dip resolution).
+3. dirSource hermetic boundary: refs cannot escape baseDir. Verify with adversarial inputs (../../etc/passwd, symlinked refs).
+4. dirSource cache safe for concurrent reads (mu correctly held).
+5. Load polymorphic dispatch: .dip vs .dipx routed correctly; ambiguous extensions error cleanly.
+6. Extract atomicity: writes to .tmp, renames on success, removes .tmp on failure.
+7. simulate.EnsureConditionsParsed called for both Bundle (eager) and dirSource (per-load). No condition-race risk.
+
+Do NOT propose new features. Format: severity-ranked list.
+"""
+})
+```
+
+- [ ] Triage. Append outcome to gate log.
+
 ---
 
 ## Phase 7: Pack
@@ -3311,6 +3591,43 @@ Expected: PASS.
 git add dipx/dipx.go dipx/helpers.go dipx/dipx_test.go
 git commit -m "feat(dipx): add Pack with reproducibility and symlink defense"
 ```
+
+### Phase 7 gate
+
+**Type:** Mandatory squad review (SECURITY) — Pack TOCTOU and reproducibility.
+
+Pack is the single seam where attacker-controlled source trees compromise the *producer* (not the consumer). Symlink races, TOCTOU, and reproducibility regressions all live here.
+
+- [ ] **Dispatch security subagent.**
+
+```
+Agent({
+  description: "Phase 7 gate — Pack TOCTOU and reproducibility",
+  subagent_type: "general-purpose",
+  prompt: """
+You are a Security Reviewer auditing the Pack producer.
+
+Read in full:
+- /home/clint/code/2389/dippin-lang/docs/superpowers/specs/2026-05-06-dipx-bundle-format-design.md (focus on § 'Reproducible Pack' and Pack-related rules in § 'Container: ZIP, constrained')
+- /home/clint/code/2389/dippin-lang/dipx/dipx.go (Pack)
+- /home/clint/code/2389/dippin-lang/dipx/helpers.go (walkSourceTree, buildManifestForPack, writeBundle, writeZipEntry, encodeManifestCanonical)
+- /home/clint/code/2389/dippin-lang/dipx/dipx_test.go (TestPack_*)
+
+Audit:
+1. Symlink defense: Pack walks the source tree using os.Lstat (NOT os.Stat), refuses to follow symlinks anywhere.
+2. TOCTOU: each source file is read exactly once; the same []byte produces both the manifest hash AND the bytes written to zip. No Stat-then-Open window.
+3. Reproducibility: timestamps fixed at ZIP epoch (1980-01-01); entry order lexicographic; manifest first; no Info-ZIP/NTFS/Unix UID extras; no zip archive comment.
+4. Hermetic invariant on Pack: any subgraph ref that resolves outside the source root is rejected with ErrRefEscape.
+5. Manifest canonicalization: alphabetical keys at every level; files[] sorted by path. The encodeManifestCanonical implementation produces identical bytes for logically-equal manifests.
+6. The TestPack_Reproducible test actually proves byte-equality, not just structural equality.
+7. The TestPack_RejectsSymlink test exercises the defense end-to-end.
+
+Do NOT propose new features. Format: severity-ranked list.
+"""
+})
+```
+
+- [ ] Triage. Append outcome to gate log.
 
 ---
 
@@ -3890,6 +4207,56 @@ git add cmd/dippin/cli.go cmd/dippin/cmd_*.go
 git commit -m "feat(dippin): route all analysis commands through dipx.Load"
 ```
 
+### Phase 8 gate
+
+**Type:** Operational reliability subagent + PAL spot-check.
+
+CLI is operator-facing. Exit codes, atomicity, and error messages determine whether incidents take 5 minutes or 5 hours.
+
+- [ ] **Dispatch ops-reliability subagent.**
+
+```
+Agent({
+  description: "Phase 8 gate — CLI operational ergonomics",
+  subagent_type: "general-purpose",
+  prompt: """
+You are an Operational Reliability Reviewer auditing the dippin CLI surface.
+
+Read in full:
+- /home/clint/code/2389/dippin-lang/docs/superpowers/specs/2026-05-06-dipx-bundle-format-design.md (focus on § 'CLI', § 'Operational ergonomics', § 'CLI exit codes')
+- /home/clint/code/2389/dippin-lang/cmd/dippin/cmd_pack.go
+- /home/clint/code/2389/dippin-lang/cmd/dippin/cmd_unpack.go
+- /home/clint/code/2389/dippin-lang/cmd/dippin/cmd_inspect.go
+- /home/clint/code/2389/dippin-lang/cmd/dippin/cli.go
+- existing analysis cmd_*.go files modified to use loadSource
+
+Audit:
+1. Exit codes match spec (0 success, 1 user error, 2 integrity, 3 IO, 4 cancelled). isIntegrity classifier covers ErrHashMismatch, ErrManifestInvalid, ErrZipFeatureForbidden, ErrZipTruncated, ErrUnsupportedFormatVersion.
+2. Pack atomicity: writes to .tmp, renames on success, removes .tmp on failure. Stdout case (-o -) does NOT do atomic write.
+3. inspect --format=json output is valid JSON parseable into Manifest plus a status object.
+4. inspect --no-verify flag honored (or, for v1, documented to still verify with stderr note).
+5. pack --dry-run does not write output but still exits non-zero on validation failure.
+6. Existing analysis commands (validate/lint/doctor/etc.) accept .dipx through loadSource without behavioral regressions for .dip.
+7. Error messages reaching stderr include enough context for triage (path, sentinel, detail).
+
+Do NOT propose new features. Format: severity-ranked list.
+"""
+})
+```
+
+- [ ] **PAL spot-check on the CLI seam:**
+
+```
+mcp__pal__chat({
+  prompt: "Review cmd/dippin/cmd_pack.go, cmd_unpack.go, cmd_inspect.go and the loadSource helper for: (1) error-handling consistency across the three new commands; (2) exit-code mapping correctness; (3) any place where the CLI silently catches and ignores an error.",
+  model: "gpt-5.2",
+  thinking_mode: "medium",
+  absolute_file_paths: ["cmd/dippin/cmd_pack.go", "cmd/dippin/cmd_unpack.go", "cmd/dippin/cmd_inspect.go", "cmd/dippin/cli.go"]
+})
+```
+
+- [ ] Triage. Append outcome to gate log.
+
 ---
 
 ## Phase 9: Integration tests, justfile, CLAUDE.md
@@ -4017,6 +4384,39 @@ git add CLAUDE.md
 git commit -m "docs(claude): document dipx loader-tier import exemption"
 ```
 
+### Phase 9 gate
+
+**Type:** PAL end-to-end spec coverage check + integration smoke.
+
+After integration, every spec section should be either implemented or explicitly deferred (per Known v1 limitations). PAL audits coverage; the smoke step proves end-to-end works on real examples.
+
+- [ ] **End-to-end smoke:**
+
+```bash
+just install
+dippin pack examples/orchestrator.dip -o /tmp/orch.dipx
+dippin inspect /tmp/orch.dipx --format=json | head -40
+dippin unpack /tmp/orch.dipx -o /tmp/orch-unpacked
+diff -r examples/ /tmp/orch-unpacked/workflows/  # may have noise; spot-check structure
+dippin validate /tmp/orch.dipx
+dippin lint /tmp/orch.dipx
+```
+
+Each command exits 0 (or for `lint`, exits 0 with warnings printed but no errors).
+
+- [ ] **PAL spec-coverage audit:**
+
+```
+mcp__pal__chat({
+  prompt: "Read the spec at docs/superpowers/specs/2026-05-06-dipx-bundle-format-design.md and the implementation in dipx/ + cmd/dippin/cmd_{pack,unpack,inspect}.go. For every normative MUST in the spec, identify whether there is implementation code that enforces it. List any spec MUST that is NOT enforced. Also list any spec § that is implicitly missing entirely.",
+  model: "gpt-5.2",
+  thinking_mode: "high",
+  absolute_file_paths: ["docs/superpowers/specs/2026-05-06-dipx-bundle-format-design.md", "dipx/dipx.go", "dipx/helpers.go", "dipx/zipio.go", "dipx/manifest.go", "dipx/resolve.go", "dipx/bundle.go", "dipx/source.go", "dipx/errors.go", "cmd/dippin/cmd_pack.go", "cmd/dippin/cmd_unpack.go", "cmd/dippin/cmd_inspect.go"]
+})
+```
+
+- [ ] Triage. Critical/important findings → halt, add remediation tasks. Append outcome to gate log.
+
 ---
 
 ## Phase 10: Final hardening
@@ -4129,6 +4529,83 @@ If more than one, the type-encoded ordering invariant is broken. Move the second
 - [ ] **Step 4: Tag the change as ready for review**
 
 No commit needed; this is a verification step before opening a PR.
+
+### Phase 10 final gate
+
+**Type:** Comprehensive — security squad + operational reliability squad + crypto discipline squad in parallel + final PAL synthesis.
+
+This is the last gate before declaring the implementation ready for human review.
+
+- [ ] **Dispatch three subagents in parallel** (one Agent message with three tool calls):
+
+```
+[Security squad — final pass]
+Agent({
+  description: "Phase 10 final gate — security",
+  subagent_type: "general-purpose",
+  prompt: """
+You are a final-pass Security Reviewer for the .dipx implementation.
+
+Read the spec at docs/superpowers/specs/2026-05-06-dipx-bundle-format-design.md
+and the entire dipx/ package + cmd/dippin/cmd_{pack,unpack,inspect}.go.
+
+Re-audit every security finding from the prior review rounds (path safety, ZIP
+feature constraints, hash verification ordering, type-encoded ordering, Pack
+TOCTOU, atomic writes). Confirm each is mitigated in the shipped code.
+Identify any new attack vector introduced during integration.
+
+Severity-ranked list. Reference file:line.
+"""
+})
+
+[Crypto discipline — final pass]
+Agent({
+  description: "Phase 10 final gate — crypto discipline",
+  subagent_type: "general-purpose",
+  prompt: """
+You are a final-pass Cryptographic Discipline Reviewer.
+
+Re-audit: type-encoded ordering (verifiedBytes invariant), bundle identity
+(SHA-256 of manifest bytes), hash format check ordering (step 1 vs step 5),
+signatures key rejection, format_version json.Number handling.
+
+Confirm via grep that parser.NewParser appears in exactly one site within
+dipx/ (excluding _test.go files).
+
+Severity-ranked list.
+"""
+})
+
+[Ops reliability — final pass]
+Agent({
+  description: "Phase 10 final gate — ops reliability",
+  subagent_type: "general-purpose",
+  prompt: """
+You are a final-pass Operational Reliability Reviewer.
+
+Re-audit: error attribution (per-sentinel context), Pack atomicity, Extract
+atomicity, FD cleanup on error paths, exit code consistency, no logging from
+the dipx package, observability hooks (or documented absence in v1.1).
+
+Severity-ranked list.
+"""
+})
+```
+
+- [ ] **Final PAL synthesis** (after the three subagents return):
+
+```
+mcp__pal__chat({
+  prompt: "Three squad reviewers just completed final-pass audits of the .dipx implementation. Synthesize their findings into a single severity-ranked list. Identify any cross-cutting issues that no single domain caught (e.g., a security gap that's only exploitable because of an ops gap). Recommend whether this is ready for human PR review.",
+  model: "gpt-5.2",
+  thinking_mode: "high",
+  absolute_file_paths: ["docs/superpowers/plans/2026-05-07-dipx-gate-log.md"]
+})
+```
+
+- [ ] Triage all findings. Critical → fix before declaring ready. Important → fix or document with strong rationale. Minor → log to followups file.
+- [ ] Append final phase-10 outcome to gate log.
+- [ ] Update root TODO if applicable; signal to user that the implementation is ready for PR review.
 
 ---
 
