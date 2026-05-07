@@ -204,40 +204,79 @@ const (
 // exceeds maxDepth.
 func detectCycles(graph map[string][]string, start string, maxDepth int) error {
 	color := make(map[string]int, len(graph))
-	return dfsVisit(graph, color, start, 0, maxDepth)
+	stack := make([]string, 0, 16)
+	return dfsVisit(graph, color, &stack, start, 0, maxDepth)
 }
 
 // dfsVisit is the recursive worker for detectCycles. Hoisted to a top-level
-// helper so detectCycles stays under the project's complexity caps.
-func dfsVisit(graph map[string][]string, color map[string]int, node string, depth, maxDepth int) error {
+// helper so detectCycles stays under the project's complexity caps. The
+// stack tracks the active DFS path so cycle errors can include the full
+// path from the cycle entry node back to itself.
+func dfsVisit(graph map[string][]string, color map[string]int, stack *[]string, node string, depth, maxDepth int) error {
 	if depth > maxDepth {
 		return newError(ErrCapExceeded, node, "ref-graph depth exceeds 64", nil)
 	}
 	color[node] = colorGray
+	*stack = append(*stack, node)
 	for _, next := range graph[node] {
-		if err := dfsVisitEdge(graph, color, node, next, depth, maxDepth); err != nil {
+		if err := dfsVisitEdge(graph, color, stack, next, depth, maxDepth); err != nil {
 			return err
 		}
 	}
+	*stack = (*stack)[:len(*stack)-1]
 	color[node] = colorBlack
 	return nil
 }
 
-// dfsVisitEdge inspects a single outgoing edge from node to next, recursing
-// when next is unvisited and reporting a cycle when next is on the active path.
-func dfsVisitEdge(graph map[string][]string, color map[string]int, node, next string, depth, maxDepth int) error {
+// dfsVisitEdge inspects a single outgoing edge to next, recursing when next
+// is unvisited and reporting a cycle when next is on the active path.
+// The reported error's Path field is the cycle entry node (next, where the
+// back-edge points), and Detail is the full cycle path "n1 -> n2 -> ... -> n1".
+func dfsVisitEdge(graph map[string][]string, color map[string]int, stack *[]string, next string, depth, maxDepth int) error {
 	switch color[next] {
 	case colorGray:
-		return newError(ErrRefCycle, node, node+" -> "+next, nil)
+		return newError(ErrRefCycle, next, formatCycle(*stack, next), nil)
 	case colorWhite:
-		return dfsVisit(graph, color, next, depth+1, maxDepth)
+		return dfsVisit(graph, color, stack, next, depth+1, maxDepth)
 	}
 	return nil
+}
+
+// formatCycle renders the active DFS stack as "n1 -> n2 -> ... -> nk -> n1"
+// where n1 is the cycle entry node (where the back-edge points). The target
+// is expected to appear in the stack; if not (which would indicate an
+// invariant violation), the function falls back to the closing edge.
+func formatCycle(stack []string, target string) string {
+	idx := -1
+	for i, n := range stack {
+		if n == target {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		if len(stack) > 0 {
+			return stack[len(stack)-1] + " -> " + target
+		}
+		return target
+	}
+	cycle := append([]string{}, stack[idx:]...)
+	cycle = append(cycle, target)
+	return strings.Join(cycle, " -> ")
 }
 
 // resolveLexically computes the resolved bundle-relative path of a ref string
 // relative to a parent workflow's bundle path. The resolved path is then
 // validated by Canonicalize.
+//
+// SPEC NOTE: This function uses path.Clean and path.Join for lexical-join
+// (resolving '..' and '/.' segments before validation). The spec mandates
+// that "all four sites (Pack, Open, Source.Workflow, Extract) call exactly
+// one Canonicalize function." resolveLexically is part of the dipx package's
+// internal canonicalization pipeline; its path.Clean usage is for input
+// preparation, and the function ALWAYS calls Canonicalize on the result
+// before returning. The future CI grep added in Task 26 must allowlist this
+// helper.
 //
 // refPath comes from a workflow's source (subgraph ref:); relativeTo is the
 // bundle-relative path of the parent workflow.

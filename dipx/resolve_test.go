@@ -185,3 +185,73 @@ func TestDetectCycle_DepthCap(t *testing.T) {
 }
 
 func key(i int) string { return "node" + string(rune('0'+i%10)) + string(rune('0'+i/10)) }
+
+func TestDetectCycle_FullCyclePath(t *testing.T) {
+	graph := map[string][]string{
+		"a": {"b"},
+		"b": {"c"},
+		"c": {"a"},
+	}
+	err := detectCycles(graph, "a", 64)
+	if err == nil {
+		t.Fatal("expected ErrRefCycle")
+	}
+	var be *BundleError
+	if !errors.As(err, &be) {
+		t.Fatalf("expected *BundleError, got %T", err)
+	}
+	if be.Path != "a" {
+		t.Errorf("Path = %q, want a (cycle entry node)", be.Path)
+	}
+	want := "a -> b -> c -> a"
+	if be.Detail != want {
+		t.Errorf("Detail = %q, want %q", be.Detail, want)
+	}
+}
+
+func TestDetectCycle_AtCapDepthSucceeds(t *testing.T) {
+	// Linear chain a0 -> a1 -> ... -> a64 (depth 64, exactly at cap).
+	graph := map[string][]string{}
+	for i := 0; i <= 64; i++ {
+		next := []string{}
+		if i < 64 {
+			next = []string{key(i + 1)}
+		}
+		graph[key(i)] = next
+	}
+	if err := detectCycles(graph, key(0), 64); err != nil {
+		t.Fatalf("expected at-cap chain to succeed, got %v", err)
+	}
+}
+
+func TestDetectCycle_EmptyGraph(t *testing.T) {
+	if err := detectCycles(map[string][]string{}, "any", 64); err != nil {
+		t.Fatalf("expected empty graph to succeed, got %v", err)
+	}
+}
+
+func TestResolveCanonicalize_AdversarialComposition(t *testing.T) {
+	// All of these should fail: the resolved path either escapes workflows/,
+	// has empty components after cleaning, or violates suffix/component rules.
+	cases := []struct {
+		name       string
+		refPath    string
+		relativeTo string
+	}{
+		{"escape-via-many-dotdots", "../../../etc/passwd.dip", "workflows/sub/parent.dip"},
+		{"backslash-in-ref", "sub\\foo.dip", "workflows/parent.dip"},
+		{"ref-cleans-to-just-workflows", "..", "workflows/parent.dip"},
+		{"ref-with-nul", "foo\x00.dip", "workflows/parent.dip"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := resolveLexically(c.refPath, c.relativeTo)
+			if err == nil {
+				t.Fatalf("expected error")
+			}
+			if !errors.Is(err, ErrPathUnsafe) {
+				t.Fatalf("err = %v, want ErrPathUnsafe", err)
+			}
+		})
+	}
+}
