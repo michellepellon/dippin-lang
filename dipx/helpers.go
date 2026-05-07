@@ -6,6 +6,7 @@ import (
 
 	"github.com/2389-research/dippin-lang/ir"
 	"github.com/2389-research/dippin-lang/parser"
+	"github.com/2389-research/dippin-lang/simulate"
 )
 
 const (
@@ -60,6 +61,90 @@ func verifyAllHashes(cz *constrainedZip, m Manifest, totalCap int64) (map[string
 		verified[e.Path] = vb
 	}
 	return verified, total, nil
+}
+
+// walkRefs verifies that every transitive subgraph ref reachable from
+// manifest.Entry resolves to a manifest-listed entry, that no ref escapes
+// workflows/, and that the resulting graph is acyclic.
+func walkRefs(parsed map[string]*ir.Workflow, m Manifest) error {
+	graph, err := buildRefGraph(parsed)
+	if err != nil {
+		return err
+	}
+	if err := verifyRefsListed(graph, m); err != nil {
+		return err
+	}
+	return detectCycles(graph, m.Entry, 64)
+}
+
+// verifyRefsListed confirms every ref target exists in the manifest.
+func verifyRefsListed(graph map[string][]string, m Manifest) error {
+	listed := make(map[string]struct{}, len(m.Files))
+	for _, e := range m.Files {
+		listed[e.Path] = struct{}{}
+	}
+	for from, tos := range graph {
+		for _, to := range tos {
+			if _, ok := listed[to]; !ok {
+				return newError(ErrRefEscape, from, "ref resolves to path not in manifest: "+to, nil)
+			}
+		}
+	}
+	return nil
+}
+
+// buildRefGraph extracts the per-workflow ref edges and resolves each ref
+// against its parent's bundle path.
+func buildRefGraph(parsed map[string]*ir.Workflow) (map[string][]string, error) {
+	g := make(map[string][]string, len(parsed))
+	for parentPath, wf := range parsed {
+		out, err := refsForWorkflow(wf, parentPath)
+		if err != nil {
+			return nil, err
+		}
+		g[parentPath] = out
+	}
+	return g, nil
+}
+
+// refsForWorkflow resolves every ref-bearing node in wf against parentPath.
+func refsForWorkflow(wf *ir.Workflow, parentPath string) ([]string, error) {
+	var out []string
+	for _, n := range wf.Nodes {
+		refStr := refFromNode(n)
+		if refStr == "" {
+			continue
+		}
+		resolved, err := resolveLexically(refStr, parentPath)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, resolved)
+	}
+	return out, nil
+}
+
+// refFromNode returns the ref string for node kinds that carry one, or "".
+func refFromNode(n *ir.Node) string {
+	switch cfg := n.Config.(type) {
+	case ir.SubgraphConfig:
+		return cfg.Ref
+	case ir.ManagerLoopConfig:
+		return cfg.SubgraphRef
+	}
+	return ""
+}
+
+// normalizeConditions invokes simulate.EnsureConditionsParsed on every
+// workflow so the runtime never has to call it on shared *ir.Workflow values
+// (which would race in concurrent NodeParallel/NodeFanIn dispatch).
+func normalizeConditions(parsed map[string]*ir.Workflow) error {
+	for path, wf := range parsed {
+		if err := simulate.EnsureConditionsParsed(wf); err != nil {
+			return newError(ErrSubgraphParse, path, "condition normalization failed", err)
+		}
+	}
+	return nil
 }
 
 // parseAllWorkflows parses every file in verified via parser.NewParser. THIS

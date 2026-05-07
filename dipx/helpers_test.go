@@ -6,6 +6,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/2389-research/dippin-lang/ir"
 )
 
 func TestReadManifestEntry_Happy(t *testing.T) {
@@ -117,6 +119,58 @@ func TestParseAllWorkflows_EntryParseError(t *testing.T) {
 	_, err := parseAllWorkflows(verified, "workflows/a.dip")
 	if !errors.Is(err, ErrEntryParse) {
 		t.Fatalf("err = %v, want ErrEntryParse", err)
+	}
+}
+
+func TestWalkRefs_AcceptsValid(t *testing.T) {
+	parent := &ir.Workflow{
+		Name: "P", Start: "X", Exit: "X",
+		Nodes: []*ir.Node{
+			{ID: "X", Kind: ir.NodeSubgraph, Config: ir.SubgraphConfig{Ref: "child.dip"}},
+		},
+	}
+	child := &ir.Workflow{Name: "C", Start: "Y", Exit: "Y"}
+	parsed := map[string]*ir.Workflow{
+		"workflows/parent.dip": parent,
+		"workflows/child.dip":  child,
+	}
+	manifest := Manifest{Entry: "workflows/parent.dip", Files: []ManifestEntry{
+		{Path: "workflows/parent.dip"}, {Path: "workflows/child.dip"},
+	}}
+	if err := walkRefs(parsed, manifest); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWalkRefs_RejectsEscape(t *testing.T) {
+	parent := &ir.Workflow{
+		Name: "P", Start: "X", Exit: "X",
+		Nodes: []*ir.Node{
+			{ID: "X", Kind: ir.NodeSubgraph, Config: ir.SubgraphConfig{Ref: "../escape.dip"}},
+		},
+	}
+	parsed := map[string]*ir.Workflow{"workflows/parent.dip": parent}
+	manifest := Manifest{Entry: "workflows/parent.dip", Files: []ManifestEntry{{Path: "workflows/parent.dip"}}}
+	err := walkRefs(parsed, manifest)
+	if !errors.Is(err, ErrPathUnsafe) && !errors.Is(err, ErrRefEscape) {
+		t.Fatalf("err = %v, want ErrPathUnsafe or ErrRefEscape", err)
+	}
+}
+
+func TestNormalizeConditions_PopulatesParsedAST(t *testing.T) {
+	wf := &ir.Workflow{
+		Name: "W", Start: "A", Exit: "B",
+		Nodes: []*ir.Node{{ID: "A"}, {ID: "B"}},
+		Edges: []*ir.Edge{
+			{From: "A", To: "B", Condition: &ir.Condition{Raw: "ctx.x = y"}},
+		},
+	}
+	parsed := map[string]*ir.Workflow{"workflows/w.dip": wf}
+	if err := normalizeConditions(parsed); err != nil {
+		t.Fatal(err)
+	}
+	if wf.Edges[0].Condition.Parsed == nil {
+		t.Fatal("Parsed AST not populated")
 	}
 }
 
