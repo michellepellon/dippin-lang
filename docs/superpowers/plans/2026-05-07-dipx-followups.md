@@ -48,3 +48,41 @@ Same Unicode case-fold concern raised in Phase 2. `verifyOneFile` uses `strings.
 - `assertCanonicalIntLiteral` is partly dead code (Int64 + JSON grammar already reject most non-canonical literals). Defense in depth; leave as-is.
 - Missing `sha256` `Detail` message could distinguish "missing" from "malformed"; current "sha256 not 64-char lowercase hex" is acceptable.
 - `assertNoTrailingTokens` `dec.More()` check is partly redundant with the EOF Token check. Belt-and-suspenders; leave.
+
+## Phase 4 ZIP I/O findings (deferred)
+
+### Central-directory ↔ local-header mismatch detection (Phase 4 security gate, C2)
+
+The spec mandates that the central directory and local file headers must agree on filename and uncompressed size to defend against ZIP parser-confusion (smuggling/cloak attacks). Go's `archive/zip` reader exposes only central-directory metadata; checking the local header requires either a custom zip reader or wrapping `archive/zip`'s internals.
+
+**Disposition:** v1.1. Practical risk in v1 is mitigated by hash verification: whatever bytes get decompressed are hashed, and if they don't match the manifest, `ErrHashMismatch` fires. The defense gap is for cross-implementation interop (a non-Go reader could disagree with our reader), but v1 is Go-only per spec § "Conventions".
+
+### Compression-ratio cap (1000:1) not enforced (Phase 4 security gate, C3)
+
+Spec § "Streaming cap enforcement" requires per-file compression-ratio cap of 1000:1. Currently only the absolute uncompressed-size cap (50 MB per file) is enforced. A maximally-compressed entry could expand within the absolute cap.
+
+**Disposition:** v1.1. Implementation requires `f.OpenRaw()` plus manual deflate chain to count compressed input bytes alongside decompressed output. Significant restructure. The 50 MB absolute cap provides DoS protection in the meantime.
+
+### Hardlink / repeated central-dir pointer detection (Phase 4 security gate, I5)
+
+Two central-directory records pointing at the same local-header offset under different names slip through current duplicate-name detection. Defense-in-depth gap related to C2.
+
+**Disposition:** v1.1. Bundled with C2 fix.
+
+### `ErrZipTruncated` over-broadens (Phase 4 gates I6, L3)
+
+Mid-stream EOF, corrupt deflate, malformed central directory, and `ErrInsecurePath` from `archive/zip` all map to `ErrZipTruncated`. Operationally distinct conditions are conflated.
+
+**Disposition:** v1.1 polish. Distinguish via dedicated sentinels (`ErrZipFormat`, `ErrZipPathInsecure`).
+
+### `archive/zip.ErrInsecurePath` handling (Phase 4 security gate, I7)
+
+`zip.NewReader` may return both a reader AND `ErrInsecurePath` (Go version dependent on `GODEBUG=zipinsecurepath`). Current code treats this as fatal-zip; should map to `ErrPathUnsafe`.
+
+**Disposition:** v1.1. Test by setting `GODEBUG=zipinsecurepath=0` in environment.
+
+### CI grep for `verifiedBytes{` literals (Phase 4 crypto gate, M1)
+
+The `verifiedBytes` zero-value `verifiedBytes{}` and one-arg constructor `newVerifiedBytes(buf)` are the only legitimate constructions. A future helper inside `dipx` could accidentally write `verifiedBytes{b: rawBytes}` and bypass `verifyAndReadEntry`. Spec calls for a CI grep at Task 26 final hardening.
+
+**Disposition:** Already in plan as Task 26 step 3. No action needed here.
