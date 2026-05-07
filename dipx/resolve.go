@@ -191,3 +191,25 @@ func stripExt(c string) string {
 	}
 	return c
 }
+
+// resolveLexically computes the resolved bundle-relative path of a ref string
+// relative to a parent workflow's bundle path. The resolved path is then
+// validated by Canonicalize.
+//
+// refPath comes from a workflow's source (subgraph ref:); relativeTo is the
+// bundle-relative path of the parent workflow.
+func resolveLexically(refPath, relativeTo string) (string, error) {
+	if refPath == "" {
+		return "", newError(ErrPathUnsafe, refPath, "empty ref", nil)
+	}
+	dir := path.Dir(relativeTo)
+	if dir == "." {
+		dir = ""
+	}
+	joined := path.Join(dir, refPath)
+	cleaned := path.Clean(joined)
+	// Run through Canonicalize for safety checks. Note: refPath may have
+	// originally contained "..", which path.Clean resolves; the resulting
+	// cleaned path must itself be canonical.
+	return Canonicalize(cleaned)
+}

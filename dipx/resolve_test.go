@@ -94,3 +94,44 @@ func TestCanonicalize_RejectsNFD(t *testing.T) {
 		t.Fatalf("err = %v, want ErrPathUnsafe", err)
 	}
 }
+
+func TestResolve_Sibling(t *testing.T) {
+	got, err := resolveLexically("foo.dip", "workflows/parent.dip")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "workflows/foo.dip" {
+		t.Errorf("got %q, want workflows/foo.dip", got)
+	}
+}
+
+func TestResolve_Subdir(t *testing.T) {
+	got, err := resolveLexically("phases/code_review.dip", "workflows/parent.dip")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "workflows/phases/code_review.dip" {
+		t.Errorf("got %q, want workflows/phases/code_review.dip", got)
+	}
+}
+
+func TestResolve_DotDotInRefAllowed(t *testing.T) {
+	// .. in ref is OK as long as resolved path stays in workflows/
+	got, err := resolveLexically("../sibling/foo.dip", "workflows/sub/parent.dip")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "workflows/sibling/foo.dip" {
+		t.Errorf("got %q, want workflows/sibling/foo.dip", got)
+	}
+}
+
+func TestResolve_DotDotEscapeRejected(t *testing.T) {
+	_, err := resolveLexically("../../etc/passwd", "workflows/parent.dip")
+	if err == nil {
+		t.Fatal("expected error escaping workflows/")
+	}
+	if !errors.Is(err, ErrPathUnsafe) {
+		t.Fatalf("err = %v, want ErrPathUnsafe", err)
+	}
+}
