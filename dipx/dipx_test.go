@@ -60,6 +60,16 @@ func TestOpen_HashMismatch(t *testing.T) {
 	}
 }
 
+func TestOpen_ContextCancelled(t *testing.T) {
+	raw := buildHappyDipx(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+	_, err := OpenReader(ctx, bytes.NewReader(raw), int64(len(raw)))
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+}
+
 func TestOpen_FormatVersionRejected(t *testing.T) {
 	body := []byte(minimalDipSrc)
 	bodyHash := hashOf(body)

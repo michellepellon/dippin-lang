@@ -69,7 +69,7 @@ func openFromReader(ctx context.Context, r io.ReaderAt, size int64, mode openMod
 	if err != nil {
 		return nil, err
 	}
-	parsed, err := parseAndLink(verified, manifest)
+	parsed, err := parseAndLink(ctx, verified, manifest)
 	if err != nil {
 		return nil, err
 	}
@@ -129,13 +129,40 @@ func verifyHashesCtx(ctx context.Context, cz *constrainedZip, m Manifest) (map[s
 }
 
 // parseAndLink parses every verified workflow, walks refs to confirm closure
-// and acyclicity, and normalizes parsed conditions on every workflow.
-func parseAndLink(verified map[string]verifiedBytes, m Manifest) (map[string]*ir.Workflow, error) {
-	parsed, err := parseAllWorkflows(verified, m.Entry)
+// and acyclicity, and normalizes parsed conditions on every workflow. ctx is
+// checked between each CPU-bound stage so a canceled context aborts before
+// the next pass starts.
+func parseAndLink(ctx context.Context, verified map[string]verifiedBytes, m Manifest) (map[string]*ir.Workflow, error) {
+	parsed, err := parseAllWorkflowsCtx(ctx, verified, m.Entry)
 	if err != nil {
 		return nil, err
 	}
-	if err := walkRefs(parsed, m); err != nil {
+	if err := walkRefsCtx(ctx, parsed, m); err != nil {
+		return nil, err
+	}
+	return normalizeConditionsCtx(ctx, parsed)
+}
+
+// parseAllWorkflowsCtx checks ctx then runs parseAllWorkflows.
+func parseAllWorkflowsCtx(ctx context.Context, verified map[string]verifiedBytes, entry string) (map[string]*ir.Workflow, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return parseAllWorkflows(verified, entry)
+}
+
+// walkRefsCtx checks ctx then runs walkRefs.
+func walkRefsCtx(ctx context.Context, parsed map[string]*ir.Workflow, m Manifest) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return walkRefs(parsed, m)
+}
+
+// normalizeConditionsCtx checks ctx then runs normalizeConditions, returning
+// the unchanged parsed map (for chaining inside parseAndLink).
+func normalizeConditionsCtx(ctx context.Context, parsed map[string]*ir.Workflow) (map[string]*ir.Workflow, error) {
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	if err := normalizeConditions(parsed); err != nil {

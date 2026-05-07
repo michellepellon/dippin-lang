@@ -39,11 +39,17 @@ func (b *Bundle) Entry() *ir.Workflow {
 	return b.workflows[b.manifest.Entry]
 }
 
-// Lookup returns the parsed workflow at a bundle-relative path.
+// Lookup returns the parsed workflow at a bundle-relative path. The path is
+// re-canonicalized on every call (defense-in-depth: the bundle's internal map
+// is keyed by canonical paths, but callers may pass arbitrary strings).
 func (b *Bundle) Lookup(bundlePath string) (*ir.Workflow, error) {
-	wf, ok := b.workflows[bundlePath]
+	canonical, err := Canonicalize(bundlePath)
+	if err != nil {
+		return nil, err
+	}
+	wf, ok := b.workflows[canonical]
 	if !ok {
-		return nil, newError(ErrFileMissing, bundlePath, "", nil)
+		return nil, newError(ErrFileMissing, canonical, "", nil)
 	}
 	return wf, nil
 }
@@ -72,11 +78,16 @@ func (b *Bundle) Workflow(refPath, relativeTo string) (*ir.Workflow, error) {
 	return b.workflows[resolved], nil
 }
 
-// ReadFile returns the raw bytes of any file in the bundle.
+// ReadFile returns the raw bytes of any file in the bundle. The path is
+// re-canonicalized on every call (defense-in-depth: see Lookup).
 func (b *Bundle) ReadFile(bundlePath string) ([]byte, error) {
-	data, ok := b.fileBytes[bundlePath]
+	canonical, err := Canonicalize(bundlePath)
+	if err != nil {
+		return nil, err
+	}
+	data, ok := b.fileBytes[canonical]
 	if !ok {
-		return nil, newError(ErrFileMissing, bundlePath, "", nil)
+		return nil, newError(ErrFileMissing, canonical, "", nil)
 	}
 	// Defensive copy to preserve immutability.
 	out := make([]byte, len(data))

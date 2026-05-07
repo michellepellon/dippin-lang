@@ -82,6 +82,22 @@ func TestBundle_ReadFile(t *testing.T) {
 	}
 }
 
+func TestBundle_Lookup_RejectsUnsafePath(t *testing.T) {
+	b := newTestBundle(t)
+	_, err := b.Lookup("../../../etc/passwd")
+	if !errors.Is(err, ErrPathUnsafe) {
+		t.Fatalf("err = %v, want ErrPathUnsafe", err)
+	}
+}
+
+func TestBundle_ReadFile_RejectsUnsafePath(t *testing.T) {
+	b := newTestBundle(t)
+	_, err := b.ReadFile("../../../etc/passwd")
+	if !errors.Is(err, ErrPathUnsafe) {
+		t.Fatalf("err = %v, want ErrPathUnsafe", err)
+	}
+}
+
 func TestBundle_Workflow(t *testing.T) {
 	b := newTestBundle(t)
 	wf, err := b.Workflow("b.dip", "workflows/a.dip")

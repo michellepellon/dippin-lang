@@ -42,7 +42,9 @@ func readManifestEntry(cz *constrainedZip) ([]byte, error) {
 // verifyAllHashes streams each file through SHA-256 verification, enforcing
 // per-file and total-uncompressed caps as bounds during decompression.
 // Returns the verified bytes (keyed by canonical bundle path) and the running
-// total of bytes read.
+// total of bytes read. The effective per-file cap is min(maxPerFileBytes,
+// totalCap-total), so the running total cap is enforced as a streaming bound
+// rather than after a per-file allocation has already happened.
 func verifyAllHashes(cz *constrainedZip, m Manifest, totalCap int64) (map[string]verifiedBytes, int64, error) {
 	if len(m.Files) > maxFiles {
 		return nil, 0, newError(ErrCapExceeded, "", fmt.Sprintf("files exceeds %d", maxFiles), nil)
@@ -50,17 +52,28 @@ func verifyAllHashes(cz *constrainedZip, m Manifest, totalCap int64) (map[string
 	verified := make(map[string]verifiedBytes, len(m.Files))
 	var total int64
 	for _, e := range m.Files {
-		vb, err := verifyAndReadEntry(cz, e.Path, e.SHA256, maxPerFileBytes)
+		vb, err := verifyEntryWithBudget(cz, e, totalCap, total)
 		if err != nil {
-			return nil, 0, err
+			return nil, total, err
 		}
 		total += int64(len(vb.Bytes()))
-		if total > totalCap {
-			return nil, total, newError(ErrCapExceeded, e.Path, fmt.Sprintf("total uncompressed bytes exceed %d", totalCap), nil)
-		}
 		verified[e.Path] = vb
 	}
 	return verified, total, nil
+}
+
+// verifyEntryWithBudget verifies a single manifest entry under an effective
+// cap of min(maxPerFileBytes, totalCap-total), so the running total cap is a
+// streaming bound rather than a post-allocation check.
+func verifyEntryWithBudget(cz *constrainedZip, e ManifestEntry, totalCap, total int64) (verifiedBytes, error) {
+	effectiveCap := totalCap - total
+	if maxPerFileBytes < effectiveCap {
+		effectiveCap = maxPerFileBytes
+	}
+	if effectiveCap <= 0 {
+		return verifiedBytes{}, newError(ErrCapExceeded, e.Path, fmt.Sprintf("total uncompressed bytes would exceed %d", totalCap), nil)
+	}
+	return verifyAndReadEntry(cz, e.Path, e.SHA256, effectiveCap)
 }
 
 // walkRefs verifies that every transitive subgraph ref reachable from
