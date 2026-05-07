@@ -174,3 +174,29 @@ Combining flags fails silently. **Disposition:** v1.1 — add diagnostic + exit 
 ### parseFile/loadWorkflow error prefix inconsistency (Phase 8, L5)
 
 Raw `BundleError.Error()` shown without "error:" prefix that other CLI commands use. **Disposition:** v1.1 polish.
+
+## Phase 9 gate findings (deferred)
+
+### OpenLax structured warning not emitted (Phase 9, P9.1)
+
+Spec § "OpenLax discipline": "The function emits a structured warning to the caller-provided logger (when context.Context carries one via standard convention) on every invocation." Implementation does not emit any warning. **Disposition:** v1.1. Add ctx-key-based logger lookup or simple stderr warning gated by env var.
+
+### ZIP entry case-fold uses ASCII strings.ToLower (Phase 9, P9.2)
+
+Same issue as manifest case-fold (already-deferred Phase 2/3): `dipx/zipio.go` `recordEntry` uses `strings.ToLower(f.Name)` for case-fold-duplicate detection. Should use Unicode `cases.Fold()`. **Disposition:** v1.1, bundled with manifest-layer case-fold upgrade.
+
+### ZIP entry canonicalization at admission (Phase 9, P9.3)
+
+`cz.entries` stores by raw `f.Name` without applying `Canonicalize`. Non-canonical entries (e.g., `workflows//a.dip`) admitted then rejected later by strict-mode check. Practical effect: same rejection, but error class is `ErrFileUnexpected` rather than `ErrPathUnsafe`. **Disposition:** v1.1 polish — canonicalize at admission for cleaner error attribution.
+
+### DIPX_DEBUG=1 diagnostic mode not implemented (Phase 9, P9.4)
+
+Spec § "Operational ergonomics / Diagnostic mode": env-gated structured step trace. Currently no implementation. **Disposition:** v1.1. Add a small package-level tracer gated on `DIPX_DEBUG=1`. The "no default logging" rule is preserved because tracing only fires under explicit env var.
+
+### Consumer deployment limits not configurable (Phase 9, P9.5)
+
+Spec § "Soft caps": "A conformant reader MAY enforce stricter limits configured for its deployment context." Implementation hardcodes conformance caps. No `WithMaxFiles(n)`/`WithMaxBytes(n)` options. **Disposition:** v1.1. Add functional options on `Open`/`OpenReader` for deployment-stricter caps.
+
+### CLI flag-position: flags must precede positional args (Phase 9, P9.6)
+
+Go's `flag` package stops parsing at the first non-flag argument. Users running `dippin pack examples/foo.dip -o out.dipx` get usage errors; must be `dippin pack -o out.dipx examples/foo.dip`. Common Unix tools accept both orders. **Disposition:** v1.1. Either switch to `pflag` / `cobra` for any-position flag parsing, or document the constraint in `--help` output.
