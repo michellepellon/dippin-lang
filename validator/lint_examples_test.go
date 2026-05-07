@@ -1,10 +1,13 @@
 package validator_test
 
 import (
+	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/2389-research/dippin-lang/dipx"
 	"github.com/2389-research/dippin-lang/parser"
 	"github.com/2389-research/dippin-lang/validator"
 )
@@ -45,6 +48,37 @@ func TestLintExamples(t *testing.T) {
 				if d.Code == validator.DIP108 {
 					t.Errorf("%s: %s", name, d.Message)
 				}
+			}
+		})
+	}
+}
+
+// TestPackExamples round-trips every example .dip through dipx.Pack →
+// dipx.OpenReader, asserting that each example bundles cleanly and reopens
+// without error. This catches packer regressions and bundle-shape drift.
+func TestPackExamples(t *testing.T) {
+	matches, err := filepath.Glob("../examples/*.dip")
+	if err != nil {
+		t.Fatal(err)
+	}
+	subdirMatches, err := filepath.Glob("../examples/*/*.dip")
+	if err != nil {
+		t.Fatal(err)
+	}
+	matches = append(matches, subdirMatches...)
+	if len(matches) == 0 {
+		t.Fatal("no .dip files found in examples/")
+	}
+
+	for _, path := range matches {
+		path := path
+		t.Run(filepath.Base(path), func(t *testing.T) {
+			var buf bytes.Buffer
+			if _, err := dipx.Pack(context.Background(), path, &buf); err != nil {
+				t.Fatalf("Pack failed: %v", err)
+			}
+			if _, err := dipx.OpenReader(context.Background(), bytes.NewReader(buf.Bytes()), int64(buf.Len())); err != nil {
+				t.Fatalf("Open failed: %v", err)
 			}
 		})
 	}
