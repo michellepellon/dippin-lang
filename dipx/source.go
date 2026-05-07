@@ -26,11 +26,19 @@ type Source interface {
 }
 
 // Load opens either a .dip or a .dipx based on filename extension.
+//
+// Extension matching is case-insensitive and strict: anything other than
+// .dip or .dipx (including extensionless paths and unknown suffixes like
+// .txt or .zip) is rejected with ErrPathUnsafe.
 func Load(ctx context.Context, path string) (Source, error) {
-	if strings.HasSuffix(path, ".dipx") {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".dipx":
 		return Open(ctx, path)
+	case ".dip":
+		return loadDirSource(ctx, path)
+	default:
+		return nil, newError(ErrPathUnsafe, path, "unsupported file extension; expected .dip or .dipx", nil)
 	}
-	return loadDirSource(ctx, path)
 }
 
 // dirSource is a Source backed by .dip files on the local filesystem rooted at
@@ -118,7 +126,10 @@ func (d *dirSource) resolveDir(refPath, relativeTo string) (string, error) {
 	parentDir := filepath.Dir(relativeTo)
 	target := filepath.Clean(filepath.Join(parentDir, refPath))
 	rel, err := filepath.Rel(d.baseDir, target)
-	if err != nil || strings.HasPrefix(rel, "..") {
+	if err != nil {
+		return "", newError(ErrPathUnsafe, refPath, "ref escapes base directory", nil)
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return "", newError(ErrPathUnsafe, refPath, "ref escapes base directory", nil)
 	}
 	return target, nil

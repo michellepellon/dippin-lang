@@ -73,6 +73,34 @@ func TestDirSource_LoadDip(t *testing.T) {
 	}
 }
 
+func TestLoad_RejectsUnknownExtension(t *testing.T) {
+	dir := t.TempDir()
+	bad := filepath.Join(dir, "foo.txt")
+	if err := os.WriteFile(bad, []byte("hello"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Load(context.Background(), bad)
+	if !errors.Is(err, ErrPathUnsafe) {
+		t.Fatalf("err = %v, want ErrPathUnsafe", err)
+	}
+}
+
+func TestLoad_AcceptsUppercaseDipx(t *testing.T) {
+	raw := buildHappyDipx(t)
+	dir := t.TempDir()
+	upper := filepath.Join(dir, "test.DIPX")
+	if err := os.WriteFile(upper, raw, 0644); err != nil {
+		t.Fatal(err)
+	}
+	src, err := Load(context.Background(), upper)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if src.Entry().Name != "Hello" {
+		t.Fatalf("entry = %q", src.Entry().Name)
+	}
+}
+
 func TestDirSource_RejectsEscape(t *testing.T) {
 	dir := t.TempDir()
 	parent := `workflow P
