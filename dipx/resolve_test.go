@@ -135,3 +135,53 @@ func TestResolve_DotDotEscapeRejected(t *testing.T) {
 		t.Fatalf("err = %v, want ErrPathUnsafe", err)
 	}
 }
+
+func TestDetectCycle_Acyclic(t *testing.T) {
+	graph := map[string][]string{
+		"a": {"b", "c"},
+		"b": {"d"},
+		"c": {"d"},
+		"d": {},
+	}
+	if err := detectCycles(graph, "a", 64); err != nil {
+		t.Fatalf("expected acyclic, got %v", err)
+	}
+}
+
+func TestDetectCycle_SelfLoop(t *testing.T) {
+	graph := map[string][]string{"a": {"a"}}
+	err := detectCycles(graph, "a", 64)
+	if !errors.Is(err, ErrRefCycle) {
+		t.Fatalf("err = %v, want ErrRefCycle", err)
+	}
+}
+
+func TestDetectCycle_ThreeCycle(t *testing.T) {
+	graph := map[string][]string{
+		"a": {"b"},
+		"b": {"c"},
+		"c": {"a"},
+	}
+	err := detectCycles(graph, "a", 64)
+	if !errors.Is(err, ErrRefCycle) {
+		t.Fatalf("err = %v, want ErrRefCycle", err)
+	}
+}
+
+func TestDetectCycle_DepthCap(t *testing.T) {
+	// Linear chain a0 -> a1 -> ... -> a65
+	graph := map[string][]string{}
+	for i := 0; i <= 65; i++ {
+		next := []string{}
+		if i < 65 {
+			next = []string{key(i + 1)}
+		}
+		graph[key(i)] = next
+	}
+	err := detectCycles(graph, key(0), 64)
+	if !errors.Is(err, ErrCapExceeded) {
+		t.Fatalf("err = %v, want ErrCapExceeded", err)
+	}
+}
+
+func key(i int) string { return "node" + string(rune('0'+i%10)) + string(rune('0'+i/10)) }

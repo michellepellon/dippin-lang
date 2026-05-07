@@ -192,6 +192,49 @@ func stripExt(c string) string {
 	return c
 }
 
+// Tri-color DFS marker values for detectCycles.
+const (
+	colorWhite = 0
+	colorGray  = 1
+	colorBlack = 2
+)
+
+// detectCycles runs a tri-color DFS over the ref graph rooted at start.
+// Returns ErrRefCycle on the first cycle found, ErrCapExceeded when depth
+// exceeds maxDepth.
+func detectCycles(graph map[string][]string, start string, maxDepth int) error {
+	color := make(map[string]int, len(graph))
+	return dfsVisit(graph, color, start, 0, maxDepth)
+}
+
+// dfsVisit is the recursive worker for detectCycles. Hoisted to a top-level
+// helper so detectCycles stays under the project's complexity caps.
+func dfsVisit(graph map[string][]string, color map[string]int, node string, depth, maxDepth int) error {
+	if depth > maxDepth {
+		return newError(ErrCapExceeded, node, "ref-graph depth exceeds 64", nil)
+	}
+	color[node] = colorGray
+	for _, next := range graph[node] {
+		if err := dfsVisitEdge(graph, color, node, next, depth, maxDepth); err != nil {
+			return err
+		}
+	}
+	color[node] = colorBlack
+	return nil
+}
+
+// dfsVisitEdge inspects a single outgoing edge from node to next, recursing
+// when next is unvisited and reporting a cycle when next is on the active path.
+func dfsVisitEdge(graph map[string][]string, color map[string]int, node, next string, depth, maxDepth int) error {
+	switch color[next] {
+	case colorGray:
+		return newError(ErrRefCycle, node, node+" -> "+next, nil)
+	case colorWhite:
+		return dfsVisit(graph, color, next, depth+1, maxDepth)
+	}
+	return nil
+}
+
 // resolveLexically computes the resolved bundle-relative path of a ref string
 // relative to a parent workflow's bundle path. The resolved path is then
 // validated by Canonicalize.
