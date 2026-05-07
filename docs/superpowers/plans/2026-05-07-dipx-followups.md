@@ -118,3 +118,25 @@ Spec § "Source implementations" mandates "LRU of 256 entries with singleflight.
 ### Source.Workflow doesn't take context (Phase 6, L4)
 
 `Source.Workflow(refPath, relativeTo)` performs disk I/O for dirSource but no ctx. Spec is internally inconsistent: § "Cancellation" line 272 says I/O entry points take ctx, but § "Tracker integration contract" example shows ctx-less Workflow. **Disposition:** v1.1 spec clarification. Decide whether Source is a "fast lookup" or "I/O entry point." If the latter, breaking signature change.
+
+## Phase 7 gate findings (deferred)
+
+### Pack compression-ratio cap (Phase 7, H1 partial)
+
+Spec § "Soft caps" lists 1000:1 compression-ratio as a producer-side limit. Pack only checks per-file uncompressed size (50MB); ratio is unchecked. Implementing requires either tracking compressed bytes during deflate (manual deflate chain + counter) or post-compression check via writer hooks. **Disposition:** v1.1. Per-file 50MB cap provides absolute DoS protection in the meantime.
+
+### Pack parent-directory symlink check (Phase 7, M1)
+
+`walkSourceTree` checks Lstat on the leaf file but doesn't walk parent components for directory symlinks. A directory symlink in the path tree silently re-roots `rootDir`. **Disposition:** v1.1. Practical risk is low (developer source trees, not adversarial input). Fix requires per-component Lstat or a helper.
+
+### Pack O_NOFOLLOW (Phase 7, M2)
+
+Spec § "Reproducible Pack" mandates `O_NOFOLLOW` on file open. Current implementation uses `os.Lstat` + `os.ReadFile`, leaving a TOCTOU window if a symlink is swapped between Lstat and ReadFile. **Disposition:** v1.1. Implementing `O_NOFOLLOW` requires platform-specific syscalls (Linux/macOS/BSD have `O_NOFOLLOW`; Windows uses different attributes). The Lstat-first approach mitigates the threat for non-adversarial source trees.
+
+### Pack frozen golden test (Phase 7, L1, L2)
+
+`encodeManifestCanonical` relies on Go's `json.Marshal` field-order behavior. `TestPack_Reproducible` proves in-process determinism but doesn't catch cross-Go-version drift via a frozen byte vector. Spec testing strategy mentions a `well-formed.dipx` golden file. **Disposition:** v1.1. Add as part of Task 25's hardening.
+
+### Pack symlink coverage in tests (Phase 7, L3)
+
+`TestPack_RejectsSymlink` only tests symlink-as-entry. Doesn't test transitive ref symlinks or directory symlinks. **Disposition:** v1.1.
