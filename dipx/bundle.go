@@ -1,0 +1,85 @@
+package dipx
+
+import (
+	"crypto/sha256"
+
+	"github.com/2389-research/dippin-lang/ir"
+)
+
+// Bundle is an opened .dipx. All workflows are parsed and normalized eagerly
+// on Open; no file handles are held after Open returns. Bundle implements
+// Source and is immutable post-Open.
+type Bundle struct {
+	manifest      Manifest
+	manifestBytes []byte                  // for Identity()
+	workflows     map[string]*ir.Workflow // canonical bundle path -> parsed workflow
+	fileBytes     map[string][]byte       // canonical bundle path -> raw bytes
+}
+
+// Manifest returns a defensive copy of the parsed manifest. Callers may mutate
+// the returned value without affecting the bundle. Cost is O(len(Files)).
+func (b *Bundle) Manifest() Manifest {
+	out := Manifest{
+		FormatVersion: b.manifest.FormatVersion,
+		Entry:         b.manifest.Entry,
+		Files:         make([]ManifestEntry, len(b.manifest.Files)),
+	}
+	copy(out.Files, b.manifest.Files)
+	return out
+}
+
+// Identity returns SHA-256(manifest.json bytes-as-stored). This is the
+// authoritative bundle identity for provenance tracking.
+func (b *Bundle) Identity() [32]byte {
+	return sha256.Sum256(b.manifestBytes)
+}
+
+// Entry returns the entry workflow.
+func (b *Bundle) Entry() *ir.Workflow {
+	return b.workflows[b.manifest.Entry]
+}
+
+// Lookup returns the parsed workflow at a bundle-relative path.
+func (b *Bundle) Lookup(bundlePath string) (*ir.Workflow, error) {
+	wf, ok := b.workflows[bundlePath]
+	if !ok {
+		return nil, newError(ErrFileMissing, bundlePath, "", nil)
+	}
+	return wf, nil
+}
+
+// Resolve takes a parent's bundle-relative path and a ref string, and returns
+// the bundle-relative path of the referenced workflow. Errors on path traversal
+// or escape from workflows/.
+func (b *Bundle) Resolve(refPath, relativeTo string) (string, error) {
+	resolved, err := resolveLexically(refPath, relativeTo)
+	if err != nil {
+		return "", err
+	}
+	if _, ok := b.workflows[resolved]; !ok {
+		return "", newError(ErrFileMissing, resolved, "ref resolves to path not in manifest", nil)
+	}
+	return resolved, nil
+}
+
+// Workflow resolves refPath relative to relativeTo and returns the parsed
+// child workflow. Argument order matches flatten.Resolver.Resolve.
+func (b *Bundle) Workflow(refPath, relativeTo string) (*ir.Workflow, error) {
+	resolved, err := b.Resolve(refPath, relativeTo)
+	if err != nil {
+		return nil, err
+	}
+	return b.workflows[resolved], nil
+}
+
+// ReadFile returns the raw bytes of any file in the bundle.
+func (b *Bundle) ReadFile(bundlePath string) ([]byte, error) {
+	data, ok := b.fileBytes[bundlePath]
+	if !ok {
+		return nil, newError(ErrFileMissing, bundlePath, "", nil)
+	}
+	// Defensive copy to preserve immutability.
+	out := make([]byte, len(data))
+	copy(out, data)
+	return out, nil
+}
