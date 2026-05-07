@@ -24,6 +24,12 @@
 - **Result:** REMEDIATED → PASS
 - **Summary:** Tasks 5 (Manifest types + decoder) and 6 (verifyManifestShape) implemented. Spec compliance + code quality reviews PASS (one important finding: doc comment over-promised; fixed in commit `eb40a51`). Phase 3 gate confirmed architectural soundness: duplicate-key detection at every level, top-level-only signatures rejection, integer-only `format_version` gauntlet, depth cap. One important spec gap (missing `path` returned `ErrPathUnsafe` instead of `ErrManifestInvalid`) and two test gaps remediated in commit `6c18d0d`. Deferred findings (per-sentinel `Path` semantics across layers; ErrPathUnsafe vs ErrManifestInvalid for non-canonical entry; case-fold via strings.ToLower vs Unicode `cases.Fold`) appended to followups in commit `d825fed`. 67 dipx tests passing.
 
+## Phase 10 final gate (2026-05-07)
+
+- **Reviewer:** comprehensive — 3 squad subagents in parallel (security + crypto-discipline + ops-reliability)
+- **Result:** REMEDIATED → PASS — implementation ready for human PR review
+- **Summary:** Tasks 25 (cap/concurrency/FD-leak tests) and 26 (final self-review) complete. Three squad reviewers + 9 prior phase gates confirmed: type-encoded ordering invariant intact (verifiedBytes single constructor, parser.NewParser at 3 documented sites with SPEC NOTEs), Bundle.Identity correct, hash-format check fires in step 4 before hash-compare, signatures key rejected in v1, format_version gauntlet hard, FD cleanup proven, Pack atomicity correct, Extract atomicity correct, no package-level logging in dipx, exit codes consistent. Two cheap fixes applied in commit `72b34e1`: (1) new `TestInvariant_ParserNewParserSiteCount` enforces the spec's CI grep requirement at test time (3 sites verified); (2) stale doc comment in source.go updated from "second of two" to "one of three". Six new findings deferred to followups in commit `9127877`: P10.1 (Extract --force EXDEV data-loss strengthening), P10.2 (Pack mid-write ctx), P10.3 (inspect JSON encoder error silent), P10.4 (inspect --no-verify no-op), P10.5 (Extract O_EXCL/O_NOFOLLOW), P10.6 (Pack-side BundleError.Path semantics). End-to-end smoke verified across pack/inspect/unpack/validate on real `examples/orchestrator.dip`. **All 26 implementation tasks done; 9 gates passed (5 mandatory squad, 4 standard) with remediation; full followups file documents all v1.1 deferrals.**
+
 ## Phase 9 gate (2026-05-07)
 
 - **Reviewer:** PAL spec-coverage audit + end-to-end smoke
