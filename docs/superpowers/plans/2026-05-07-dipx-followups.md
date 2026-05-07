@@ -86,3 +86,17 @@ Mid-stream EOF, corrupt deflate, malformed central directory, and `ErrInsecurePa
 The `verifiedBytes` zero-value `verifiedBytes{}` and one-arg constructor `newVerifiedBytes(buf)` are the only legitimate constructions. A future helper inside `dipx` could accidentally write `verifiedBytes{b: rawBytes}` and bypass `verifyAndReadEntry`. Spec calls for a CI grep at Task 26 final hardening.
 
 **Disposition:** Already in plan as Task 26 step 3. No action needed here.
+
+## Phase 5 gate findings (deferred)
+
+### checkExtraEntries placement (Phase 5 gate, M2)
+
+`checkExtraEntries` is an unmentioned step inserted between manifest-shape (step 4) and hash-verify (step 5). Its placement is defensible (rejects junk before we waste CPU hashing files we'd reject), but the spec's normative ordering (lines 210-225) doesn't enumerate it, and `ErrFileUnexpected` isn't in the spec's error precedence list.
+
+**Disposition:** v1.1 spec clarification. Either add as documented step 4.5 or fold into manifest-shape validation conceptually.
+
+### parseAllWorkflows / detectCycles strictness asymmetry (Phase 5 gate, L2/L3)
+
+`parseAllWorkflows` parses all manifest-listed workflows (stronger than spec post-condition #4 which says "every workflow parses"). `detectCycles` only DFS's from `m.Entry`, missing cycles in unreachable workflows. Inconsistent: the parse pass is broader than necessary, the cycle pass is narrower than necessary.
+
+**Disposition:** v1.1 polish. Both passes should iterate every manifest-listed workflow, OR both should walk only entry-reachable subgraph. Pick one convention. Currently the broader-parse + narrower-cycle behavior is harmless but inconsistent.
