@@ -187,6 +187,42 @@ func buildBundle(m Manifest, manifestBytes []byte, parsed map[string]*ir.Workflo
 	}
 }
 
+// Pack builds a .dipx from an entry .dip on disk and writes it to w. Walks
+// every transitively-reachable subgraph ref. Validates structurally, applies
+// all path-safety and ZIP-feature constraints, and produces a deterministic
+// byte stream. Returns the resulting Manifest.
+func Pack(ctx context.Context, entryPath string, w io.Writer) (Manifest, error) {
+	manifest, all, err := preparePackManifest(ctx, entryPath)
+	if err != nil {
+		return Manifest{}, err
+	}
+	if err := ctx.Err(); err != nil {
+		return Manifest{}, err
+	}
+	if err := writeBundle(w, manifest, all); err != nil {
+		return Manifest{}, err
+	}
+	return manifest, nil
+}
+
+// preparePackManifest walks the source tree and assembles a verified Manifest
+// alongside the packed-file slice ready to write. Split out from Pack so each
+// half stays under the project's complexity caps.
+func preparePackManifest(ctx context.Context, entryPath string) (Manifest, []packedFile, error) {
+	if err := ctx.Err(); err != nil {
+		return Manifest{}, nil, err
+	}
+	entry, all, err := walkSourceTree(entryPath)
+	if err != nil {
+		return Manifest{}, nil, err
+	}
+	manifest := buildManifestForPack(entry, all)
+	if err := verifyManifestShape(manifest); err != nil {
+		return Manifest{}, nil, err
+	}
+	return manifest, all, nil
+}
+
 // Extract unpacks a .dipx into destDir atomically. Writes to destDir+".tmp"
 // and renames on success. On failure the staging directory is removed.
 func Extract(ctx context.Context, path, destDir string, allowOverwrite bool) error {

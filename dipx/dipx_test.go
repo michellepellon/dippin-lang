@@ -117,3 +117,92 @@ func TestOpen_FormatVersionRejected(t *testing.T) {
 		t.Fatalf("err = %v, want ErrUnsupportedFormatVersion", err)
 	}
 }
+
+func TestPack_RoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	parent := `workflow P
+  goal: x
+  start: S
+  exit: E
+  subgraph S
+    ref: child.dip
+  agent E
+    prompt: end
+  edges
+    S -> E
+`
+	child := `workflow C
+  goal: y
+  start: A
+  exit: A
+  agent A
+    prompt: child
+`
+	if err := os.WriteFile(filepath.Join(dir, "parent.dip"), []byte(parent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "child.dip"), []byte(child), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	manifest, err := Pack(context.Background(), filepath.Join(dir, "parent.dip"), &buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manifest.Entry != "workflows/parent.dip" {
+		t.Fatalf("entry = %q", manifest.Entry)
+	}
+	if len(manifest.Files) != 2 {
+		t.Fatalf("files = %d", len(manifest.Files))
+	}
+	// Open the resulting bundle.
+	b, err := OpenReader(context.Background(), bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.Entry().Name != "P" {
+		t.Fatalf("entry name = %q", b.Entry().Name)
+	}
+}
+
+func TestPack_Reproducible(t *testing.T) {
+	dir := t.TempDir()
+	src := `workflow A
+  goal: x
+  start: S
+  exit: S
+  agent S
+    prompt: hi
+`
+	if err := os.WriteFile(filepath.Join(dir, "a.dip"), []byte(src), 0644); err != nil {
+		t.Fatal(err)
+	}
+	var buf1, buf2 bytes.Buffer
+	if _, err := Pack(context.Background(), filepath.Join(dir, "a.dip"), &buf1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Pack(context.Background(), filepath.Join(dir, "a.dip"), &buf2); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(buf1.Bytes(), buf2.Bytes()) {
+		t.Fatal("Pack is not byte-deterministic")
+	}
+}
+
+func TestPack_RejectsSymlink(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.dip")
+	if err := os.WriteFile(target, []byte(minimalDipSrc), 0644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "link.dip")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skip("symlinks not supported on this platform")
+	}
+	var buf bytes.Buffer
+	_, err := Pack(context.Background(), link, &buf)
+	if err == nil {
+		t.Fatal("expected error packing through symlink")
+	}
+}

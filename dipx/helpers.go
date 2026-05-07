@@ -1,8 +1,17 @@
 package dipx
 
 import (
+	"archive/zip"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
 
 	"github.com/2389-research/dippin-lang/ir"
 	"github.com/2389-research/dippin-lang/parser"
@@ -161,10 +170,19 @@ func normalizeConditions(parsed map[string]*ir.Workflow) error {
 }
 
 // parseAllWorkflows parses every file in verified via parser.NewParser. THIS
-// IS THE ONLY CALL SITE OF parser.NewParser IN PACKAGE dipx (enforced by CI
-// grep). Bytes presented to the parser are obtained from verifiedBytes — a
-// type whose only constructor is in the verifyHashes path — making
-// "parse before verify" a structural impossibility.
+// IS THE verifiedBytes-pathway CALL SITE OF parser.NewParser IN PACKAGE dipx.
+// Bytes presented to the parser are obtained from verifiedBytes — a type whose
+// only constructor is in the verifyHashes path — making "parse before verify"
+// a structural impossibility.
+//
+// SPEC NOTE: The dipx package has THREE parser.NewParser sites total:
+//  1. parseAllWorkflows here (Open pathway, verifiedBytes from .dipx).
+//  2. parseDipFile in source.go (Source loader, raw disk bytes).
+//  3. walkSourceTree in helpers.go (Pack pathway, raw disk bytes parallel to
+//     parseDipFile).
+//
+// The verifiedBytes invariant applies only to site 1. Sites 2 and 3 consume
+// trusted local-disk bytes and never produce or consume verifiedBytes.
 func parseAllWorkflows(verified map[string]verifiedBytes, entryPath string) (map[string]*ir.Workflow, error) {
 	out := make(map[string]*ir.Workflow, len(verified))
 	for path, vb := range verified {
@@ -180,4 +198,245 @@ func parseAllWorkflows(verified map[string]verifiedBytes, entryPath string) (map
 		out[path] = wf
 	}
 	return out, nil
+}
+
+// packedFile is one source file collected by walkSourceTree.
+type packedFile struct {
+	bundlePath string // canonical, e.g. "workflows/foo.dip"
+	bytes      []byte
+	hash       string
+}
+
+// walkSourceTree collects the entry workflow plus every transitively-referenced
+// subgraph from disk. Refuses to follow symlinks. Refuses if any ref escapes
+// the entry's source root.
+func walkSourceTree(entryPath string) (packedFile, []packedFile, error) {
+	entryAbs, err := filepath.Abs(entryPath)
+	if err != nil {
+		return packedFile{}, nil, err
+	}
+	rootDir := filepath.Dir(entryAbs)
+	st := newPackWalkState(entryAbs, rootDir)
+	for st.hasMore() {
+		if err := st.visitNext(); err != nil {
+			return packedFile{}, nil, err
+		}
+	}
+	return st.entry, st.all, nil
+}
+
+// packWalkState carries iteration state for walkSourceTree so each step can be
+// a small focused function under the project's complexity caps.
+type packWalkState struct {
+	entryAbs string
+	rootDir  string
+	visited  map[string]struct{}
+	queue    []string
+	entry    packedFile
+	all      []packedFile
+}
+
+func newPackWalkState(entryAbs, rootDir string) *packWalkState {
+	return &packWalkState{
+		entryAbs: entryAbs,
+		rootDir:  rootDir,
+		visited:  map[string]struct{}{},
+		queue:    []string{entryAbs},
+	}
+}
+
+func (s *packWalkState) hasMore() bool { return len(s.queue) > 0 }
+
+// visitNext pops the next path off the queue and processes it: read, parse,
+// record as packedFile, and enqueue any transitive refs.
+func (s *packWalkState) visitNext() error {
+	cur := s.queue[0]
+	s.queue = s.queue[1:]
+	if _, ok := s.visited[cur]; ok {
+		return nil
+	}
+	s.visited[cur] = struct{}{}
+	pf, wf, err := s.readAndRecord(cur)
+	if err != nil {
+		return err
+	}
+	if cur == s.entryAbs {
+		s.entry = pf
+	}
+	s.all = append(s.all, pf)
+	return s.enqueueRefs(cur, wf)
+}
+
+// readAndRecord reads the file, parses it, and constructs the packedFile.
+func (s *packWalkState) readAndRecord(cur string) (packedFile, *ir.Workflow, error) {
+	raw, err := readNoFollowSymlinks(cur)
+	if err != nil {
+		return packedFile{}, nil, err
+	}
+	wf, err := parsePackSource(cur, raw)
+	if err != nil {
+		return packedFile{}, nil, err
+	}
+	bundlePath, err := bundlePathFor(cur, s.rootDir)
+	if err != nil {
+		return packedFile{}, nil, err
+	}
+	pf := packedFile{bundlePath: bundlePath, bytes: raw, hash: hashHex(raw)}
+	return pf, wf, nil
+}
+
+// enqueueRefs walks wf.Nodes for refs, resolves each against cur's directory,
+// confirms the result stays under the source root, and enqueues it.
+func (s *packWalkState) enqueueRefs(cur string, wf *ir.Workflow) error {
+	for _, n := range wf.Nodes {
+		ref := refFromNode(n)
+		if ref == "" {
+			continue
+		}
+		target, err := s.resolveRefOnDisk(cur, ref)
+		if err != nil {
+			return err
+		}
+		s.queue = append(s.queue, target)
+	}
+	return nil
+}
+
+// resolveRefOnDisk joins ref against cur's directory and verifies the result
+// stays under s.rootDir.
+func (s *packWalkState) resolveRefOnDisk(cur, ref string) (string, error) {
+	target := filepath.Clean(filepath.Join(filepath.Dir(cur), ref))
+	rel, err := filepath.Rel(s.rootDir, target)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return "", newError(ErrRefEscape, cur, "ref escapes source root: "+ref, nil)
+	}
+	return target, nil
+}
+
+// parsePackSource parses raw disk bytes for the Pack pathway. THIRD parser site
+// in dipx (Pack pathway, parallel to parseDipFile in source.go). See note on
+// parseAllWorkflows for the full inventory and justification.
+func parsePackSource(path string, raw []byte) (*ir.Workflow, error) {
+	wf, err := parser.NewParser(string(raw), path).Parse()
+	if err != nil {
+		return nil, newError(ErrEntryParse, path, "", err)
+	}
+	return wf, nil
+}
+
+// readNoFollowSymlinks reads a file, refusing to follow symlinks or any other
+// non-regular file.
+func readNoFollowSymlinks(path string) ([]byte, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return nil, newError(ErrPathUnsafe, path, "symlink in source tree", nil)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, newError(ErrPathUnsafe, path, "not a regular file", nil)
+	}
+	return os.ReadFile(path)
+}
+
+// bundlePathFor converts an absolute source path under rootDir into its
+// canonical bundle path (workflows/<rel>).
+func bundlePathFor(absPath, rootDir string) (string, error) {
+	rel, err := filepath.Rel(rootDir, absPath)
+	if err != nil {
+		return "", err
+	}
+	bundle := "workflows/" + filepath.ToSlash(rel)
+	return Canonicalize(bundle)
+}
+
+// hashHex returns the lowercase hex SHA-256 of b.
+func hashHex(b []byte) string {
+	h := sha256.Sum256(b)
+	return hex.EncodeToString(h[:])
+}
+
+// buildManifestForPack constructs a canonical Manifest from the packed files,
+// with files[] sorted lexicographically by path for determinism.
+func buildManifestForPack(entry packedFile, all []packedFile) Manifest {
+	files := make([]ManifestEntry, 0, len(all))
+	for _, pf := range all {
+		files = append(files, ManifestEntry{Path: pf.bundlePath, SHA256: pf.hash})
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
+	return Manifest{
+		FormatVersion: 1,
+		Entry:         entry.bundlePath,
+		Files:         files,
+	}
+}
+
+// writeBundle writes a deterministic .dipx to w. manifest.json is always the
+// first entry; payload entries follow in lexicographic order of bundlePath.
+func writeBundle(w io.Writer, m Manifest, files []packedFile) error {
+	zw := zip.NewWriter(w)
+	manifestJSON, err := encodeManifestCanonical(m)
+	if err != nil {
+		return err
+	}
+	if err := writeZipEntry(zw, "manifest.json", manifestJSON); err != nil {
+		return err
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].bundlePath < files[j].bundlePath })
+	if err := writeAllPackedFiles(zw, files); err != nil {
+		return err
+	}
+	return zw.Close()
+}
+
+// writeAllPackedFiles writes every packed file as a zip entry in the order
+// supplied (callers sort first).
+func writeAllPackedFiles(zw *zip.Writer, files []packedFile) error {
+	for _, pf := range files {
+		if err := writeZipEntry(zw, pf.bundlePath, pf.bytes); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// zipEpoch is the deterministic mtime stamped on every Pack output entry. Set
+// to the ZIP epoch (1980-01-01) so two Pack runs over the same source tree
+// produce byte-identical output regardless of file mtimes on disk.
+var zipEpoch = time.Date(1980, 1, 1, 0, 0, 0, 0, time.UTC)
+
+// writeZipEntry writes a single entry with fixed mtime (ZIP epoch) and 0644
+// mode, no extra fields, with bit 11 (UTF-8 filename) set per spec.
+//
+// CRITICAL: Go's zip.Writer does NOT auto-set bit 11 for ASCII names, but
+// openConstrainedZip requires it unconditionally. Setting hdr.Flags = 0x800
+// here is non-negotiable for our own output to round-trip through Open.
+func writeZipEntry(zw *zip.Writer, name string, body []byte) error {
+	hdr := &zip.FileHeader{
+		Name:     name,
+		Method:   zip.Deflate,
+		Modified: zipEpoch,
+		Flags:    0x800,
+	}
+	hdr.SetMode(0o644)
+	hdr.Extra = nil
+	w, err := zw.CreateHeader(hdr)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write(body)
+	return err
+}
+
+// encodeManifestCanonical serializes m with alphabetical keys at every level
+// (entry < files < format_version). Each files[] element preserves the
+// ManifestEntry struct's (path, sha256) field order.
+func encodeManifestCanonical(m Manifest) ([]byte, error) {
+	type out struct {
+		Entry         string          `json:"entry"`
+		Files         []ManifestEntry `json:"files"`
+		FormatVersion int             `json:"format_version"`
+	}
+	return json.Marshal(out{Entry: m.Entry, Files: m.Files, FormatVersion: m.FormatVersion})
 }
