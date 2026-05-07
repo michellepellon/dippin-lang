@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 )
 
 // Manifest is the parsed manifest.json.
@@ -263,3 +264,112 @@ func assertCanonicalIntLiteral(n json.Number, v int64) error {
 	}
 	return nil
 }
+
+// verifyManifestShape applies the spec's "Schema rules" to a decoded Manifest:
+//   - format_version supported
+//   - every files[].path is canonical, ends in .dip, in workflows/
+//   - every files[].sha256 is lowercase hex, 64 chars
+//   - paths are unique (byte-equal AND case-fold-equal)
+//   - entry byte-matches exactly one files[].path
+func verifyManifestShape(m Manifest) error {
+	if err := verifyManifestVersionAndCount(m); err != nil {
+		return err
+	}
+	seenByte, err := verifyFiles(m)
+	if err != nil {
+		return err
+	}
+	return verifyEntryInFiles(m, seenByte)
+}
+
+// verifyManifestVersionAndCount checks format_version is supported and that
+// files[] is non-empty.
+func verifyManifestVersionAndCount(m Manifest) error {
+	if !isSupportedVersion(m.FormatVersion) {
+		return newError(ErrUnsupportedFormatVersion, "", fmt.Sprintf("got %d; supports %v", m.FormatVersion, SupportedFormatVersions()), nil)
+	}
+	if len(m.Files) == 0 {
+		return newError(ErrManifestInvalid, "", "files[] is empty", nil)
+	}
+	return nil
+}
+
+// verifyFiles iterates files[] enforcing path canonicalization, hash format,
+// and uniqueness (both byte-equal and case-fold). Returns the byte-seen set
+// for the caller to use when validating the entry.
+func verifyFiles(m Manifest) (map[string]struct{}, error) {
+	seenByte := make(map[string]struct{}, len(m.Files))
+	seenFold := make(map[string]struct{}, len(m.Files))
+	for _, e := range m.Files {
+		if err := verifyOneFile(e, seenByte, seenFold); err != nil {
+			return nil, err
+		}
+	}
+	return seenByte, nil
+}
+
+// verifyOneFile validates a single ManifestEntry and records it in the seen
+// sets. Mutates seenByte and seenFold on success.
+func verifyOneFile(e ManifestEntry, seenByte, seenFold map[string]struct{}) error {
+	if _, err := Canonicalize(e.Path); err != nil {
+		return err
+	}
+	if !isValidHash(e.SHA256) {
+		return newError(ErrManifestInvalid, e.Path, "sha256 not 64-char lowercase hex", nil)
+	}
+	if _, dup := seenByte[e.Path]; dup {
+		return newError(ErrManifestInvalid, e.Path, "duplicate path in files[]", nil)
+	}
+	fold := strings.ToLower(e.Path)
+	if _, dup := seenFold[fold]; dup {
+		return newError(ErrManifestInvalid, e.Path, "case-fold-duplicate path in files[]", nil)
+	}
+	seenByte[e.Path] = struct{}{}
+	seenFold[fold] = struct{}{}
+	return nil
+}
+
+// verifyEntryInFiles canonicalizes m.Entry and confirms it byte-matches one of
+// the previously-seen files[].path values.
+func verifyEntryInFiles(m Manifest, seenByte map[string]struct{}) error {
+	if _, err := Canonicalize(m.Entry); err != nil {
+		return err
+	}
+	if _, ok := seenByte[m.Entry]; !ok {
+		return newError(ErrEntryNotInManifest, m.Entry, "", nil)
+	}
+	return nil
+}
+
+func isSupportedVersion(v int) bool {
+	for _, sv := range SupportedFormatVersions() {
+		if sv == v {
+			return true
+		}
+	}
+	return false
+}
+
+func isValidHash(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	for _, r := range s {
+		if !isLowerHexRune(r) {
+			return false
+		}
+	}
+	return true
+}
+
+// isLowerHexRune reports whether r is a lowercase hex digit ([0-9a-f]).
+func isLowerHexRune(r rune) bool {
+	if r >= '0' && r <= '9' {
+		return true
+	}
+	return r >= 'a' && r <= 'f'
+}
+
+// SupportedFormatVersions returns the format_version values this build accepts.
+// Returns a fresh slice on every call to prevent mutation by callers.
+func SupportedFormatVersions() []int { return []int{1} }

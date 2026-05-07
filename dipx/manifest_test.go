@@ -73,3 +73,89 @@ func TestDecodeManifest_TolerantUnknownKey(t *testing.T) {
 		t.Fatalf("unexpected err: %v", err)
 	}
 }
+
+func TestVerifyManifestShape_Happy(t *testing.T) {
+	hash := strings.Repeat("a", 64)
+	m := Manifest{
+		FormatVersion: 1,
+		Entry:         "workflows/a.dip",
+		Files: []ManifestEntry{
+			{Path: "workflows/a.dip", SHA256: hash},
+		},
+	}
+	if err := verifyManifestShape(m); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestVerifyManifestShape_BadHashLength(t *testing.T) {
+	m := Manifest{
+		FormatVersion: 1,
+		Entry:         "workflows/a.dip",
+		Files: []ManifestEntry{
+			{Path: "workflows/a.dip", SHA256: strings.Repeat("a", 65)},
+		},
+	}
+	err := verifyManifestShape(m)
+	if !errors.Is(err, ErrManifestInvalid) {
+		t.Fatalf("err = %v, want ErrManifestInvalid", err)
+	}
+}
+
+func TestVerifyManifestShape_UppercaseHash(t *testing.T) {
+	m := Manifest{
+		FormatVersion: 1,
+		Entry:         "workflows/a.dip",
+		Files: []ManifestEntry{
+			{Path: "workflows/a.dip", SHA256: strings.Repeat("A", 64)},
+		},
+	}
+	err := verifyManifestShape(m)
+	if !errors.Is(err, ErrManifestInvalid) {
+		t.Fatalf("err = %v, want ErrManifestInvalid", err)
+	}
+}
+
+func TestVerifyManifestShape_DuplicatePath(t *testing.T) {
+	hash := strings.Repeat("a", 64)
+	m := Manifest{
+		FormatVersion: 1,
+		Entry:         "workflows/a.dip",
+		Files: []ManifestEntry{
+			{Path: "workflows/a.dip", SHA256: hash},
+			{Path: "workflows/a.dip", SHA256: hash},
+		},
+	}
+	err := verifyManifestShape(m)
+	if !errors.Is(err, ErrManifestInvalid) {
+		t.Fatalf("err = %v, want ErrManifestInvalid", err)
+	}
+}
+
+func TestVerifyManifestShape_EntryNotInFiles(t *testing.T) {
+	m := Manifest{
+		FormatVersion: 1,
+		Entry:         "workflows/missing.dip",
+		Files: []ManifestEntry{
+			{Path: "workflows/a.dip", SHA256: strings.Repeat("a", 64)},
+		},
+	}
+	err := verifyManifestShape(m)
+	if !errors.Is(err, ErrEntryNotInManifest) {
+		t.Fatalf("err = %v, want ErrEntryNotInManifest", err)
+	}
+}
+
+func TestVerifyManifestShape_PathNotCanonical(t *testing.T) {
+	m := Manifest{
+		FormatVersion: 1,
+		Entry:         "workflows/../etc/passwd",
+		Files: []ManifestEntry{
+			{Path: "workflows/../etc/passwd", SHA256: strings.Repeat("a", 64)},
+		},
+	}
+	err := verifyManifestShape(m)
+	if !errors.Is(err, ErrPathUnsafe) {
+		t.Fatalf("err = %v, want ErrPathUnsafe", err)
+	}
+}
