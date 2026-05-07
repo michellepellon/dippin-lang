@@ -190,6 +190,21 @@ func TestPack_Reproducible(t *testing.T) {
 	}
 }
 
+func TestPack_RejectsOversizedSource(t *testing.T) {
+	dir := t.TempDir()
+	// Source > maxPerFileBytes. Buffer of zeros is fast to allocate and
+	// triggers the cap check before parsing.
+	big := make([]byte, maxPerFileBytes+1)
+	if err := os.WriteFile(filepath.Join(dir, "big.dip"), big, 0644); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	_, err := Pack(context.Background(), filepath.Join(dir, "big.dip"), &buf)
+	if !errors.Is(err, ErrCapExceeded) {
+		t.Fatalf("err = %v, want ErrCapExceeded", err)
+	}
+}
+
 func TestPack_RejectsSymlink(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "target.dip")

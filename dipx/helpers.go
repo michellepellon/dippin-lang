@@ -268,10 +268,15 @@ func (s *packWalkState) visitNext() error {
 }
 
 // readAndRecord reads the file, parses it, and constructs the packedFile.
+// Enforces the per-file uncompressed cap (maxPerFileBytes) at Pack time so
+// the producer cannot emit a bundle that fails its own round-trip in Open.
 func (s *packWalkState) readAndRecord(cur string) (packedFile, *ir.Workflow, error) {
 	raw, err := readNoFollowSymlinks(cur)
 	if err != nil {
 		return packedFile{}, nil, err
+	}
+	if int64(len(raw)) > maxPerFileBytes {
+		return packedFile{}, nil, newError(ErrCapExceeded, cur, fmt.Sprintf("source file exceeds %d bytes", maxPerFileBytes), nil)
 	}
 	wf, err := parsePackSource(cur, raw)
 	if err != nil {
