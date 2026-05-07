@@ -75,13 +75,18 @@ func loadDirSource(ctx context.Context, entryPath string) (*dirSource, error) {
 // parseDipFile reads a .dip file from disk, parses it via parser.NewParser,
 // and normalizes its conditions.
 //
-// SPEC NOTE: This is the second of two parser.NewParser call sites within
-// dipx. The first is in helpers.go's parseAllWorkflows (consumes verifiedBytes
-// from .dipx hash verification). This one consumes raw filesystem bytes,
-// trusted by virtue of being read from the local disk. The CI grep added in
-// Task 26 must allowlist BOTH sites. The verifiedBytes type-encoded ordering
-// invariant applies only to the .dipx pathway and is not bypassed by this
-// helper because dirSource never produces or consumes verifiedBytes.
+// SPEC NOTE: This is one of three parser.NewParser call sites within dipx.
+// The three sites are:
+//   - helpers.go parseAllWorkflows (consumes verifiedBytes from .dipx hash
+//     verification, Open pathway).
+//   - helpers.go parsePackSource (Pack pathway, trusted disk bytes).
+//   - source.go parseDipFile (this function, dirSource pathway, trusted
+//     disk bytes).
+//
+// The CI grep / TestInvariant_ParserNewParserSiteCount must allowlist all
+// three sites. The verifiedBytes type-encoded ordering invariant applies
+// only to the .dipx Open pathway and is not bypassed by this helper
+// because dirSource never produces or consumes verifiedBytes.
 func parseDipFile(path string) (*ir.Workflow, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
