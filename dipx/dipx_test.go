@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -67,6 +69,37 @@ func TestOpen_ContextCancelled(t *testing.T) {
 	_, err := OpenReader(ctx, bytes.NewReader(raw), int64(len(raw)))
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+}
+
+func TestExtract_Happy(t *testing.T) {
+	raw := buildHappyDipx(t)
+	src := filepath.Join(t.TempDir(), "h.dipx")
+	if err := os.WriteFile(src, raw, 0644); err != nil {
+		t.Fatal(err)
+	}
+	dest := filepath.Join(t.TempDir(), "out")
+	if err := Extract(context.Background(), src, dest, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "workflows", "hello.dip")); err != nil {
+		t.Fatalf("expected file extracted: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "manifest.json")); err != nil {
+		t.Fatalf("expected manifest extracted: %v", err)
+	}
+}
+
+func TestExtract_RefusesExistingWithoutForce(t *testing.T) {
+	raw := buildHappyDipx(t)
+	src := filepath.Join(t.TempDir(), "h.dipx")
+	if err := os.WriteFile(src, raw, 0644); err != nil {
+		t.Fatal(err)
+	}
+	dest := t.TempDir() // already exists
+	err := Extract(context.Background(), src, dest, false)
+	if err == nil {
+		t.Fatal("expected error when destdir exists")
 	}
 }
 

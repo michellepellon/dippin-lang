@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/2389-research/dippin-lang/ir"
 )
@@ -184,6 +185,80 @@ func buildBundle(m Manifest, manifestBytes []byte, parsed map[string]*ir.Workflo
 		workflows:     parsed,
 		fileBytes:     fileBytes,
 	}
+}
+
+// Extract unpacks a .dipx into destDir atomically. Writes to destDir+".tmp"
+// and renames on success. On failure the staging directory is removed.
+func Extract(ctx context.Context, path, destDir string, allowOverwrite bool) error {
+	if err := checkDestExists(destDir, allowOverwrite); err != nil {
+		return err
+	}
+	bundle, err := Open(ctx, path)
+	if err != nil {
+		return err
+	}
+	staging := destDir + ".tmp"
+	if err := stageBundle(ctx, bundle, staging); err != nil {
+		return err
+	}
+	if allowOverwrite {
+		_ = os.RemoveAll(destDir)
+	}
+	return os.Rename(staging, destDir)
+}
+
+// checkDestExists returns ErrPathUnsafe when destDir exists and overwrite is
+// disallowed. Any other stat error (including IsNotExist) means the path is
+// safe to use.
+func checkDestExists(destDir string, allowOverwrite bool) error {
+	if allowOverwrite {
+		return nil
+	}
+	if _, err := os.Stat(destDir); err == nil {
+		return newError(ErrPathUnsafe, destDir, "destination exists; use --force", nil)
+	}
+	return nil
+}
+
+// stageBundle creates a fresh staging directory and writes the bundle into it.
+// On any failure the staging directory is removed before returning.
+func stageBundle(ctx context.Context, bundle *Bundle, staging string) error {
+	if err := os.RemoveAll(staging); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(staging, 0o755); err != nil {
+		return err
+	}
+	if err := writeBundleToDir(ctx, bundle, staging); err != nil {
+		_ = os.RemoveAll(staging)
+		return err
+	}
+	return nil
+}
+
+// writeBundleToDir writes every bundle file plus manifest.json under root.
+func writeBundleToDir(ctx context.Context, b *Bundle, root string) error {
+	for path, raw := range b.fileBytes {
+		if err := writeOneFile(ctx, root, path, raw); err != nil {
+			return err
+		}
+	}
+	manifestPath := filepath.Join(root, "manifest.json")
+	return os.WriteFile(manifestPath, b.manifestBytes, 0o644)
+}
+
+// writeOneFile writes a single bundle-relative file under root, creating any
+// missing parent directories. ctx is checked first so a canceled extract
+// aborts before any further disk work.
+func writeOneFile(ctx context.Context, root, path string, raw []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	full := filepath.Join(root, filepath.FromSlash(path))
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(full, raw, 0o644)
 }
 
 // checkExtraEntries enforces strict mode: any non-directory zip entry not
