@@ -24,6 +24,12 @@
 - **Result:** REMEDIATED → PASS
 - **Summary:** Tasks 5 (Manifest types + decoder) and 6 (verifyManifestShape) implemented. Spec compliance + code quality reviews PASS (one important finding: doc comment over-promised; fixed in commit `eb40a51`). Phase 3 gate confirmed architectural soundness: duplicate-key detection at every level, top-level-only signatures rejection, integer-only `format_version` gauntlet, depth cap. One important spec gap (missing `path` returned `ErrPathUnsafe` instead of `ErrManifestInvalid`) and two test gaps remediated in commit `6c18d0d`. Deferred findings (per-sentinel `Path` semantics across layers; ErrPathUnsafe vs ErrManifestInvalid for non-canonical entry; case-fold via strings.ToLower vs Unicode `cases.Fold`) appended to followups in commit `d825fed`. 67 dipx tests passing.
 
+## Phase 7 gate (2026-05-07)
+
+- **Reviewer:** mandatory — security subagent (Pack TOCTOU + reproducibility)
+- **Result:** REMEDIATED → PASS (with deferrals)
+- **Summary:** Task 17 (Pack) implemented with reproducibility (fixed timestamps, sorted entries, no extras, bit 11 set explicitly per Phase 4 finding) and symlink defense via Lstat. Phase 7 security gate confirmed: TOCTOU single-read invariant, hermetic Pack rejection of escaping refs, manifest canonicalization, bit-11 round-trip success. One HIGH remediated in commit `5cc2288`: per-file size cap (50MB) now enforced at Pack time so producers don't generate bundles their own Open rejects. New `TestPack_RejectsOversizedSource` test. Deferred (commit `865099f`): compression-ratio cap (1000:1; needs manual deflate chain), parent-directory symlink walk, O_NOFOLLOW (platform-specific), frozen golden test, transitive-ref symlink coverage. 81 dipx tests passing. Three parser.NewParser sites now exist; verifiedBytes invariant intact (only Open pathway consumes verifiedBytes; Pack and dirSource consume trusted disk bytes).
+
 ## Phase 6 gate (2026-05-07)
 
 - **Reviewer:** standard — Tracker integration subagent
