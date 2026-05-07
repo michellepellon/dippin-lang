@@ -1,6 +1,7 @@
 package dipx
 
 import (
+	"fmt"
 	"path"
 	"strings"
 	"unicode/utf8"
@@ -82,7 +83,7 @@ func checkPathComponents(p string) error {
 		return newError(ErrPathUnsafe, p, "too many path components", nil)
 	}
 	for _, c := range parts {
-		if err := checkComponent(c); err != nil {
+		if err := checkComponent(p, c); err != nil {
 			return err
 		}
 	}
@@ -134,28 +135,28 @@ func hasDotDotSegment(p string) bool {
 	return false
 }
 
-func checkComponent(c string) error {
+func checkComponent(p, c string) error {
 	if c == "" {
-		return newError(ErrPathUnsafe, c, "empty component", nil)
+		return newError(ErrPathUnsafe, p, "empty component", nil)
 	}
-	if err := checkComponentWhitespaceAndDots(c); err != nil {
+	if err := checkComponentWhitespaceAndDots(p, c); err != nil {
 		return err
 	}
 	if isWindowsReserved(c) {
-		return newError(ErrPathUnsafe, c, "Windows reserved name", nil)
+		return newError(ErrPathUnsafe, p, fmt.Sprintf("Windows reserved name: %q", c), nil)
 	}
 	return nil
 }
 
-func checkComponentWhitespaceAndDots(c string) error {
+func checkComponentWhitespaceAndDots(p, c string) error {
 	if strings.HasPrefix(c, " ") || strings.HasSuffix(c, " ") {
-		return newError(ErrPathUnsafe, c, "leading/trailing whitespace", nil)
+		return newError(ErrPathUnsafe, p, fmt.Sprintf("leading/trailing whitespace in component %q", c), nil)
 	}
 	if strings.HasSuffix(stripExt(c), " ") {
-		return newError(ErrPathUnsafe, c, "trailing whitespace before extension", nil)
+		return newError(ErrPathUnsafe, p, fmt.Sprintf("trailing whitespace before extension in component %q", c), nil)
 	}
 	if strings.HasSuffix(c, ".") {
-		return newError(ErrPathUnsafe, c, "trailing dot", nil)
+		return newError(ErrPathUnsafe, p, fmt.Sprintf("trailing dot in component %q", c), nil)
 	}
 	return nil
 }
@@ -180,8 +181,12 @@ func isWindowsNumberedReserved(upper string) bool {
 	return r >= '0' && r <= '9'
 }
 
+// stripExt returns the component prefix before the FIRST dot. Using the first
+// dot (not the last) is required so multi-extension forms like "CON.tar.dip"
+// are still classified as Windows-reserved — on Windows, "CON.anything" maps
+// to the CON device regardless of how many extensions follow.
 func stripExt(c string) string {
-	if i := strings.LastIndexByte(c, '.'); i >= 0 {
+	if i := strings.IndexByte(c, '.'); i >= 0 {
 		return c[:i]
 	}
 	return c

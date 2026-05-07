@@ -42,6 +42,9 @@ func TestCanonicalize_Rejects(t *testing.T) {
 		{"trailing-dot", "workflows/foo.dip.."},
 		{"win-reserved-con", "workflows/CON.dip"},
 		{"win-reserved-com1", "workflows/COM1.dip"},
+		{"win-reserved-con-multi-ext", "workflows/CON.tar.dip"},
+		{"win-reserved-com1-multi-ext", "workflows/COM1.foo.dip"},
+		{"win-reserved-aux-with-prefix", "workflows/AUX.something.dip"},
 		{"missing-extension", "workflows/foo"},
 		{"wrong-extension", "workflows/foo.txt"},
 		{"uppercase-extension", "workflows/foo.DIP"},
@@ -60,6 +63,23 @@ func TestCanonicalize_Rejects(t *testing.T) {
 				t.Fatalf("error = %v, want ErrPathUnsafe", err)
 			}
 		})
+	}
+}
+
+func TestCanonicalize_ErrorContext(t *testing.T) {
+	_, err := Canonicalize("workflows/CON.dip")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	var be *BundleError
+	if !errors.As(err, &be) {
+		t.Fatalf("expected *BundleError, got %T", err)
+	}
+	if be.Path != "workflows/CON.dip" {
+		t.Errorf("Path = %q, want full path", be.Path)
+	}
+	if be.Detail == "" {
+		t.Errorf("Detail empty; expected mention of the offending component")
 	}
 }
 
