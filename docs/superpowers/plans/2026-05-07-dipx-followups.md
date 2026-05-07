@@ -30,3 +30,21 @@ Adversarial input categories not yet tested:
 - Percent-encoded `..` (e.g., `%2e%2e`) — spec confirms this is treated literally; tests would lock in the behavior.
 
 **Disposition**: add as v1.1 test additions if NFKC normalization is added.
+
+## Manifest decoder error-context (Phase 3 gate)
+
+The crypto-discipline gate flagged that `BundleError.Path` for `ErrManifestInvalid` and `ErrUnsupportedFormatVersion` is sometimes empty (preflight, JSON pre-pass) or carries the field name (`format_version`) rather than the bundle path. The spec § "Per-sentinel error context" table calls for the bundle path. The manifest decoder runs before the bundle path is in scope; the right architectural fix is for `Open` (Task 13) to enrich errors with the bundle path before returning. **Disposition**: revisit in Phase 5 when Open is wired up; spec wording may also need tightening to clarify that `Path` is "where the error originated" (which can be a field name) vs "the bundle file path".
+
+## Non-canonical `entry` returns `ErrPathUnsafe` (Phase 3 gate)
+
+`verifyEntryInFiles` returns `ErrPathUnsafe` (via `Canonicalize`) for a non-canonical `entry`. Spec is ambiguous between this and `ErrManifestInvalid`. **Disposition**: defensible interpretation; document and move on.
+
+## Manifest case-fold uses `strings.ToLower` (Phase 3 gate)
+
+Same Unicode case-fold concern raised in Phase 2. `verifyOneFile` uses `strings.ToLower` for case-fold-duplicate detection; full Unicode case-folding (e.g. `cases.Fold()` from `golang.org/x/text/cases`) would catch German `ß ↔ ss`, Turkish dotless `I ↔ i`, Greek final sigma. **Disposition**: bundled with the existing v1.1 case-folding upgrade.
+
+## Cosmetic minors (Phase 3 gate, deferred)
+
+- `assertCanonicalIntLiteral` is partly dead code (Int64 + JSON grammar already reject most non-canonical literals). Defense in depth; leave as-is.
+- Missing `sha256` `Detail` message could distinguish "missing" from "malformed"; current "sha256 not 64-char lowercase hex" is acceptable.
+- `assertNoTrailingTokens` `dec.More()` check is partly redundant with the EOF Token check. Belt-and-suspenders; leave.
