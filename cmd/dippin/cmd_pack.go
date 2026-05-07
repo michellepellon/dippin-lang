@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/2389-research/dippin-lang/dipx"
+	"github.com/2389-research/dippin-lang/validator"
 )
 
 // .dipx CLI exit codes (task spec). Distinct from the broader ExitCode space:
@@ -40,6 +41,9 @@ func runPack(stdout, stderr io.Writer, args []string) int {
 	if code != -1 {
 		return code
 	}
+	if code := validateEntryPrePack(stderr, entry); code != exitDipxOK {
+		return code
+	}
 	ctx := context.Background()
 	if dryRun {
 		_, err := dipx.Pack(ctx, entry, io.Discard)
@@ -50,6 +54,29 @@ func runPack(stdout, stderr io.Writer, args []string) int {
 		return classifyExit(stderr, err)
 	}
 	return packToFile(stderr, ctx, entry, dest)
+}
+
+// validateEntryPrePack runs structural validation (DIP001-DIP009) on the entry
+// workflow before invoking dipx.Pack. Per spec § "CLI", pack "runs structural
+// validation first (same checks as `dippin validate`); refuses to pack invalid
+// input." This lives at the CLI layer (not inside dipx) because the spec's
+// loader-tier rule forbids dipx from importing validator.
+func validateEntryPrePack(stderr io.Writer, entry string) int {
+	w, err := loadWorkflow(entry)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return exitDipxUserError
+	}
+	res := validator.Validate(w)
+	if !res.HasErrors() {
+		return exitDipxOK
+	}
+	for _, d := range res.Diagnostics {
+		if d.Severity == validator.SeverityError {
+			fmt.Fprintln(stderr, d.String())
+		}
+	}
+	return exitDipxUserError
 }
 
 // parsePackArgs parses pack flags. On success returns (-1) so the caller knows

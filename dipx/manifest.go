@@ -10,10 +10,16 @@ import (
 )
 
 // Manifest is the parsed manifest.json.
+//
+// JSON tags use the canonical wire-format keys (`format_version`, `entry`,
+// `files`) so external tools that pipe `dippin inspect --format=json` output
+// can decode it back into a Manifest without renaming fields. Internal decode
+// goes through decodeStrictly's private `raw` struct (which has its own tags),
+// so these tags are decoupled from manifest-strict-decode behavior.
 type Manifest struct {
-	FormatVersion int
-	Entry         string
-	Files         []ManifestEntry
+	FormatVersion int             `json:"format_version"`
+	Entry         string          `json:"entry"`
+	Files         []ManifestEntry `json:"files"`
 }
 
 // ManifestEntry is one record in Manifest.Files.

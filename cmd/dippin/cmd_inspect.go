@@ -26,13 +26,17 @@ func runInspect(stdout, stderr io.Writer, args []string) int {
 	}
 	bundle, err := dipx.Open(context.Background(), path)
 	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return exitDipxIntegrityError
+		return classifyExit(stderr, err)
 	}
-	if format == "json" {
+	switch format {
+	case "text":
+		return printInspectText(stdout, bundle)
+	case "json":
 		return printInspectJSON(stdout, bundle)
+	default:
+		fmt.Fprintf(stderr, "unknown --format value: %q (expected text or json)\n", format)
+		return exitDipxUserError
 	}
-	return printInspectText(stdout, bundle)
 }
 
 // parseInspectArgs parses inspect flags. On success returns (-1).

@@ -102,3 +102,36 @@ func TestRunPack_NoArgs(t *testing.T) {
 		t.Fatalf("exit code = %d, expected %d", code, exitDipxUserError)
 	}
 }
+
+// TestRunPack_RejectsInvalidWorkflow confirms Fix H1: pack runs structural
+// validation (DIP001-DIP009) on the entry workflow first and refuses to pack
+// when validation errors are present. Here the workflow declares exit: S but
+// "S" has no outgoing edges (DIP004 would fire if there were unreachable nodes,
+// or DIP002 if exit references a missing node, etc.). The workflow below
+// references an undeclared start node, triggering DIP001.
+func TestRunPack_RejectsInvalidWorkflow(t *testing.T) {
+	dir := t.TempDir()
+	// Structural error: start node "Missing" doesn't exist.
+	invalid := `workflow A
+  goal: "Test"
+  start: Missing
+  exit: Done
+
+  agent Done
+    prompt:
+      Complete.
+`
+	entry := filepath.Join(dir, "a.dip")
+	if err := os.WriteFile(entry, []byte(invalid), 0o644); err != nil {
+		t.Fatalf("write entry: %v", err)
+	}
+	out := filepath.Join(dir, "a.dipx")
+	var stdout, stderr bytes.Buffer
+	code := runPack(&stdout, &stderr, []string{"-o", out, entry})
+	if code == exitDipxOK {
+		t.Fatalf("expected non-zero exit on structural validation failure; stderr=%s", stderr.String())
+	}
+	if _, err := os.Stat(out); err == nil {
+		t.Fatalf("invalid workflow should not produce an output file at %s", out)
+	}
+}

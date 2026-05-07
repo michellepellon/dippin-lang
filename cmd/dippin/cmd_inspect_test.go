@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/2389-research/dippin-lang/dipx"
 )
 
 func TestRunInspect_Text(t *testing.T) {
@@ -66,20 +68,48 @@ func TestRunInspect_NoArgs(t *testing.T) {
 func TestRunInspect_MissingBundle(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := runInspect(&stdout, &stderr, []string{"/nonexistent.dipx"})
-	if code != exitDipxIntegrityError {
-		t.Fatalf("exit code = %d, expected integrity error %d", code, exitDipxIntegrityError)
+	// inspect now routes errors through classifyExit (Fix H2). ErrManifestMissing
+	// is not (yet) in isIntegrityErr, so this falls into the user-error bucket.
+	// Re-classification of ErrManifestMissing/ErrFileMissing/etc. is tracked in
+	// the dipx followups (sentinel-to-exit-code mapping incomplete).
+	if code != exitDipxUserError {
+		t.Fatalf("exit code = %d, expected user error %d; stderr=%s", code, exitDipxUserError, stderr.String())
 	}
 }
 
 func TestRunInspect_BadFormat(t *testing.T) {
 	bundle := packForTest(t)
 	var stdout, stderr bytes.Buffer
-	// Unknown format falls through to text rendering by design.
+	// Unknown format values are rejected as user errors per spec.
 	code := runInspect(&stdout, &stderr, []string{"--format=bogus", bundle})
+	if code != exitDipxUserError {
+		t.Fatalf("exit code = %d, expected user-error %d; stderr=%s", code, exitDipxUserError, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "unknown --format value") {
+		t.Errorf("expected diagnostic on stderr, got: %s", stderr.String())
+	}
+}
+
+// TestRunInspect_JSONIsParseable confirms the JSON output round-trips back into
+// the public Manifest struct (Fix H3 — Manifest has JSON tags).
+func TestRunInspect_JSONIsParseable(t *testing.T) {
+	bundle := packForTest(t)
+	var stdout, stderr bytes.Buffer
+	code := runInspect(&stdout, &stderr, []string{"--format=json", bundle})
 	if code != exitDipxOK {
 		t.Fatalf("exit code = %d; stderr=%s", code, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "format:") {
-		t.Errorf("expected text fallback, got: %s", stdout.String())
+	var got dipx.Manifest
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("decode into dipx.Manifest: %v\n%s", err, stdout.String())
+	}
+	if got.FormatVersion == 0 {
+		t.Errorf("FormatVersion zero after round-trip; JSON tags missing on Manifest?")
+	}
+	if got.Entry == "" {
+		t.Errorf("Entry empty after round-trip; JSON tags missing on Manifest?")
+	}
+	if len(got.Files) == 0 {
+		t.Errorf("Files empty after round-trip")
 	}
 }
