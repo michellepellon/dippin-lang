@@ -140,3 +140,37 @@ Spec § "Reproducible Pack" mandates `O_NOFOLLOW` on file open. Current implemen
 ### Pack symlink coverage in tests (Phase 7, L3)
 
 `TestPack_RejectsSymlink` only tests symlink-as-entry. Doesn't test transitive ref symlinks or directory symlinks. **Disposition:** v1.1.
+
+## Phase 8 gate findings (deferred)
+
+### Sentinel-to-exit-code mapping incomplete (Phase 8, M1)
+
+`classifyExit` covers 5 integrity sentinels (HashMismatch, ManifestInvalid, ZipFeatureForbidden, ZipTruncated, UnsupportedFormatVersion) but spec error precedence treats more bundle errors as integrity (FileMissing, FileUnexpected, EntryNotInManifest, RefEscape, RefCycle, CapExceeded, PathUnsafe). Currently these route to user-error 1. **Disposition:** v1.1 spec clarification — decide which sentinels are "integrity" vs "user error" and update both spec table and classifier.
+
+### I/O exit code unreachable in practice (Phase 8, M2)
+
+`exitDipxIOError` (3) is only set by direct `os.Create`/`os.Close`/`os.Rename` failures in packToFile. I/O failures surfacing through `dipx.Pack`/`dipx.Open` (e.g., `*os.PathError` from walkSourceTree's read) route to user-error 1 because they're not Canceled and not isIntegrityErr. **Disposition:** v1.1 — extend classifier to detect `errors.Is(err, fs.ErrNotExist)` etc. and route to 3.
+
+### inspect --no-verify advisory in JSON (Phase 8, M4)
+
+When `--no-verify` is requested, only stderr text reflects it. JSON output still says `"status": "VALID"`. **Disposition:** v1.1 polish — promote status to object with `verify_skipped` field.
+
+### inspect text status footer omits byte total (Phase 8, L1)
+
+Spec example: `status: VALID (3 files, 24831 bytes, format_version 1)`. Implementation: `status: VALID (3 files, format_version 1)`. **Disposition:** v1.1 cosmetic.
+
+### inspect JSON status is a bare string, not an object (Phase 8, L2)
+
+Spec line says "manifest plus a status object". Today it's `"status": "VALID"`. **Disposition:** v1.1 — promote to richer object with file count, byte total, etc.
+
+### unpack lacks PATH_MAX + free-space preflight (Phase 8, L3)
+
+Spec § "CLI" mandates these for unpack. Currently absent. **Disposition:** v1.1 — `statfs` + per-platform PATH_MAX checks before any write.
+
+### pack --dry-run + -o - silently discards stdout intent (Phase 8, L4)
+
+Combining flags fails silently. **Disposition:** v1.1 — add diagnostic + exit 1.
+
+### parseFile/loadWorkflow error prefix inconsistency (Phase 8, L5)
+
+Raw `BundleError.Error()` shown without "error:" prefix that other CLI commands use. **Disposition:** v1.1 polish.
