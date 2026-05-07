@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -203,6 +204,51 @@ func TestPack_RejectsOversizedSource(t *testing.T) {
 	if !errors.Is(err, ErrCapExceeded) {
 		t.Fatalf("err = %v, want ErrCapExceeded", err)
 	}
+}
+
+func TestOpen_RejectsTooManyFiles(t *testing.T) {
+	// Verify the maxFiles cap fires with ErrCapExceeded.
+	//
+	// We exercise verifyAllHashes directly rather than going through OpenReader:
+	// constructing a manifest with maxFiles+1 entries serialized as JSON would
+	// always exceed maxManifestSize (1MB) regardless of how short the paths
+	// are — 10001 entries each containing a 64-char SHA-256 plus the minimal
+	// JSON overhead and shortest valid "workflows/<N>.dip" path is ~1.06MB —
+	// so the manifest-size cap would intercept before the file-count cap could
+	// fire. Calling verifyAllHashes directly tests the intended branch without
+	// hitting that ordering hazard.
+	files := make([]ManifestEntry, 0, maxFiles+1)
+	hash := hashOf([]byte("x"))
+	for i := 0; i <= maxFiles; i++ {
+		files = append(files, ManifestEntry{
+			Path:   fmt.Sprintf("workflows/f%d.dip", i),
+			SHA256: hash,
+		})
+	}
+	m := Manifest{FormatVersion: 1, Entry: "workflows/f0.dip", Files: files}
+	_, _, err := verifyAllHashes(nil, m, maxTotalUncompBytes)
+	if !errors.Is(err, ErrCapExceeded) {
+		t.Fatalf("err = %v, want ErrCapExceeded", err)
+	}
+}
+
+func TestBundle_ConcurrentReads(t *testing.T) {
+	raw := buildHappyDipx(t)
+	b, err := OpenReader(context.Background(), bytes.NewReader(raw), int64(len(raw)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_ = b.Entry()
+			_ = b.Manifest()
+			_ = b.Identity()
+		}()
+	}
+	wg.Wait()
 }
 
 func TestPack_RejectsSymlink(t *testing.T) {
