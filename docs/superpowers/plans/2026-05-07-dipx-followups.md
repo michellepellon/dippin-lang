@@ -100,3 +100,21 @@ The `verifiedBytes` zero-value `verifiedBytes{}` and one-arg constructor `newVer
 `parseAllWorkflows` parses all manifest-listed workflows (stronger than spec post-condition #4 which says "every workflow parses"). `detectCycles` only DFS's from `m.Entry`, missing cycles in unreachable workflows. Inconsistent: the parse pass is broader than necessary, the cycle pass is narrower than necessary.
 
 **Disposition:** v1.1 polish. Both passes should iterate every manifest-listed workflow, OR both should walk only entry-reachable subgraph. Pick one convention. Currently the broader-parse + narrower-cycle behavior is harmless but inconsistent.
+
+## Phase 6 gate findings (deferred)
+
+### dirSource doesn't apply Canonicalize-style validation (Phase 6, H2)
+
+`dirSource.resolveDir` performs filesystem-style validation but doesn't reject NUL bytes, control chars, NFD-encoded paths, or Windows-reserved names. The spec is ambiguous — dirSource paths are filesystem-native and "trusted by virtue of being read from local disk" per the parseDipFile spec note. **Disposition:** v1.1. If a tightening is desired, factor a Canonicalize-equivalent for filesystem paths (which would need different rules — absolute paths are valid, etc.).
+
+### dirSource cache is unbounded with global mutex (Phase 6, M1/M2)
+
+Spec § "Source implementations" mandates "LRU of 256 entries with singleflight.Group for cold-call coalescing." Implementation is unbounded `map[string]*ir.Workflow` guarded by sync.Mutex held across parseDipFile (disk I/O). Two issues: long-running Tracker processes leak parsed IR, and concurrent reads on different paths serialize on the global mutex. **Disposition:** v1.1. Drop in `golang.org/x/sync/singleflight` and a small LRU (e.g. `github.com/hashicorp/golang-lru/v2`) — or hand-roll. The singleflight key is the bundle-relative path; the LRU bounds memory.
+
+### Extract atomicity edge cases (Phase 6, M3/M4)
+
+`Extract` removes destDir before rename when `--force`, creating a window where neither old nor new exists. If `os.Rename` fails (e.g. `EXDEV` cross-device), staging is left behind. **Disposition:** v1.1 polish. Use rename-old-aside / rename-new-into-place / remove-aside pattern; defer-cleanup on rename failure.
+
+### Source.Workflow doesn't take context (Phase 6, L4)
+
+`Source.Workflow(refPath, relativeTo)` performs disk I/O for dirSource but no ctx. Spec is internally inconsistent: § "Cancellation" line 272 says I/O entry points take ctx, but § "Tracker integration contract" example shows ctx-less Workflow. **Disposition:** v1.1 spec clarification. Decide whether Source is a "fast lookup" or "I/O entry point." If the latter, breaking signature change.
