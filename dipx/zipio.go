@@ -2,6 +2,8 @@ package dipx
 
 import (
 	"archive/zip"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"strings"
@@ -116,4 +118,45 @@ func isASCII(s string) bool {
 		}
 	}
 	return true
+}
+
+// verifyAndReadEntry reads a single zip entry's decompressed bytes, enforcing
+// the per-file size cap as a streaming bound (io.LimitReader), computing
+// SHA-256 in tandem, and comparing against the manifest hash. Returns
+// verifiedBytes — the only constructor of that type — so downstream code can
+// only access bytes that have been hash-verified.
+func verifyAndReadEntry(cz *constrainedZip, path, expectedHex string, perFileCap int64) (verifiedBytes, error) {
+	f, ok := cz.entries[path]
+	if !ok {
+		return verifiedBytes{}, newError(ErrFileMissing, path, "", nil)
+	}
+	buf, gotHex, err := readEntryWithHash(f, path, perFileCap)
+	if err != nil {
+		return verifiedBytes{}, err
+	}
+	if gotHex != expectedHex {
+		return verifiedBytes{}, newError(ErrHashMismatch, path, fmt.Sprintf("expected: %s; actual: %s", expectedHex, gotHex), nil)
+	}
+	return newVerifiedBytes(buf), nil
+}
+
+// readEntryWithHash opens a zip entry, reads it under a streaming size cap,
+// and returns its bytes along with the hex-encoded SHA-256 digest.
+func readEntryWithHash(f *zip.File, path string, perFileCap int64) ([]byte, string, error) {
+	rc, err := f.Open()
+	if err != nil {
+		return nil, "", newError(ErrZipTruncated, path, "open failed", err)
+	}
+	defer rc.Close()
+
+	limited := &io.LimitedReader{R: rc, N: perFileCap + 1}
+	h := sha256.New()
+	buf, err := io.ReadAll(io.TeeReader(limited, h))
+	if err != nil {
+		return nil, "", newError(ErrZipTruncated, path, "read failed", err)
+	}
+	if int64(len(buf)) > perFileCap {
+		return nil, "", newError(ErrCapExceeded, path, fmt.Sprintf("file exceeds %d bytes", perFileCap), nil)
+	}
+	return buf, hex.EncodeToString(h.Sum(nil)), nil
 }
