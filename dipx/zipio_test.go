@@ -41,8 +41,7 @@ func TestOpenConstrainedZip_RejectsDuplicateEntries(t *testing.T) {
 	var buf bytes.Buffer
 	w := zip.NewWriter(&buf)
 	for i := 0; i < 2; i++ {
-		fw, _ := w.Create("workflows/a.dip")
-		fw.Write([]byte("x"))
+		writeUTF8Entry(t, w, "workflows/a.dip", []byte("x"))
 	}
 	w.Close()
 	_, err := openConstrainedZip(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
@@ -71,8 +70,7 @@ func TestOpenConstrainedZip_RejectsNonDeflateCompression(t *testing.T) {
 func TestOpenConstrainedZip_HappyPath(t *testing.T) {
 	var buf bytes.Buffer
 	w := zip.NewWriter(&buf)
-	fw, _ := w.Create("manifest.json")
-	fw.Write([]byte("{}"))
+	writeUTF8Entry(t, w, "manifest.json", []byte("{}"))
 	w.Close()
 	cz, err := openConstrainedZip(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
 	if err != nil {
@@ -86,9 +84,8 @@ func TestOpenConstrainedZip_HappyPath(t *testing.T) {
 func TestOpenConstrainedZip_IgnoresDirectoryEntries(t *testing.T) {
 	var buf bytes.Buffer
 	w := zip.NewWriter(&buf)
-	w.Create("workflows/")
-	fw, _ := w.Create("manifest.json")
-	fw.Write([]byte("{}"))
+	writeUTF8Entry(t, w, "workflows/", nil)
+	writeUTF8Entry(t, w, "manifest.json", []byte("{}"))
 	w.Close()
 	cz, err := openConstrainedZip(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
 	if err != nil {
@@ -102,8 +99,6 @@ func TestOpenConstrainedZip_IgnoresDirectoryEntries(t *testing.T) {
 
 func TestVerifyAndReadEntry_HappyPath(t *testing.T) {
 	content := []byte("workflow Hello\n  goal: x\n  start: A\n  exit: A\n  agent A\n")
-	expected := hex.EncodeToString(sha256.New().Sum(content))
-	_ = expected
 	cz := buildSingleEntryZip(t, "workflows/a.dip", content)
 	vb, err := verifyAndReadEntry(cz, "workflows/a.dip", hashOf(content), 50<<20)
 	if err != nil {
@@ -141,6 +136,58 @@ func TestVerifyAndReadEntry_NotFound(t *testing.T) {
 	}
 }
 
+func TestVerifyAndReadEntry_AtCapAccepted(t *testing.T) {
+	content := bytes.Repeat([]byte("a"), 100)
+	cz := buildSingleEntryZip(t, "workflows/a.dip", content)
+	vb, err := verifyAndReadEntry(cz, "workflows/a.dip", hashOf(content), 100)
+	if err != nil {
+		t.Fatalf("at-cap should accept, got %v", err)
+	}
+	if !bytes.Equal(vb.Bytes(), content) {
+		t.Fatal("bytes differ")
+	}
+}
+
+func TestVerifyAndReadEntry_OneOverCapRejected(t *testing.T) {
+	content := bytes.Repeat([]byte("a"), 101)
+	cz := buildSingleEntryZip(t, "workflows/a.dip", content)
+	_, err := verifyAndReadEntry(cz, "workflows/a.dip", hashOf(content), 100)
+	if !errors.Is(err, ErrCapExceeded) {
+		t.Fatalf("err = %v, want ErrCapExceeded", err)
+	}
+}
+
+func TestOpenConstrainedZip_RejectsAsciiWithoutUTF8Flag(t *testing.T) {
+	var buf bytes.Buffer
+	w := zip.NewWriter(&buf)
+	h := &zip.FileHeader{Name: "manifest.json"}
+	h.SetMode(0644)
+	// Force flags to 0 to simulate a CP437-emitting producer.
+	h.Flags = 0
+	fw, err := w.CreateHeader(h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fw.Write([]byte("{}"))
+	w.Close()
+	_, err = openConstrainedZip(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	if !errors.Is(err, ErrZipFeatureForbidden) {
+		t.Fatalf("err = %v, want ErrZipFeatureForbidden", err)
+	}
+}
+
+func TestOpenConstrainedZip_RejectsManifestSig(t *testing.T) {
+	var buf bytes.Buffer
+	w := zip.NewWriter(&buf)
+	writeUTF8Entry(t, w, "manifest.sig", []byte("dummy"))
+	writeUTF8Entry(t, w, "manifest.json", []byte("{}"))
+	w.Close()
+	_, err := openConstrainedZip(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	if !errors.Is(err, ErrZipFeatureForbidden) {
+		t.Fatalf("err = %v, want ErrZipFeatureForbidden", err)
+	}
+}
+
 // helpers used across zipio tests.
 
 func hashOf(b []byte) string {
@@ -148,12 +195,30 @@ func hashOf(b []byte) string {
 	return hex.EncodeToString(h[:])
 }
 
+// writeUTF8Entry creates a zip entry with general-purpose bit 11 (UTF-8 name)
+// set, mirroring what spec-conformant Pack output must do. Go's archive/zip
+// writer does NOT auto-set bit 11 for ASCII-only names, so tests that exercise
+// the constrained reader's happy path must set it explicitly.
+func writeUTF8Entry(t *testing.T, w *zip.Writer, name string, content []byte) {
+	t.Helper()
+	h := &zip.FileHeader{Name: name, Flags: 0x800}
+	h.SetMode(0644)
+	fw, err := w.CreateHeader(h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(content) > 0 {
+		if _, err := fw.Write(content); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func buildSingleEntryZip(t *testing.T, name string, content []byte) *constrainedZip {
 	t.Helper()
 	var buf bytes.Buffer
 	w := zip.NewWriter(&buf)
-	fw, _ := w.Create(name)
-	fw.Write(content)
+	writeUTF8Entry(t, w, name, content)
 	w.Close()
 	cz, err := openConstrainedZip(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
 	if err != nil {

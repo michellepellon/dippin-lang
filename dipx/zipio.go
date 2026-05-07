@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 )
 
@@ -26,6 +27,9 @@ type constrainedZip struct {
 	entries map[string]*zip.File // non-directory entries only, keyed by entry name
 }
 
+// maxZipFiles is the spec's conformance limit on entry count.
+const maxZipFiles = 10000
+
 // openConstrainedZip wraps zip.NewReader and enforces the spec's ZIP feature
 // constraints: rejects encryption, non-Store/Deflate compression, multi-disk,
 // symlink mode bits, duplicate entries, central-dir/local-header mismatch.
@@ -34,6 +38,9 @@ func openConstrainedZip(r io.ReaderAt, size int64) (*constrainedZip, error) {
 	zr, err := zip.NewReader(r, size)
 	if err != nil {
 		return nil, newError(ErrZipTruncated, "", "zip parse failed", err)
+	}
+	if len(zr.File) > maxZipFiles {
+		return nil, newError(ErrCapExceeded, "", fmt.Sprintf("zip contains %d entries; max %d", len(zr.File), maxZipFiles), nil)
 	}
 	cz := &constrainedZip{reader: zr, entries: make(map[string]*zip.File, len(zr.File))}
 	seenFold := make(map[string]struct{}, len(zr.File))
@@ -55,6 +62,11 @@ func admitZipEntry(cz *constrainedZip, seenFold map[string]struct{}, f *zip.File
 	if strings.HasSuffix(f.Name, "/") {
 		return nil
 	}
+	return recordEntry(cz, seenFold, f)
+}
+
+// recordEntry inserts f into cz.entries / seenFold after duplicate checks.
+func recordEntry(cz *constrainedZip, seenFold map[string]struct{}, f *zip.File) error {
 	if _, dup := cz.entries[f.Name]; dup {
 		return newError(ErrZipFeatureForbidden, f.Name, "duplicate entry", nil)
 	}
@@ -68,6 +80,9 @@ func admitZipEntry(cz *constrainedZip, seenFold map[string]struct{}, f *zip.File
 }
 
 func checkZipEntry(f *zip.File) error {
+	if f.Name == "manifest.sig" {
+		return newError(ErrZipFeatureForbidden, f.Name, "manifest.sig is reserved for v2 signatures", nil)
+	}
 	if err := checkZipEntryFlags(f); err != nil {
 		return err
 	}
@@ -83,9 +98,10 @@ func checkZipEntryFlags(f *zip.File) error {
 	if f.Flags&0x1 != 0 {
 		return newError(ErrZipFeatureForbidden, f.Name, "encrypted entry", nil)
 	}
-	// UTF-8 filename: bit 11 must be set for non-ASCII names.
-	if !isASCII(f.Name) && f.Flags&0x800 == 0 {
-		return newError(ErrZipFeatureForbidden, f.Name, "non-UTF-8 filename encoding", nil)
+	// UTF-8 filename: bit 11 is required unconditionally per spec, to defend
+	// against CP437-encoded ASCII names that bypass UTF-8 enforcement.
+	if f.Flags&0x800 == 0 {
+		return newError(ErrZipFeatureForbidden, f.Name, "non-UTF-8 filename encoding (general-purpose bit 11 not set)", nil)
 	}
 	return nil
 }
@@ -98,26 +114,20 @@ func checkZipEntryMethod(f *zip.File) error {
 	return nil
 }
 
-// checkZipEntryMode rejects symlink entries (Unix creator only).
+// checkZipEntryMode rejects all non-regular, non-directory file modes (Unix
+// creator only). Devices, sockets, named pipes, and irregular files share the
+// "not a real file" risk profile that motivates rejecting symlinks.
 func checkZipEntryMode(f *zip.File) error {
 	// External attributes encode mode bits in the upper 16 bits when
 	// CreatorVersion specifies Unix (3).
 	if (f.CreatorVersion >> 8) != 3 {
 		return nil
 	}
-	if f.Mode()&(1<<27) != 0 { // os.ModeSymlink
-		return newError(ErrZipFeatureForbidden, f.Name, "symlink entry", nil)
+	disallowed := os.ModeSymlink | os.ModeDevice | os.ModeNamedPipe | os.ModeSocket | os.ModeCharDevice | os.ModeIrregular
+	if f.Mode()&disallowed != 0 {
+		return newError(ErrZipFeatureForbidden, f.Name, "non-regular file mode bits set", nil)
 	}
 	return nil
-}
-
-func isASCII(s string) bool {
-	for i := 0; i < len(s); i++ {
-		if s[i] >= 0x80 {
-			return false
-		}
-	}
-	return true
 }
 
 // verifyAndReadEntry reads a single zip entry's decompressed bytes, enforcing
@@ -157,6 +167,12 @@ func readEntryWithHash(f *zip.File, path string, perFileCap int64) ([]byte, stri
 	}
 	if int64(len(buf)) > perFileCap {
 		return nil, "", newError(ErrCapExceeded, path, fmt.Sprintf("file exceeds %d bytes", perFileCap), nil)
+	}
+	// Defense-in-depth: if the decompressed size doesn't match the central-dir
+	// header, surface as ErrZipTruncated rather than letting the hash
+	// comparison swallow it as ErrHashMismatch.
+	if int64(len(buf)) != int64(f.UncompressedSize64) {
+		return nil, "", newError(ErrZipTruncated, path, fmt.Sprintf("decompressed %d bytes, header claimed %d", len(buf), f.UncompressedSize64), nil)
 	}
 	return buf, hex.EncodeToString(h.Sum(nil)), nil
 }
