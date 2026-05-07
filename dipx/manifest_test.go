@@ -159,3 +159,51 @@ func TestVerifyManifestShape_PathNotCanonical(t *testing.T) {
 		t.Fatalf("err = %v, want ErrPathUnsafe", err)
 	}
 }
+
+// TestVerifyManifestShape_MissingPath confirms that a files[] entry missing the
+// required `path` key is classified as ErrManifestInvalid (schema rule 3),
+// not ErrPathUnsafe (which Canonicalize("") would otherwise produce).
+func TestVerifyManifestShape_MissingPath(t *testing.T) {
+	m := Manifest{
+		FormatVersion: 1,
+		Entry:         "workflows/a.dip",
+		Files: []ManifestEntry{
+			{Path: "", SHA256: strings.Repeat("a", 64)}, // missing path
+		},
+	}
+	err := verifyManifestShape(m)
+	if !errors.Is(err, ErrManifestInvalid) {
+		t.Fatalf("err = %v, want ErrManifestInvalid", err)
+	}
+}
+
+// TestDecodeManifest_DepthAtCap is the positive boundary partner to
+// TestDecodeManifest_DepthCap. The depth cap is 32. The source builds the
+// top-level object (depth 1) plus 31 nested unknown-key objects = depth 32,
+// which should be accepted.
+func TestDecodeManifest_DepthAtCap(t *testing.T) {
+	deep := strings.Repeat(`{"x":`, 31) + "1" + strings.Repeat(`}`, 31)
+	src := `{"format_version":1,"entry":"workflows/a.dip","files":[{"path":"workflows/a.dip","sha256":"` + strings.Repeat("a", 64) + `"}],"deep":` + deep + `}`
+	if _, err := decodeManifest([]byte(src)); err != nil {
+		t.Fatalf("expected depth-32 to be accepted, got %v", err)
+	}
+}
+
+// TestDecodeManifest_DuplicateKeyInSecondFilesEntry exercises duplicate-key
+// detection in a non-first files[] member, confirming the per-frame `seen` map
+// resets when a new container frame is pushed.
+func TestDecodeManifest_DuplicateKeyInSecondFilesEntry(t *testing.T) {
+	hash := strings.Repeat("a", 64)
+	src := `{
+		"format_version": 1,
+		"entry": "workflows/a.dip",
+		"files": [
+			{"path": "workflows/a.dip", "sha256": "` + hash + `"},
+			{"path": "workflows/b.dip", "path": "workflows/c.dip", "sha256": "` + hash + `"}
+		]
+	}`
+	_, err := decodeManifest([]byte(src))
+	if !errors.Is(err, ErrManifestInvalid) {
+		t.Fatalf("err = %v, want ErrManifestInvalid", err)
+	}
+}

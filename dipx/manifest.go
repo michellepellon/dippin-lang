@@ -311,20 +311,39 @@ func verifyFiles(m Manifest) (map[string]struct{}, error) {
 // verifyOneFile validates a single ManifestEntry and records it in the seen
 // sets. Mutates seenByte and seenFold on success.
 func verifyOneFile(e ManifestEntry, seenByte, seenFold map[string]struct{}) error {
+	if err := verifyEntryFields(e); err != nil {
+		return err
+	}
+	return checkAndRecordPath(e.Path, seenByte, seenFold)
+}
+
+// verifyEntryFields enforces presence and shape of an entry's path and sha256
+// fields. Missing path is classified as ErrManifestInvalid (schema rule 3),
+// not as ErrPathUnsafe.
+func verifyEntryFields(e ManifestEntry) error {
+	if e.Path == "" {
+		return newError(ErrManifestInvalid, "", "files[] entry missing required key: path", nil)
+	}
 	if _, err := Canonicalize(e.Path); err != nil {
 		return err
 	}
 	if !isValidHash(e.SHA256) {
 		return newError(ErrManifestInvalid, e.Path, "sha256 not 64-char lowercase hex", nil)
 	}
-	if _, dup := seenByte[e.Path]; dup {
-		return newError(ErrManifestInvalid, e.Path, "duplicate path in files[]", nil)
+	return nil
+}
+
+// checkAndRecordPath enforces byte- and case-fold-uniqueness for path against
+// the running seen sets, recording the path on success.
+func checkAndRecordPath(path string, seenByte, seenFold map[string]struct{}) error {
+	if _, dup := seenByte[path]; dup {
+		return newError(ErrManifestInvalid, path, "duplicate path in files[]", nil)
 	}
-	fold := strings.ToLower(e.Path)
+	fold := strings.ToLower(path)
 	if _, dup := seenFold[fold]; dup {
-		return newError(ErrManifestInvalid, e.Path, "case-fold-duplicate path in files[]", nil)
+		return newError(ErrManifestInvalid, path, "case-fold-duplicate path in files[]", nil)
 	}
-	seenByte[e.Path] = struct{}{}
+	seenByte[path] = struct{}{}
 	seenFold[fold] = struct{}{}
 	return nil
 }
