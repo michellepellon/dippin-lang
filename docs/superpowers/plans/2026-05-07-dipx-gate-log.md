@@ -24,6 +24,12 @@
 - **Result:** REMEDIATED → PASS
 - **Summary:** Tasks 5 (Manifest types + decoder) and 6 (verifyManifestShape) implemented. Spec compliance + code quality reviews PASS (one important finding: doc comment over-promised; fixed in commit `eb40a51`). Phase 3 gate confirmed architectural soundness: duplicate-key detection at every level, top-level-only signatures rejection, integer-only `format_version` gauntlet, depth cap. One important spec gap (missing `path` returned `ErrPathUnsafe` instead of `ErrManifestInvalid`) and two test gaps remediated in commit `6c18d0d`. Deferred findings (per-sentinel `Path` semantics across layers; ErrPathUnsafe vs ErrManifestInvalid for non-canonical entry; case-fold via strings.ToLower vs Unicode `cases.Fold`) appended to followups in commit `d825fed`. 67 dipx tests passing.
 
+## Phase 8 gate (2026-05-07)
+
+- **Reviewer:** standard — ops-reliability subagent
+- **Result:** REMEDIATED → PASS (with deferrals)
+- **Summary:** Tasks 18-21 implemented. New CLI commands `dippin pack`/`unpack`/`inspect` plus existing analysis commands routed through `loadWorkflow`/`parseFile` to accept `.dipx`. Three HIGH fixes applied in commit `5f92ee3`: H1 (pack runs validation pre-pack via `validator.Validate` at CLI layer, honoring loader-tier exemption); H2 (inspect uses classifyExit for proper exit-code mapping); H3 (Manifest gets JSON tags so inspect --format=json output is parseable into dipx.Manifest); M3 (inspect rejects unknown --format values). 2 new tests + 2 updated. Deferred (commit `cf2cdb1`): incomplete sentinel-to-exit-code mapping (M1), I/O exit code (3) unreachable in practice (M2), --no-verify JSON status field (M4), inspect text byte total / JSON status object (L1/L2), unpack PATH_MAX + free-space preflight (L3), pack --dry-run -o - combo diagnostic (L4), error prefix inconsistency (L5). 81+ dipx tests + new CLI tests all passing.
+
 ## Phase 7 gate (2026-05-07)
 
 - **Reviewer:** mandatory — security subagent (Pack TOCTOU + reproducibility)
