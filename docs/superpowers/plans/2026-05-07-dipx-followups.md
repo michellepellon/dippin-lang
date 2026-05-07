@@ -200,3 +200,29 @@ Spec § "Soft caps": "A conformant reader MAY enforce stricter limits configured
 ### CLI flag-position: flags must precede positional args (Phase 9, P9.6)
 
 Go's `flag` package stops parsing at the first non-flag argument. Users running `dippin pack examples/foo.dip -o out.dipx` get usage errors; must be `dippin pack -o out.dipx examples/foo.dip`. Common Unix tools accept both orders. **Disposition:** v1.1. Either switch to `pflag` / `cobra` for any-position flag parsing, or document the constraint in `--help` output.
+
+## Phase 10 final-gate findings (deferred)
+
+### Extract --force EXDEV data-loss vector (Phase 10, P10.1)
+
+**Strengthening of existing M3/M4 entry.** When `Extract` is called with `--force` and the destination is on a different mount than staging (e.g., destdir on `/home`, tmp on `/tmp`), the sequence is: stage → `os.RemoveAll(destDir)` → `os.Rename(staging, destDir)`. If `Rename` fails with `EXDEV`, the user's original directory has already been deleted, AND the new contents sit at `destDir+".tmp"`. Data loss + confusing recovery. **Disposition:** v1.1 high-priority. Fix: rename-old-aside (move destDir to destDir.bak) → rename-new-into-place → remove-aside.
+
+### Pack lacks mid-write ctx checks (Phase 10, P10.2)
+
+`Pack` checks ctx between preparePackManifest and writeBundle, but `writeBundle`'s zip-writer loop has no ctx check. Asymmetric with Open (which checks ctx between every CPU-bound stage). **Disposition:** v1.1 polish.
+
+### inspect JSON encoder error silently swallowed (Phase 10, P10.3)
+
+`printInspectJSON` returns exitDipxIOError on `enc.Encode` failure but doesn't print the error to stderr. Operator gets exit 3 with no diagnostic. **Disposition:** v1.1.
+
+### inspect --no-verify is a no-op (Phase 10, P10.4)
+
+The flag is parsed and prints a stderr warning, but `dipx.Open` is invoked unconditionally. Forensically-suspect bundles can't be inspected without triggering integrity errors. **Disposition:** v1.1. Either implement a no-verify code path or remove the flag.
+
+### Extract writeOneFile lacks O_EXCL|O_NOFOLLOW (Phase 10, P10.5)
+
+`writeOneFile` uses `os.WriteFile` without `O_EXCL`/`O_NOFOLLOW`. A hostile process running as the same user could race a symlink into the freshly-created staging dir between `MkdirAll` and `WriteFile`. Practical risk is low (single-user attacker scenario) but spec § "Reproducible Pack" mandates O_NOFOLLOW; same hardening applies to Extract. **Disposition:** v1.1, bundled with Pack O_NOFOLLOW.
+
+### Pack-side BundleError.Path uses filesystem absolute paths (Phase 10, P10.6)
+
+Spec § "Per-sentinel error context" says Path is "bundle-relative" but Pack errors legitimately can't be bundle-relative (no bundle yet). Defensible interpretation; spec wording should be tightened in v1.1.
