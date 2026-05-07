@@ -67,6 +67,15 @@ lint-examples: build
         ./dippin lint "$f" 2>&1 || true; \
     done
 
+# Pack every example via dipx and verify round-trip
+pack-examples: build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for f in $(find examples -name '*.dip'); do
+        echo "Packing $f"
+        ./dippin pack -o "$(mktemp -u).dipx" "$f"
+    done
+
 # Check cyclomatic complexity (max 5 per function, excluding tests)
 complexity:
     @violations=$( gocyclo -over 5 . | grep -v _test.go ); \
@@ -93,7 +102,7 @@ releasecheck:
     go test ./releasecheck/ -count=1 -race
 
 # Run the full pre-commit check suite (mirrors CI exactly)
-check: spec-check build vet fmt-check lint-go test-race releasecheck complexity validate-examples tree-sitter-test
+check: spec-check build vet fmt-check lint-go test-race releasecheck complexity validate-examples pack-examples tree-sitter-test
     @echo "All checks passed."
 
 # Generate test coverage report (excludes untestable files: main.go, cmd_lsp.go)
