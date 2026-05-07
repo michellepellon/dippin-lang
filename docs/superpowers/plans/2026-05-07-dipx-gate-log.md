@@ -24,6 +24,12 @@
 - **Result:** REMEDIATED → PASS
 - **Summary:** Tasks 5 (Manifest types + decoder) and 6 (verifyManifestShape) implemented. Spec compliance + code quality reviews PASS (one important finding: doc comment over-promised; fixed in commit `eb40a51`). Phase 3 gate confirmed architectural soundness: duplicate-key detection at every level, top-level-only signatures rejection, integer-only `format_version` gauntlet, depth cap. One important spec gap (missing `path` returned `ErrPathUnsafe` instead of `ErrManifestInvalid`) and two test gaps remediated in commit `6c18d0d`. Deferred findings (per-sentinel `Path` semantics across layers; ErrPathUnsafe vs ErrManifestInvalid for non-canonical entry; case-fold via strings.ToLower vs Unicode `cases.Fold`) appended to followups in commit `d825fed`. 67 dipx tests passing.
 
+## Phase 9 gate (2026-05-07)
+
+- **Reviewer:** PAL spec-coverage audit + end-to-end smoke
+- **Result:** PASS (with deferrals)
+- **Summary:** Tasks 22 (TestPackExamples integration test — all 26 examples round-trip cleanly), 23 (justfile pack-examples recipe wired into `just check`), 24 (CLAUDE.md amendment for dipx loader-tier exemption). End-to-end smoke verified: `dippin pack -o /tmp/orch.dipx examples/orchestrator.dip` → `dippin inspect --format=json` (valid JSON, identity hash, manifest with 2 files) → `dippin unpack -o /tmp/orch-unpacked` (preserves directory tree including phases/) → `dippin validate /tmp/orch.dipx` (passes). PAL spec-coverage audit identified 6 additional spec gaps not previously deferred: OpenLax warning emission, ZIP-layer case-fold (Unicode), ZIP entry canonicalization at admission, DIPX_DEBUG diagnostic mode, deployment-limits configurability, CLI flag-position constraint. All 6 added to followups; none block v1.
+
 ## Phase 8 gate (2026-05-07)
 
 - **Reviewer:** standard — ops-reliability subagent
