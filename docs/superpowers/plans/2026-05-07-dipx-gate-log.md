@@ -24,6 +24,12 @@
 - **Result:** REMEDIATED → PASS
 - **Summary:** Tasks 5 (Manifest types + decoder) and 6 (verifyManifestShape) implemented. Spec compliance + code quality reviews PASS (one important finding: doc comment over-promised; fixed in commit `eb40a51`). Phase 3 gate confirmed architectural soundness: duplicate-key detection at every level, top-level-only signatures rejection, integer-only `format_version` gauntlet, depth cap. One important spec gap (missing `path` returned `ErrPathUnsafe` instead of `ErrManifestInvalid`) and two test gaps remediated in commit `6c18d0d`. Deferred findings (per-sentinel `Path` semantics across layers; ErrPathUnsafe vs ErrManifestInvalid for non-canonical entry; case-fold via strings.ToLower vs Unicode `cases.Fold`) appended to followups in commit `d825fed`. 67 dipx tests passing.
 
+## Phase 5 gate (2026-05-07)
+
+- **Reviewer:** mandatory — crypto-discipline subagent + PAL end-to-end
+- **Result:** REMEDIATED → PASS
+- **Summary:** Tasks 9-13 implemented. Phase 5 gate confirmed: 9-step Open ordering preserved (modulo extras-check insertion), verifiedBytes type-encoded ordering invariant holds at integration point, parser.NewParser called from exactly one site (verified by grep), error precedence honored (first-error-wins), ctx returned bare for errors.Is, FD cleanup proven on every exit path, Bundle.Manifest()/Identity() correct. Three actionable findings remediated in commit `d64bfd8`: H1 (total-cap now enforced via streaming `min(perFileCap, totalCap-total)`); H2 (Bundle.Lookup and ReadFile now Canonicalize on every call per spec § "Path safety on every read"); M1 (ctx checks added before parse/walkRefs/normalize CPU stages). 3 new defense tests (TestBundle_Lookup_RejectsUnsafePath, TestBundle_ReadFile_RejectsUnsafePath, TestOpen_ContextCancelled). Deferred findings (checkExtraEntries placement; parseAllWorkflows/detectCycles strictness asymmetry) appended to followups in commit `59fcda3`. 71 dipx tests passing.
+
 ## Phase 4 gate (2026-05-07)
 
 - **Reviewer:** mandatory dual squad — security subagent + crypto-discipline subagent (parallel)
