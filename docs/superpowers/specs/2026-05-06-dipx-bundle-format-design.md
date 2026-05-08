@@ -573,7 +573,26 @@ files:
 status: VALID (3 files, 24831 bytes, format_version 1)
 ```
 
-- `--format=json` emits the manifest plus a status object for machine consumption (`jq`-friendly).
+- `--format=json` emits the manifest plus a status object for machine consumption (`jq`-friendly). The status object schema is:
+
+```json
+{
+  "format_version": 1,
+  "entry": "workflows/api_design.dip",
+  "files": [
+    {"path": "workflows/api_design.dip", "sha256": "abc123..."}
+  ],
+  "status": {
+    "valid": true,
+    "verify_skipped": false,
+    "file_count": 3,
+    "byte_total": 24831,
+    "format_version": 1
+  }
+}
+```
+
+When `--no-verify` is passed, `verify_skipped` is `true` and `valid` reflects only structural admission (manifest shape, extras check, refs); hash verification is skipped. When verification fails, `valid` is `false` and a sibling `"error"` field carries the sentinel name (e.g., `"error": "hash mismatch"`).
 - Default runs full `Open`-equivalent validation. `--no-verify` skips hash checks for forensic inspection (status footer reads `INVALID: <reason>`).
 
 ### CLI exit codes
