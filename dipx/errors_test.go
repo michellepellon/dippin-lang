@@ -60,3 +60,62 @@ func TestNewError(t *testing.T) {
 		t.Fatalf("BundleError.Cause = %v, want %v", be.Cause, cause)
 	}
 }
+
+func TestEnrichBundlePath_RewritesManifestInvalidPath(t *testing.T) {
+	err := newError(ErrManifestInvalid, "format_version", "must be an integer literal", nil)
+	enriched := enrichBundlePath(err, "/tmp/foo.dipx")
+	var be *BundleError
+	if !errors.As(enriched, &be) {
+		t.Fatalf("enriched = %T, want *BundleError", enriched)
+	}
+	if be.Path != "/tmp/foo.dipx" {
+		t.Errorf("Path = %q, want %q", be.Path, "/tmp/foo.dipx")
+	}
+	if be.Detail != "format_version: must be an integer literal" {
+		t.Errorf("Detail = %q, want %q", be.Detail, "format_version: must be an integer literal")
+	}
+	if !errors.Is(enriched, ErrManifestInvalid) {
+		t.Error("errors.Is(enriched, ErrManifestInvalid) = false, want true")
+	}
+}
+
+func TestEnrichBundlePath_RewritesUnsupportedFormatVersionPath(t *testing.T) {
+	err := newError(ErrUnsupportedFormatVersion, "", "got 99; supports [1]", nil)
+	enriched := enrichBundlePath(err, "/tmp/foo.dipx")
+	var be *BundleError
+	if !errors.As(enriched, &be) {
+		t.Fatalf("enriched = %T, want *BundleError", enriched)
+	}
+	if be.Path != "/tmp/foo.dipx" {
+		t.Errorf("Path = %q, want %q", be.Path, "/tmp/foo.dipx")
+	}
+	if be.Detail != "got 99; supports [1]" {
+		t.Errorf("Detail = %q, want unchanged", be.Detail)
+	}
+}
+
+func TestEnrichBundlePath_LeavesNonManifestErrors(t *testing.T) {
+	err := newError(ErrHashMismatch, "workflows/foo.dip", "expected: X, actual: Y", nil)
+	enriched := enrichBundlePath(err, "/tmp/foo.dipx")
+	var be *BundleError
+	if !errors.As(enriched, &be) {
+		t.Fatalf("enriched = %T, want *BundleError", enriched)
+	}
+	if be.Path != "workflows/foo.dip" {
+		t.Errorf("Path = %q, want %q (unchanged for non-manifest sentinel)", be.Path, "workflows/foo.dip")
+	}
+}
+
+func TestEnrichBundlePath_PassesThroughNonBundleError(t *testing.T) {
+	err := errors.New("plain error")
+	enriched := enrichBundlePath(err, "/tmp/foo.dipx")
+	if enriched.Error() != "plain error" {
+		t.Errorf("plain error mutated: %v", enriched)
+	}
+}
+
+func TestEnrichBundlePath_NilIsNil(t *testing.T) {
+	if enrichBundlePath(nil, "/tmp/foo.dipx") != nil {
+		t.Error("nil err should pass through as nil")
+	}
+}
