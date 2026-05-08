@@ -271,7 +271,7 @@ func (s *packWalkState) visitNext() error {
 // Enforces the per-file uncompressed cap (maxPerFileBytes) at Pack time so
 // the producer cannot emit a bundle that fails its own round-trip in Open.
 func (s *packWalkState) readAndRecord(cur string) (packedFile, *ir.Workflow, error) {
-	raw, err := readNoFollowSymlinks(cur)
+	raw, err := readNoFollowSymlinks(cur, s.rootDir)
 	if err != nil {
 		return packedFile{}, nil, err
 	}
@@ -308,11 +308,13 @@ func (s *packWalkState) enqueueRefs(cur string, wf *ir.Workflow) error {
 }
 
 // resolveRefOnDisk joins ref against cur's directory and verifies the result
-// stays under s.rootDir.
+// stays under s.rootDir. The escape check is a literal-component compare:
+// `..` alone or `../` prefix. A bare `strings.HasPrefix(rel, "..")` would
+// false-positive on legitimate filenames like `..foo/bar.dip`.
 func (s *packWalkState) resolveRefOnDisk(cur, ref string) (string, error) {
 	target := filepath.Clean(filepath.Join(filepath.Dir(cur), ref))
 	rel, err := filepath.Rel(s.rootDir, target)
-	if err != nil || strings.HasPrefix(rel, "..") {
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return "", newError(ErrRefEscape, cur, "ref escapes source root: "+ref, nil)
 	}
 	return target, nil
@@ -329,9 +331,21 @@ func parsePackSource(path string, raw []byte) (*ir.Workflow, error) {
 	return wf, nil
 }
 
-// readNoFollowSymlinks reads a file, refusing to follow symlinks or any other
-// non-regular file.
-func readNoFollowSymlinks(path string) ([]byte, error) {
+// readNoFollowSymlinks reads a file, refusing to follow symlinks at the leaf
+// OR at any intermediate path component between rootDir and path. This closes
+// a parent-component-symlink data-exfil vector in Pack: a source tree
+// containing `workflows/phases -> /etc` would otherwise let Pack embed
+// `/etc/foo.dip` as `workflows/phases/foo.dip` because Lstat on the leaf
+// reports a regular file, not a symlink.
+//
+// rootDir itself is treated as the trust anchor: it is an absolute path
+// supplied by the CLI, may itself be a user-specified symlink, and is not
+// re-validated. Components strictly between rootDir and path's leaf MUST be
+// directories that are not symlinks.
+func readNoFollowSymlinks(path, rootDir string) ([]byte, error) {
+	if err := assertNoSymlinkAncestor(path, rootDir); err != nil {
+		return nil, err
+	}
 	info, err := os.Lstat(path)
 	if err != nil {
 		return nil, err
@@ -343,6 +357,32 @@ func readNoFollowSymlinks(path string) ([]byte, error) {
 		return nil, newError(ErrPathUnsafe, path, "not a regular file", nil)
 	}
 	return os.ReadFile(path)
+}
+
+// assertNoSymlinkAncestor walks every path component strictly between rootDir
+// and path's leaf and refuses any that is a symlink. rootDir itself is the
+// trust anchor and is not Lstat'd.
+func assertNoSymlinkAncestor(path, rootDir string) error {
+	rel, err := filepath.Rel(rootDir, path)
+	if err != nil {
+		return newError(ErrPathUnsafe, path, "path not under source root", err)
+	}
+	parts := strings.Split(rel, string(filepath.Separator))
+	cur := rootDir
+	// All but the last component (which Lstat handles via the caller's
+	// regular-file check). If parts has fewer than 2 elements the leaf is at
+	// rootDir's level and there are no intermediate components to check.
+	for i := 0; i < len(parts)-1; i++ {
+		cur = filepath.Join(cur, parts[i])
+		info, err := os.Lstat(cur)
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return newError(ErrPathUnsafe, cur, "symlink in source tree ancestor", nil)
+		}
+	}
+	return nil
 }
 
 // bundlePathFor converts an absolute source path under rootDir into its

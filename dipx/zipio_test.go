@@ -21,7 +21,10 @@ func TestOpenConstrainedZip_RejectsEncryption(t *testing.T) {
 	// Build a minimal zip with an encrypted entry.
 	var buf bytes.Buffer
 	w := zip.NewWriter(&buf)
-	h := &zip.FileHeader{Name: "manifest.json"}
+	// UTF-8 bit 11 set so this fixture fails on the encryption check (bit 0),
+	// not on the unrelated bit-11 check that fires earlier in
+	// checkZipEntryFlags.
+	h := &zip.FileHeader{Name: "manifest.json", Flags: 0x800}
 	h.SetMode(0644)
 	h.Flags |= 0x1 // bit 0 = encrypted
 	fw, err := w.CreateHeader(h)
@@ -54,7 +57,10 @@ func TestOpenConstrainedZip_RejectsNonDeflateCompression(t *testing.T) {
 	// Create with method 12 (BZIP2) which Go doesn't natively support.
 	var buf bytes.Buffer
 	w := zip.NewWriter(&buf)
-	h := &zip.FileHeader{Name: "manifest.json", Method: 12}
+	// UTF-8 bit 11 set so this fixture fails on the unsupported-method check
+	// rather than the missing-bit-11 check that fires earlier in
+	// checkZipEntryFlags.
+	h := &zip.FileHeader{Name: "manifest.json", Method: 12, Flags: 0x800}
 	fw, err := w.CreateHeader(h)
 	if err != nil {
 		t.Skip("BZIP2 not creatable in this Go version")

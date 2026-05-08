@@ -267,3 +267,119 @@ func TestPack_RejectsSymlink(t *testing.T) {
 		t.Fatal("expected error packing through symlink")
 	}
 }
+
+// TestPack_RejectsParentSymlink covers the parent-component-symlink
+// data-exfil vector: a directory in the path tree (not the leaf) is a
+// symlink pointing outside rootDir. Pack must refuse rather than silently
+// follow into the linked target.
+func TestPack_RejectsParentSymlink(t *testing.T) {
+	rootDir := t.TempDir()
+	outside := t.TempDir()
+	// Place an attacker-controlled .dip at the symlink target.
+	if err := os.WriteFile(filepath.Join(outside, "secret.dip"), []byte(minimalDipSrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Create a symlink under rootDir whose target is the outside directory.
+	if err := os.Symlink(outside, filepath.Join(rootDir, "phases")); err != nil {
+		t.Skip("symlinks not supported on this platform")
+	}
+	// The entry .dip references phases/secret.dip via subgraph ref. With the
+	// parent-component check, Pack must refuse before reading the leaf via
+	// the symlinked parent.
+	entrySrc := `workflow Parent
+  goal: x
+  start: S
+  exit: E
+  subgraph S
+    ref: phases/secret.dip
+  agent E
+    prompt: end
+  edges
+    S -> E
+`
+	entryPath := filepath.Join(rootDir, "parent.dip")
+	if err := os.WriteFile(entryPath, []byte(entrySrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	_, err := Pack(context.Background(), entryPath, &buf)
+	if !errors.Is(err, ErrPathUnsafe) {
+		t.Fatalf("err = %v, want ErrPathUnsafe", err)
+	}
+}
+
+// TestPack_AcceptsDoubleDotPrefixDirectory covers the false-positive bug
+// where strings.HasPrefix(rel, "..") rejected legitimate filenames whose
+// directory name simply starts with two dots (e.g., "..foo/bar.dip").
+func TestPack_AcceptsDoubleDotPrefixDirectory(t *testing.T) {
+	rootDir := t.TempDir()
+	subdir := filepath.Join(rootDir, "..foo")
+	if err := os.MkdirAll(subdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(subdir, "child.dip"), []byte(minimalDipSrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	entrySrc := `workflow Parent
+  goal: x
+  start: S
+  exit: E
+  subgraph S
+    ref: ..foo/child.dip
+  agent E
+    prompt: end
+  edges
+    S -> E
+`
+	entryPath := filepath.Join(rootDir, "parent.dip")
+	if err := os.WriteFile(entryPath, []byte(entrySrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if _, err := Pack(context.Background(), entryPath, &buf); err != nil {
+		t.Fatalf("unexpected error packing legitimate '..foo' subdir: %v", err)
+	}
+}
+
+// TestExtract_ForcePreservesDestOnRenameFailure simulates EXDEV (cross-mount
+// rename) at the staging-into-place step. With --force, the original
+// destDir must be restored from the backup-aside on failure rather than
+// destroyed.
+func TestExtract_ForcePreservesDestOnRenameFailure(t *testing.T) {
+	root := t.TempDir()
+	destDir := filepath.Join(root, "out")
+	staging := filepath.Join(root, "out.tmp")
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	original := []byte("ORIGINAL CONTENT")
+	if err := os.WriteFile(filepath.Join(destDir, "marker"), original, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(staging, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(staging, "marker"), []byte("NEW"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Inject a rename that succeeds for destDir->backup but returns EXDEV for
+	// staging->destDir, exactly as a cross-mount rename would.
+	calls := 0
+	rename := func(oldp, newp string) error {
+		calls++
+		if calls == 2 {
+			return &os.LinkError{Op: "rename", Old: oldp, New: newp, Err: errors.New("invalid cross-device link")}
+		}
+		return os.Rename(oldp, newp)
+	}
+	if err := swapDestWithStaging(destDir, staging, rename); err == nil {
+		t.Fatal("expected EXDEV-simulated rename failure")
+	}
+	got, err := os.ReadFile(filepath.Join(destDir, "marker"))
+	if err != nil {
+		t.Fatalf("destDir was destroyed on rename failure: %v", err)
+	}
+	if !bytes.Equal(got, original) {
+		t.Fatalf("destDir contents corrupted: got %q, want %q", got, original)
+	}
+}

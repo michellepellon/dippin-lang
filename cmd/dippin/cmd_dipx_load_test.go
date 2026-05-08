@@ -36,7 +36,9 @@ func TestAnalysisRejectsBadDipx(t *testing.T) {
 	if code == ExitOK {
 		t.Fatal("expected non-zero exit for missing bundle")
 	}
-	if !strings.Contains(stderr, "manifest") && !strings.Contains(stderr, "not readable") && !strings.Contains(stderr, "missing") {
-		t.Logf("stderr: %s", stderr)
+	if !strings.Contains(stderr, "manifest") &&
+		!strings.Contains(stderr, "not readable") &&
+		!strings.Contains(stderr, "missing") {
+		t.Fatalf("unexpected stderr for missing bundle: %q", stderr)
 	}
 }

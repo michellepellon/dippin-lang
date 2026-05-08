@@ -30,10 +30,25 @@ type constrainedZip struct {
 // maxZipFiles is the spec's conformance limit on entry count.
 const maxZipFiles = 10000
 
-// openConstrainedZip wraps zip.NewReader and enforces the spec's ZIP feature
-// constraints: rejects encryption, non-Store/Deflate compression, multi-disk,
-// symlink mode bits, duplicate entries, central-dir/local-header mismatch.
-// Directory entries are silently skipped (per spec).
+// openConstrainedZip wraps zip.NewReader and enforces the spec's v1 ZIP
+// feature constraints: rejects encryption (general-purpose bit 0), non-UTF-8
+// filenames (bit 11 must be set), non-Store/non-Deflate compression methods,
+// symlink and other non-regular Unix mode bits, byte-equal duplicate entry
+// names, and ASCII-case-fold-equal duplicate entry names. Directory entries
+// (names ending in `/`) are silently skipped.
+//
+// What this function does NOT enforce in v1 (deferred to v1.1, see
+// docs/superpowers/plans/2026-05-07-dipx-followups.md):
+//   - Multi-disk archives: incidentally rejected when zip.NewReader fails to
+//     parse them, not via an explicit check here.
+//   - Central-directory ↔ local-header agreement on filename and uncompressed
+//     size (Phase 4 C2). v1 mitigates by per-file SHA-256 verification: any
+//     cross-record disagreement between CD-described bytes and LH-described
+//     bytes that gets decompressed will fail the manifest hash.
+//   - Per-file 1000:1 compression-ratio cap (Phase 4 C3). v1 enforces only
+//     the absolute 50 MB per-file uncompressed cap.
+//   - Unicode case-folding for duplicate detection (Phase 9 P9.2). v1 uses
+//     ASCII strings.ToLower so collisions like ß/ss may slip through.
 func openConstrainedZip(r io.ReaderAt, size int64) (*constrainedZip, error) {
 	zr, err := zip.NewReader(r, size)
 	if err != nil {

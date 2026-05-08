@@ -224,7 +224,8 @@ func preparePackManifest(ctx context.Context, entryPath string) (Manifest, []pac
 }
 
 // Extract unpacks a .dipx into destDir atomically. Writes to destDir+".tmp"
-// and renames on success. On failure the staging directory is removed.
+// and renames on success. On failure the staging directory is removed and
+// any pre-existing destDir is preserved.
 func Extract(ctx context.Context, path, destDir string, allowOverwrite bool) error {
 	if err := checkDestExists(destDir, allowOverwrite); err != nil {
 		return err
@@ -237,10 +238,46 @@ func Extract(ctx context.Context, path, destDir string, allowOverwrite bool) err
 	if err := stageBundle(ctx, bundle, staging); err != nil {
 		return err
 	}
-	if allowOverwrite {
-		_ = os.RemoveAll(destDir)
+	if err := swapDestWithStaging(destDir, staging, os.Rename); err != nil {
+		_ = os.RemoveAll(staging)
+		return err
 	}
-	return os.Rename(staging, destDir)
+	return nil
+}
+
+// swapDestWithStaging atomically replaces destDir with staging. If destDir
+// does not exist this collapses to a single rename. If destDir does exist,
+// the rename-old-aside / rename-new-into-place / remove-aside sequence
+// preserves the original on rename failure (notably EXDEV when staging is on
+// a different mount). The rename function is injected so tests can simulate
+// EXDEV.
+func swapDestWithStaging(destDir, staging string, rename func(string, string) error) error {
+	backup := destDir + ".bak"
+	_ = os.RemoveAll(backup)
+	_, err := os.Lstat(destDir)
+	if os.IsNotExist(err) {
+		return rename(staging, destDir)
+	}
+	if err != nil {
+		return err
+	}
+	return swapWithBackup(destDir, staging, backup, rename)
+}
+
+// swapWithBackup performs the three-step swap when destDir is known to
+// exist: rename destDir to backup, rename staging to destDir, then remove
+// the backup on success. On the second rename's failure, restore destDir
+// from backup before returning the error.
+func swapWithBackup(destDir, staging, backup string, rename func(string, string) error) error {
+	if err := rename(destDir, backup); err != nil {
+		return err
+	}
+	if err := rename(staging, destDir); err != nil {
+		_ = rename(backup, destDir)
+		return err
+	}
+	_ = os.RemoveAll(backup)
+	return nil
 }
 
 // checkDestExists returns ErrPathUnsafe when destDir exists and overwrite is

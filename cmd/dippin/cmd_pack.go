@@ -102,15 +102,17 @@ func parsePackArgs(stderr io.Writer, args []string) (entry, dest string, dryRun 
 	return entry, dest, *dry, -1
 }
 
-// packToFile writes the bundle to a temp file alongside dest and atomically
-// renames into place on success. Failures clean up the temp file.
+// packToFile writes the bundle to a unique temp file alongside dest and
+// atomically renames into place on success. Failures clean up the temp file.
+// The unique-name pattern (os.CreateTemp) avoids clobbers between concurrent
+// `dippin pack -o foo.dipx` invocations sharing the same dest.
 func packToFile(stderr io.Writer, ctx context.Context, entry, dest string) int {
-	tmp := dest + ".tmp"
-	f, err := os.Create(tmp)
+	f, err := os.CreateTemp(filepath.Dir(dest), filepath.Base(dest)+".*.tmp")
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return exitDipxIOError
 	}
+	tmp := f.Name()
 	if _, err := dipx.Pack(ctx, entry, f); err != nil {
 		_ = f.Close()
 		_ = os.Remove(tmp)

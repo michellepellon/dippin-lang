@@ -214,7 +214,7 @@ func detectCycles(graph map[string][]string, start string, maxDepth int) error {
 // path from the cycle entry node back to itself.
 func dfsVisit(graph map[string][]string, color map[string]int, stack *[]string, node string, depth, maxDepth int) error {
 	if depth > maxDepth {
-		return newError(ErrCapExceeded, node, "ref-graph depth exceeds 64", nil)
+		return newError(ErrCapExceeded, node, fmt.Sprintf("ref-graph depth exceeds %d", maxDepth), nil)
 	}
 	color[node] = colorGray
 	*stack = append(*stack, node)

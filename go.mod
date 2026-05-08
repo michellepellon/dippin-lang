@@ -6,7 +6,7 @@ require (
 	github.com/fsnotify/fsnotify v1.9.0
 	go.lsp.dev/jsonrpc2 v0.10.0
 	go.lsp.dev/protocol v0.12.0
-	golang.org/x/text v0.3.3
+	golang.org/x/text v0.37.0
 	mvdan.cc/sh/v3 v3.13.1
 )
 
