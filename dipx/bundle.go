@@ -34,6 +34,19 @@ func (b *Bundle) Identity() [32]byte {
 	return sha256.Sum256(b.manifestBytes)
 }
 
+// ByteTotal returns the sum of uncompressed file sizes across every entry
+// in the bundle. Only valid when the bundle was opened with full hash
+// verification (i.e., via Open / OpenReader); a manifest-only inspection
+// path (OpenManifest, Bundle 2 / Task 3) does not populate fileBytes and
+// would return 0.
+func (b *Bundle) ByteTotal() int64 {
+	var total int64
+	for _, raw := range b.fileBytes {
+		total += int64(len(raw))
+	}
+	return total
+}
+
 // Entry returns the entry workflow.
 func (b *Bundle) Entry() *ir.Workflow {
 	return b.workflows[b.manifest.Entry]

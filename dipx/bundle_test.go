@@ -127,3 +127,30 @@ func TestBundle_Resolve(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestBundle_ByteTotal_SumsFileBytes(t *testing.T) {
+	b := &Bundle{
+		fileBytes: map[string][]byte{
+			"workflows/a.dip": []byte("hello"),   // 5
+			"workflows/b.dip": []byte("world!!"), // 7
+			"workflows/c.dip": []byte(""),        // 0
+		},
+	}
+	if got, want := b.ByteTotal(), int64(12); got != want {
+		t.Errorf("ByteTotal() = %d, want %d", got, want)
+	}
+}
+
+func TestBundle_ByteTotal_EmptyMap(t *testing.T) {
+	b := &Bundle{fileBytes: map[string][]byte{}}
+	if got, want := b.ByteTotal(), int64(0); got != want {
+		t.Errorf("ByteTotal() = %d, want %d", got, want)
+	}
+}
+
+func TestBundle_ByteTotal_NilMap(t *testing.T) {
+	b := &Bundle{}
+	if got, want := b.ByteTotal(), int64(0); got != want {
+		t.Errorf("ByteTotal() = %d, want %d", got, want)
+	}
+}
