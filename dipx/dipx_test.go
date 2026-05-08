@@ -238,6 +238,7 @@ func TestBundle_ConcurrentReads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	const entryPath = "workflows/hello.dip"
 	var wg sync.WaitGroup
 	for i := 0; i < 100; i++ {
 		wg.Add(1)
@@ -246,6 +247,11 @@ func TestBundle_ConcurrentReads(t *testing.T) {
 			_ = b.Entry()
 			_ = b.Manifest()
 			_ = b.Identity()
+			// Exercise the shared lookup/read paths too — these are what the
+			// concurrency contract actually covers.
+			_, _ = b.Lookup(entryPath)
+			_, _ = b.Workflow("hello.dip", entryPath)
+			_, _ = b.ReadFile(entryPath)
 		}()
 	}
 	wg.Wait()

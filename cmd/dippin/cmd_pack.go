@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -136,18 +137,37 @@ func packToFile(stderr io.Writer, ctx context.Context, entry, dest string) int {
 }
 
 // classifyExit maps a dipx error to an exitDipx* code, printing it to stderr.
+// Split from classifyDipxErr so each function stays under the project's
+// cyclomatic-5 cap.
 func classifyExit(stderr io.Writer, err error) int {
 	if err == nil {
 		return exitDipxOK
 	}
 	fmt.Fprintln(stderr, err)
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+	return classifyDipxErr(err)
+}
+
+// classifyDipxErr maps a non-nil dipx error to its exitDipx* code. Order
+// matters: cancellation > integrity > I/O > user-error. I/O is detected via
+// *os.PathError / *os.LinkError (or fs-level ErrNotExist / ErrPermission)
+// so filesystem failures bubbling out of dipx.Pack/Open/Extract reach the
+// documented exit-3 path instead of collapsing to user-error 1.
+func classifyDipxErr(err error) int {
+	if isCancelledErr(err) {
 		return exitDipxCancelled
 	}
 	if isIntegrityErr(err) {
 		return exitDipxIntegrityError
 	}
+	if isIOErr(err) {
+		return exitDipxIOError
+	}
 	return exitDipxUserError
+}
+
+// isCancelledErr reports whether err is a context cancellation or deadline.
+func isCancelledErr(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
 // isIntegrityErr reports whether err corresponds to a bundle-integrity failure
@@ -158,4 +178,15 @@ func isIntegrityErr(err error) bool {
 		errors.Is(err, dipx.ErrZipFeatureForbidden) ||
 		errors.Is(err, dipx.ErrZipTruncated) ||
 		errors.Is(err, dipx.ErrUnsupportedFormatVersion)
+}
+
+// isIOErr reports whether err is a filesystem I/O failure that should map to
+// the bundle command's I/O exit code (3) rather than user-error (1).
+func isIOErr(err error) bool {
+	var pathErr *os.PathError
+	var linkErr *os.LinkError
+	if errors.As(err, &pathErr) || errors.As(err, &linkErr) {
+		return true
+	}
+	return errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrPermission)
 }

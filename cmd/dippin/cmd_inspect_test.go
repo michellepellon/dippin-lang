@@ -68,12 +68,12 @@ func TestRunInspect_NoArgs(t *testing.T) {
 func TestRunInspect_MissingBundle(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := runInspect(&stdout, &stderr, []string{"/nonexistent.dipx"})
-	// inspect now routes errors through classifyExit (Fix H2). ErrManifestMissing
-	// is not (yet) in isIntegrityErr, so this falls into the user-error bucket.
-	// Re-classification of ErrManifestMissing/ErrFileMissing/etc. is tracked in
-	// the dipx followups (sentinel-to-exit-code mapping incomplete).
-	if code != exitDipxUserError {
-		t.Fatalf("exit code = %d, expected user error %d; stderr=%s", code, exitDipxUserError, stderr.String())
+	// ErrManifestMissing wraps an *os.PathError ("no such file or directory").
+	// classifyExit's isIOErr helper detects the wrapped PathError via
+	// errors.As and routes to the documented I/O exit code (3), per Phase 8
+	// M2 resolution.
+	if code != exitDipxIOError {
+		t.Fatalf("exit code = %d, expected I/O error %d; stderr=%s", code, exitDipxIOError, stderr.String())
 	}
 }
 

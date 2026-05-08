@@ -111,9 +111,9 @@ The `verifiedBytes` zero-value `verifiedBytes{}` and one-arg constructor `newVer
 
 Spec § "Source implementations" mandates "LRU of 256 entries with singleflight.Group for cold-call coalescing." Implementation is unbounded `map[string]*ir.Workflow` guarded by sync.Mutex held across parseDipFile (disk I/O). Two issues: long-running Tracker processes leak parsed IR, and concurrent reads on different paths serialize on the global mutex. **Disposition:** v1.1. Drop in `golang.org/x/sync/singleflight` and a small LRU (e.g. `github.com/hashicorp/golang-lru/v2`) — or hand-roll. The singleflight key is the bundle-relative path; the LRU bounds memory.
 
-### Extract atomicity edge cases (Phase 6, M3/M4)
+### Extract atomicity edge cases (Phase 6, M3/M4) — SUPERSEDED by P10.1 resolution
 
-`Extract` removes destDir before rename when `--force`, creating a window where neither old nor new exists. If `os.Rename` fails (e.g. `EXDEV` cross-device), staging is left behind. **Disposition:** v1.1 polish. Use rename-old-aside / rename-new-into-place / remove-aside pattern; defer-cleanup on rename failure.
+`Extract` previously removed destDir before rename when `--force`, creating a window where neither old nor new existed; if `os.Rename` failed with EXDEV, staging was orphaned. **Resolved in v1.0** as part of the P10.1 fix below — see "Extract --force EXDEV data-loss vector (Phase 10, P10.1) — RESOLVED in v1.0" for the rename-old-aside / rename-new-into-place / remove-aside implementation and the `TestExtract_ForcePreservesDestOnRenameFailure` regression test.
 
 ### Source.Workflow doesn't take context (Phase 6, L4)
 
@@ -149,9 +149,9 @@ Spec § "Reproducible Pack" mandates `O_NOFOLLOW` on file open. Current implemen
 
 `classifyExit` covers 5 integrity sentinels (HashMismatch, ManifestInvalid, ZipFeatureForbidden, ZipTruncated, UnsupportedFormatVersion) but spec error precedence treats more bundle errors as integrity (FileMissing, FileUnexpected, EntryNotInManifest, RefEscape, RefCycle, CapExceeded, PathUnsafe). Currently these route to user-error 1. **Disposition:** v1.1 spec clarification — decide which sentinels are "integrity" vs "user error" and update both spec table and classifier.
 
-### I/O exit code unreachable in practice (Phase 8, M2)
+### I/O exit code unreachable in practice (Phase 8, M2) — RESOLVED in v1.0
 
-`exitDipxIOError` (3) is only set by direct `os.Create`/`os.Close`/`os.Rename` failures in packToFile. I/O failures surfacing through `dipx.Pack`/`dipx.Open` (e.g., `*os.PathError` from walkSourceTree's read) route to user-error 1 because they're not Canceled and not isIntegrityErr. **Disposition:** v1.1 — extend classifier to detect `errors.Is(err, fs.ErrNotExist)` etc. and route to 3.
+`exitDipxIOError` (3) was only set by direct `os.Create`/`os.Close`/`os.Rename` failures in packToFile. I/O failures surfacing through `dipx.Pack`/`dipx.Open`/`dipx.Extract` (e.g., `*os.PathError` from walkSourceTree's read) routed to user-error 1 because they were not Canceled and not isIntegrityErr — contradicting the documented "I/O error = 3" contract. **Resolution:** classifyExit was split into `classifyExit` + `classifyDipxErr` to stay under the cyclomatic-5 cap, and a new `isIOErr` helper detects `*os.PathError` / `*os.LinkError` (or fs.ErrNotExist / fs.ErrPermission via `errors.Is`) and routes to exitDipxIOError. Order: cancellation > integrity > I/O > user-error.
 
 ### inspect --no-verify advisory in JSON (Phase 8, M4)
 
