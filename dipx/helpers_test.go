@@ -157,6 +157,44 @@ func TestWalkRefs_RejectsEscape(t *testing.T) {
 	}
 }
 
+// TestWalkRefs_DetectsCycleInUnreachableWorkflow asserts that detectCycles
+// runs for every manifest-listed workflow, not just m.Entry. This catches
+// the historical asymmetry where parseAllWorkflows parsed every workflow
+// (so it would parse a cyclic-but-unreachable one) but detectCycles only
+// rooted at m.Entry. After Task 4 + Task 8 of v1.1 Bundle 6, the cycle
+// surfaces as ErrRefCycle.
+func TestWalkRefs_DetectsCycleInUnreachableWorkflow(t *testing.T) {
+	// Entry has no refs (no cycle reachable from entry).
+	entry := &ir.Workflow{Name: "E", Start: "X", Exit: "X",
+		Nodes: []*ir.Node{{ID: "X"}},
+	}
+	// Two manifest-listed workflows form a cycle, neither reachable from entry.
+	a := &ir.Workflow{Name: "A", Start: "Y", Exit: "Y",
+		Nodes: []*ir.Node{
+			{ID: "Y", Kind: ir.NodeSubgraph, Config: ir.SubgraphConfig{Ref: "b.dip"}},
+		},
+	}
+	b := &ir.Workflow{Name: "B", Start: "Z", Exit: "Z",
+		Nodes: []*ir.Node{
+			{ID: "Z", Kind: ir.NodeSubgraph, Config: ir.SubgraphConfig{Ref: "a.dip"}},
+		},
+	}
+	parsed := map[string]*ir.Workflow{
+		"workflows/entry.dip": entry,
+		"workflows/a.dip":     a,
+		"workflows/b.dip":     b,
+	}
+	manifest := Manifest{Entry: "workflows/entry.dip", Files: []ManifestEntry{
+		{Path: "workflows/entry.dip"},
+		{Path: "workflows/a.dip"},
+		{Path: "workflows/b.dip"},
+	}}
+	err := walkRefs(parsed, manifest)
+	if !errors.Is(err, ErrRefCycle) {
+		t.Fatalf("walkRefs err = %v, want ErrRefCycle", err)
+	}
+}
+
 func TestNormalizeConditions_PopulatesParsedAST(t *testing.T) {
 	wf := &ir.Workflow{
 		Name: "W", Start: "A", Exit: "B",

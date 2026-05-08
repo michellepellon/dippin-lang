@@ -85,9 +85,14 @@ func verifyEntryWithBudget(cz *constrainedZip, e ManifestEntry, totalCap, total 
 	return verifyAndReadEntry(cz, e.Path, e.SHA256, effectiveCap)
 }
 
-// walkRefs verifies that every transitive subgraph ref reachable from
-// manifest.Entry resolves to a manifest-listed entry, that no ref escapes
-// workflows/, and that the resulting graph is acyclic.
+// walkRefs verifies that every transitive subgraph ref resolves to a
+// manifest-listed entry, that no ref escapes workflows/, and that the
+// ref graph is acyclic when rooted at any manifest-listed workflow.
+//
+// Cycle detection runs once per manifest-listed workflow (not only
+// m.Entry) so that a cycle in a manifest-listed-but-unreachable
+// workflow surfaces as ErrRefCycle instead of slipping through. See
+// spec § "Open ordering" step 8.
 func walkRefs(parsed map[string]*ir.Workflow, m Manifest) error {
 	graph, err := buildRefGraph(parsed)
 	if err != nil {
@@ -96,7 +101,20 @@ func walkRefs(parsed map[string]*ir.Workflow, m Manifest) error {
 	if err := verifyRefsListed(graph, m); err != nil {
 		return err
 	}
-	return detectCycles(graph, m.Entry, 64)
+	return detectCyclesAll(graph, m, 64)
+}
+
+// detectCyclesAll runs detectCycles rooted at every manifest-listed
+// workflow. Each call uses a fresh color map; overlap across roots is
+// re-explored, which is acceptable at manifest-cap scale (≤ a few
+// hundred workflows in practice).
+func detectCyclesAll(graph map[string][]string, m Manifest, maxDepth int) error {
+	for _, e := range m.Files {
+		if err := detectCycles(graph, e.Path, maxDepth); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // verifyRefsListed confirms every ref target exists in the manifest.
