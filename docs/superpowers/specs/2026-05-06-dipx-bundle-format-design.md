@@ -215,22 +215,23 @@ Hash binds to whole logical files. Sub-range hashing, Merkle trees over chunks, 
 2. **Read manifest bytes** with a length-bounded reader; record `manifestDigest = SHA-256(manifest.json bytes-as-stored)` for later use as bundle identity.
 3. **Decode manifest** with token-based duplicate-key rejection, depth cap 32, BOM rejection, `json.Number` for `format_version`. Validate `format_version` against `SupportedFormatVersions()` — unknown → `ErrUnsupportedFormatVersion`.
 4. **Validate manifest shape**: every `files[].path` is canonical, every `files[].sha256` is well-formed (length, hex, lowercase), `entry` matches a `files[].path` byte-exact, no duplicate paths or case-fold-equal paths, reserved key `signatures` not present, paths within caps. Failures → `ErrManifestInvalid`.
-5. **Verify hashes**: for each `files[]` entry: locate the zip entry by canonical path; stream-decompress its bytes through a length-bounded reader (per-file size cap and ratio cap enforced *during* decompression, not after) into a fresh `[]byte`; compute SHA-256; compare to manifest. Mismatch → `*BundleError{Sentinel: ErrHashMismatch, Path: path, Detail: "expected: X, actual: Y"}`. Cap-check accumulated total uncompressed size during this loop.
-6. **Parse**: only after step 5 verifies all hashes, parse each `.dip` file via `parser.NewParser(string(verifiedBytes), path).Parse()`. Implementations MUST ensure the bytes presented to `parser.NewParser` come from the same `[]byte` allocation produced by step 5; re-reading from the zip MUST be a structural impossibility (encoded in the type signature; see *Type-encoded ordering*). Failures → `ErrEntryParse` for entry; `ErrSubgraphParse` for subgraphs.
-7. **Walk refs** with tri-color DFS for cycle detection; reject cycles (`ErrRefCycle`), refs that escape `workflows/` (`ErrRefEscape`), and refs that resolve to paths not in `files[]` (`ErrFileMissing`).
-8. **Normalize**: for each parsed workflow, invoke `simulate.EnsureConditionsParsed` to populate `Condition.Parsed` on every edge condition and every `manager_loop` `StopCondition`/`SteerCondition`. Done eagerly while no other goroutines hold the workflow, to prevent runtime races on shared `*ir.Workflow` values.
-9. **Build** the immutable in-memory `Bundle` with pre-sized maps (`make(map[string]*ir.Workflow, len(files))`) and return.
+5. **Verify no extra zip entries**: enumerate non-directory zip entries; reject any whose canonical path does not appear in `files[]` (`ErrFileUnexpected`). This step rejects junk before step 6 spends CPU hashing files the bundle would reject anyway. Implementations MAY fold this check into step 4's manifest-shape validation as long as the externally observable error precedence is preserved.
+6. **Verify hashes**: for each `files[]` entry: locate the zip entry by canonical path; stream-decompress its bytes through a length-bounded reader (per-file size cap and ratio cap enforced *during* decompression, not after) into a fresh `[]byte`; compute SHA-256; compare to manifest. Mismatch → `*BundleError{Sentinel: ErrHashMismatch, Path: path, Detail: "expected: X, actual: Y"}`. Cap-check accumulated total uncompressed size during this loop.
+7. **Parse**: only after step 6 verifies all hashes, parse each `.dip` file via `parser.NewParser(string(verifiedBytes), path).Parse()`. Implementations MUST ensure the bytes presented to `parser.NewParser` come from the same `[]byte` allocation produced by step 6; re-reading from the zip MUST be a structural impossibility (encoded in the type signature; see *Type-encoded ordering*). Failures → `ErrEntryParse` for entry; `ErrSubgraphParse` for subgraphs.
+8. **Walk refs** with tri-color DFS for cycle detection; reject cycles (`ErrRefCycle`), refs that escape `workflows/` (`ErrRefEscape`), and refs that resolve to paths not in `files[]` (`ErrFileMissing`).
+9. **Normalize**: for each parsed workflow, invoke `simulate.EnsureConditionsParsed` to populate `Condition.Parsed` on every edge condition and every `manager_loop` `StopCondition`/`SteerCondition`. Done eagerly while no other goroutines hold the workflow, to prevent runtime races on shared `*ir.Workflow` values.
+10. **Build** the immutable in-memory `Bundle` with pre-sized maps (`make(map[string]*ir.Workflow, len(files))`) and return.
 
-Bytes read in step 5 are the bytes used for parsing in step 6. **There is no second read from the zip** and no TOCTOU.
+Bytes read in step 6 are the bytes used for parsing in step 7. **There is no second read from the zip** and no TOCTOU.
 
 Implementations MUST close all file handles and zip-reader internals on every exit path from `Open`/`OpenReader`/`OpenLax`, **success and error alike**. `defer` statements covering `*os.File` and `*zip.Reader` are the recommended pattern.
 
 #### Type-encoded ordering
 
-The Go reference implementation MUST encode steps 5 and 6 such that step 6 cannot bypass step 5 as a structural matter, not just a documentation matter:
+The Go reference implementation MUST encode steps 6 and 7 such that step 7 cannot bypass step 6 as a structural matter, not just a documentation matter:
 
-- Step 5 returns `map[string]verifiedBytes` where `verifiedBytes` is an unexported wrapping type.
-- Step 6 takes `map[string]verifiedBytes`. It has no `*zip.Reader` parameter.
+- Step 6 returns `map[string]verifiedBytes` where `verifiedBytes` is an unexported wrapping type.
+- Step 7 takes `map[string]verifiedBytes`. It has no `*zip.Reader` parameter.
 - The Open pathway invokes `parser.NewParser` from exactly one site, and that site takes its input from `verifiedBytes.Bytes()`. The `dipx` package as a whole has TWO additional `parser.NewParser` sites that consume trusted local-disk bytes: the dirSource pathway (`parseDipFile` in `source.go`) and the Pack pathway (`parsePackSource` in `helpers.go`). Neither produces nor consumes `verifiedBytes`; the type-encoded invariant binds only the Open pathway, which is the only one where bytes originate from a `.dipx` archive.
 - A CI test (`TestInvariant_ParserNewParserSiteCount`) pins the total to exactly three sites: the Open verifiedBytes site, the dirSource site, and the Pack site. Any drift fails the test.
 
@@ -242,7 +243,7 @@ Caps MUST be enforced via streaming, not by trusting ZIP header `UncompressedSiz
 
 - The per-file uncompressed cap (50 MB) MUST be enforced via `io.LimitReader` wrapping the decompressor. Excess bytes trip the cap before allocation.
 - The per-file compression-ratio cap (1000:1) MUST be checked while reading: track compressed bytes consumed against decompressed bytes produced; abort once the ratio exceeds 1000. **[Deferred to v1.1 — Phase 4 C3.](../plans/2026-05-07-dipx-followups.md) v1 enforces only the absolute 50 MB per-file uncompressed cap.**
-- The total uncompressed cap (100 MB) MUST be enforced as a running sum across files; abort the moment a step-5 read crosses the threshold, before allocating the offending file's full buffer.
+- The total uncompressed cap (100 MB) MUST be enforced as a running sum across files; abort the moment a step-6 read crosses the threshold, before allocating the offending file's full buffer.
 - The 1 MB manifest cap MUST be enforced before JSON parsing begins.
 
 Implementations MUST NOT fully buffer an entry into a `[]byte` and then check size — they MUST refuse to allocate beyond the cap.
@@ -308,7 +309,7 @@ dipx/
   *_test.go
 ```
 
-`dipx` imports `ir`, `parser`, **and `simulate`**. The `simulate` import is required because step 8 invokes `simulate.EnsureConditionsParsed` to render returned workflows ready for execution. This extends the architectural rule in `CLAUDE.md` ("Packages import `ir` but not each other"). `CLAUDE.md` MUST be amended in the same change to declare a "loader" tier, parallel to the existing "analysis" tier exemption: `dipx` may compose `ir + parser + simulate`. The exemption is bounded — `dipx` MUST NOT import `validator`, `cost`, `formatter`, or any other analysis package.
+`dipx` imports `ir`, `parser`, **and `simulate`**. The `simulate` import is required because step 9 invokes `simulate.EnsureConditionsParsed` to render returned workflows ready for execution. This extends the architectural rule in `CLAUDE.md` ("Packages import `ir` but not each other"). `CLAUDE.md` MUST be amended in the same change to declare a "loader" tier, parallel to the existing "analysis" tier exemption: `dipx` may compose `ir + parser + simulate`. The exemption is bounded — `dipx` MUST NOT import `validator`, `cost`, `formatter`, or any other analysis package.
 
 `Open` and `Pack` are decomposed into helpers in `helpers.go` to keep each function under cyclomatic 5 / cognitive 7. Indicative decomposition:
 
@@ -491,10 +492,11 @@ When a bundle fails multiple invariants, `Open` returns the first error encounte
 1. ZIP structural / forbidden feature (encryption, BZIP2, multi-disk, central-dir mismatch, duplicate entries, symlink mode, truncation).
 2. Manifest decoding (size cap, BOM, JSON syntax, depth cap, duplicate keys).
 3. Manifest shape (format_version, missing required fields, malformed sha256, reserved-key presence, path canonicalization, duplicate paths).
-4. Cap exceeded (during streaming hash verification).
-5. Hash mismatch (file body bytes don't match manifest).
-6. Parse error (workflow source is invalid Dippin).
-7. Ref resolution / cycle / escape.
+4. Extra zip entries (non-directory entries not listed in `files[]`).
+5. Cap exceeded (during streaming hash verification).
+6. Hash mismatch (file body bytes don't match manifest).
+7. Parse error (workflow source is invalid Dippin).
+8. Ref resolution / cycle / escape.
 
 This precedence ensures that "I have a malformed manifest" doesn't surface as "hash mismatch" and that operators can triage errors by category. Implementations SHOULD NOT short-circuit early errors when later errors might be more useful — first error wins.
 
@@ -767,7 +769,7 @@ The following are known design trade-offs and intended follow-ups:
 6. **No streaming Open.** All workflow bytes are read into memory at Open time. Practical limit: 100 MB total uncompressed (the cap).
 7. **No `OpenLite` mode that drops file bytes.** `Bundle.ReadFile` requires bytes to be retained. Tracker uses ~2× workflow bytes (raw + parsed IR) per open bundle. Memory profile of long-running Tracker processes SHOULD be measured before scale deployment.
 8. **No process-wide memory accountant.** Each `Bundle` enforces per-bundle caps; the host is responsible for limiting concurrent open bundles. v1.1 may add a `WithMaxTotalBytes` hook.
-9. **No parallel hash verification.** Step 5 of Open ordering is serial in v1. Future versions MAY parallelize across files; this is an implementation choice, not a wire-format change.
+9. **No parallel hash verification.** Step 6 of Open ordering is serial in v1. Future versions MAY parallelize across files; this is an implementation choice, not a wire-format change.
 10. **Hash comparison is not constant-time.** This is deliberate: the threat model is integrity, not authentication. Constant-time would obscure the model.
 
 ## Testing strategy
