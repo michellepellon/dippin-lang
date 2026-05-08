@@ -215,9 +215,9 @@ Go's `flag` package stops parsing at the first non-flag argument. Users running 
 
 `Pack` checks ctx between preparePackManifest and writeBundle, but `writeBundle`'s zip-writer loop has no ctx check. Asymmetric with Open (which checks ctx between every CPU-bound stage). **Disposition:** v1.1 polish.
 
-### inspect JSON encoder error silently swallowed (Phase 10, P10.3)
+### inspect JSON encoder error silently swallowed (Phase 10, P10.3) — RESOLVED in v1.0
 
-`printInspectJSON` returns exitDipxIOError on `enc.Encode` failure but doesn't print the error to stderr. Operator gets exit 3 with no diagnostic. **Disposition:** v1.1.
+`printInspectJSON` returns exitDipxIOError on `enc.Encode` failure but doesn't print the error to stderr. Operator gets exit 3 with no diagnostic. **Resolution:** signature now takes a `stderr io.Writer`; encode failures are surfaced via `fmt.Fprintln(stderr, err)` before returning the I/O exit code.
 
 ### inspect --no-verify is a no-op (Phase 10, P10.4)
 

@@ -32,7 +32,7 @@ func runInspect(stdout, stderr io.Writer, args []string) int {
 	case "text":
 		return printInspectText(stdout, bundle)
 	case "json":
-		return printInspectJSON(stdout, bundle)
+		return printInspectJSON(stdout, stderr, bundle)
 	default:
 		fmt.Fprintf(stderr, "unknown --format value: %q (expected text or json)\n", format)
 		return exitDipxUserError
@@ -74,8 +74,11 @@ func printInspectText(stdout io.Writer, b *dipx.Bundle) int {
 	return exitDipxOK
 }
 
-// printInspectJSON writes the manifest as indented JSON.
-func printInspectJSON(stdout io.Writer, b *dipx.Bundle) int {
+// printInspectJSON writes the manifest as indented JSON. Encode failures are
+// surfaced to stderr alongside the I/O exit code so an operator running
+// `dippin inspect --format=json` in a script gets diagnostic context, not a
+// bare non-zero exit.
+func printInspectJSON(stdout, stderr io.Writer, b *dipx.Bundle) int {
 	m := b.Manifest()
 	id := b.Identity()
 	out := map[string]interface{}{
@@ -88,6 +91,7 @@ func printInspectJSON(stdout io.Writer, b *dipx.Bundle) int {
 	enc := json.NewEncoder(stdout)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(out); err != nil {
+		fmt.Fprintln(stderr, err)
 		return exitDipxIOError
 	}
 	return exitDipxOK

@@ -263,8 +263,8 @@ func TestPack_RejectsSymlink(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	_, err := Pack(context.Background(), link, &buf)
-	if err == nil {
-		t.Fatal("expected error packing through symlink")
+	if !errors.Is(err, ErrPathUnsafe) {
+		t.Fatalf("err = %v, want ErrPathUnsafe", err)
 	}
 }
 

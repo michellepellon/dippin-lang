@@ -328,7 +328,7 @@ Use `dippin help` (not `--help`) to see all commands.
 | `dippin unpack <bundle.dipx>` | Atomic extract. `-o <destdir>` (default: bundle name without `.dipx`). `--force` overwrites with rollback-safe backup-aside swap. |
 | `dippin inspect <bundle.dipx>` | Print manifest, identity (sha256 over manifest bytes), and per-file checksums. `--format text\|json`. |
 
-## Bundles (`.dipx`)
+## Bundle Workflow (`.dipx`)
 
 A `.dipx` is a deterministic, content-addressed ZIP packaging a `.dip` entry plus every transitively-reachable subgraph ref. **Every analysis command (validate, lint, doctor, check, parse, cost, coverage, simulate, optimize, unused, graph, diff, explain, export-dot) accepts a `.dipx` argument** — the bundle is opened via `dipx.Load`, hash-verified, and the entry workflow is fed to the analyzer just like a `.dip` would be.
 

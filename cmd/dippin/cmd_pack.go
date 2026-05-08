@@ -95,6 +95,10 @@ func parsePackArgs(stderr io.Writer, args []string) (entry, dest string, dryRun 
 		return "", "", false, exitDipxUserError
 	}
 	entry = rest[0]
+	if !strings.EqualFold(filepath.Ext(entry), ".dip") {
+		fmt.Fprintf(stderr, "error: entry must be a .dip file (got %q)\n", entry)
+		return "", "", false, exitDipxUserError
+	}
 	dest = *output
 	if dest == "" {
 		dest = strings.TrimSuffix(entry, filepath.Ext(entry)) + ".dipx"

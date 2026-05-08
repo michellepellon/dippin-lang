@@ -101,7 +101,7 @@ A `.dipx` file is a ZIP archive (PKZIP APPNOTE.TXT). The following ZIP features 
 
 ### Bundle layout
 
-```
+```text
 manifest.json              # at zip root, exactly this name (lowercase ASCII)
 workflows/                 # mirrors original directory structure
   api_design.dip
@@ -187,7 +187,7 @@ A *ref* is the value of a `subgraph ref:` or `manager_loop subgraph_ref:` field 
 
 Given a parent workflow at bundle-relative path `relativeTo` and a ref string `refPath`, the resolved bundle-relative path is computed as follows (pseudocode):
 
-```
+```text
 resolved := lexical-clean(join(directory(relativeTo), refPath))
 ```
 
@@ -296,7 +296,7 @@ Open MUST NOT enforce zip ordering on read; reproducibility is a producer-side p
 
 ### Package layout
 
-```
+```text
 dipx/
   dipx.go        # Public API: Pack, Open, OpenReader, OpenLax, Validate, Extract, Load
   manifest.go    # Manifest type, JSON encoding/decoding with strict rules
@@ -312,7 +312,7 @@ dipx/
 
 `Open` and `Pack` are decomposed into helpers in `helpers.go` to keep each function under cyclomatic 5 / cognitive 7. Indicative decomposition:
 
-```
+```text
 Open  → openZip → readManifest → decodeManifest → verifyManifestShape →
         verifyHashes → parseAllWorkflows → walkRefs → normalizeConditions → buildBundle
 Pack  → walkSourceTree → resolveRefs → buildManifest → writeBundle
@@ -552,7 +552,7 @@ dippin inspect <bundle.dipx> [--no-verify] [--format=text|json]
 
 - Default `--format=text` prints human-readable manifest with verification status footer:
 
-```
+```text
 format: 1
 entry:  workflows/api_design.dip
 identity: sha256:0a7d9f...
@@ -623,7 +623,7 @@ Tolerant decoding of unknown JSON keys is the v1 mechanism for additive evolutio
 
 This sketch is non-normative for v1 but constrains v1 design choices to remain forward-compatible:
 
-```
+```text
 Bundle layout (v2):
   manifest.json
   manifest.sig          # detached signature
@@ -766,7 +766,7 @@ The following are known design trade-offs and intended follow-ups:
 
 ### Unit tests in `dipx/`
 
-```
+```text
 dipx/
   dipx_test.go        # Pack/Open/Load round-trips, format_version handling, context cancellation
   manifest_test.go    # JSON encoding rules, duplicate-key rejection, json.Number, depth cap
