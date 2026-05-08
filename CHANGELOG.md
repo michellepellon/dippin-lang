@@ -2,6 +2,27 @@
 
 All notable changes to dippin-lang are documented here. Versions follow [semver](https://semver.org/).
 
+## [Unreleased]
+
+`.dipx` format v1.1 work-in-progress. The spec at `docs/superpowers/specs/2026-05-06-dipx-bundle-format-design.md` is the canonical contract; Bundle 6 closes ambiguities in it and brings two implementation details into line.
+
+### Fixed
+
+- **Cycle detection now covers every manifest-listed workflow.** `dipx.Open` previously DFS'd the ref graph rooted only at `m.Entry`, while `parseAllWorkflows` already parsed every manifest-listed workflow. A cycle in a manifest-listed-but-entry-unreachable workflow could slip through. `walkRefs` now iterates `detectCycles` over `m.Files`. (Bundle 6 / Phase 5 L2/L3.)
+- **`dippin pack`/`unpack`/`inspect` exit code 2 (integrity failure) now matches the spec contract.** `isIntegrityErr` previously routed only 5 sentinels to exit 2; 7 others (`ErrUnsupportedFormatVersion`, `ErrFileMissing`, `ErrFileUnexpected`, `ErrEntryNotInManifest`, `ErrRefEscape`, `ErrRefCycle`, `ErrCapExceeded`, `ErrPathUnsafe`) defaulted to user-error 1. Refactored to a sentinel-slice + loop covering all 12 spec-enumerated sentinels. (Bundle 6 / Phase 8 M1.)
+
+### Spec
+
+Seven `.dipx` bundle-format spec clarifications (no behavior change beyond the two Fixed items above). Each is described in detail in the per-commit messages on this branch.
+
+- **Path canonicalization rule 2** narrowed to "Backslash `\` MUST be rejected" (was "Backslash `\` and any other separator…"). The implementation already rejects only backslash; the spec wording was over-broad.
+- **Per-sentinel error context preamble** added to disambiguate `BundleError.Path` semantics across three real cases: bundle-relative (read-side, post-Open), JSON field name (manifest decode pre-bundle-context), source filesystem path (Pack-side). Spec now requires `Open` to enrich (b) → (a) before returning.
+- **Open ordering step 5** ("Verify no extra zip entries") inserted as a normative step between manifest-shape validation and hash verification; subsequent steps renumbered. `ErrFileUnexpected` added to the error precedence list at category 4.
+- **Cycle detection scope** documented: spec § "Open ordering" step 8 now specifies "every manifest-listed workflow," matching `parseAllWorkflows`.
+- **Integrity-failure sentinel set** for CLI exit code 2 expanded from 5 to all 12 spec-enumerated sentinels.
+- **`inspect --format=json` status object schema** documented with a concrete JSON example (`valid`, `verify_skipped`, `file_count`, `byte_total`, `format_version`).
+- **Tracker integration migration example** updated: `Source.Workflow(ctx, sub.Ref, parentPath)` (was missing `ctx`). Bundle 1 will land the matching Go signature change.
+
 ## [v0.24.0] — 2026-05-08
 
 ### Added
