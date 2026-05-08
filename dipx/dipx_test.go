@@ -239,6 +239,22 @@ func TestBundle_ConcurrentReads(t *testing.T) {
 		t.Fatal(err)
 	}
 	const entryPath = "workflows/hello.dip"
+	// firstErr captures the first non-nil error any goroutine sees on the
+	// shared lookup/read paths, so a race-induced failure can't pass silently.
+	var (
+		errMu    sync.Mutex
+		firstErr error
+	)
+	record := func(err error) {
+		if err == nil {
+			return
+		}
+		errMu.Lock()
+		defer errMu.Unlock()
+		if firstErr == nil {
+			firstErr = err
+		}
+	}
 	var wg sync.WaitGroup
 	for i := 0; i < 100; i++ {
 		wg.Add(1)
@@ -247,14 +263,20 @@ func TestBundle_ConcurrentReads(t *testing.T) {
 			_ = b.Entry()
 			_ = b.Manifest()
 			_ = b.Identity()
-			// Exercise the shared lookup/read paths too — these are what the
+			// Exercise the shared lookup/read paths — these are what the
 			// concurrency contract actually covers.
-			_, _ = b.Lookup(entryPath)
-			_, _ = b.Workflow("hello.dip", entryPath)
-			_, _ = b.ReadFile(entryPath)
+			_, err := b.Lookup(entryPath)
+			record(err)
+			_, err = b.Workflow("hello.dip", entryPath)
+			record(err)
+			_, err = b.ReadFile(entryPath)
+			record(err)
 		}()
 	}
 	wg.Wait()
+	if firstErr != nil {
+		t.Fatalf("concurrent read returned error: %v", firstErr)
+	}
 }
 
 func TestPack_RejectsSymlink(t *testing.T) {

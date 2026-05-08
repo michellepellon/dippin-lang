@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -66,8 +67,14 @@ func TestRunInspect_NoArgs(t *testing.T) {
 }
 
 func TestRunInspect_MissingBundle(t *testing.T) {
+	// Build the missing-bundle path inside t.TempDir() so the test is
+	// deterministic across environments — a hardcoded "/nonexistent.dipx"
+	// would behave differently on systems where "/" isn't writable, where
+	// some unrelated nonexistent.dipx happens to exist, or under sandboxes
+	// that rewrite root paths.
+	missing := filepath.Join(t.TempDir(), "nonexistent.dipx")
 	var stdout, stderr bytes.Buffer
-	code := runInspect(&stdout, &stderr, []string{"/nonexistent.dipx"})
+	code := runInspect(&stdout, &stderr, []string{missing})
 	// ErrManifestMissing wraps an *os.PathError ("no such file or directory").
 	// classifyExit's isIOErr helper detects the wrapped PathError via
 	// errors.As and routes to the documented I/O exit code (3), per Phase 8
