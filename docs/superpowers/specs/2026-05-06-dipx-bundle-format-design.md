@@ -500,6 +500,14 @@ This precedence ensures that "I have a malformed manifest" doesn't surface as "h
 
 ### Per-sentinel error context (normative)
 
+`BundleError.Path` carries one of three values depending on where the error originates:
+
+- **(a) Bundle-relative path** — the canonical, normal case for read-side errors that fire after the bundle is open and a path context exists (e.g., `ErrHashMismatch`, `ErrFileMissing`, `ErrPathUnsafe`).
+- **(b) JSON field name** — for manifest decode errors that fire before the bundle path is in scope inside the manifest decoder (`ErrManifestInvalid`, `ErrUnsupportedFormatVersion`). `Open` MUST enrich these errors to case (a) before returning, so external callers of `Open`/`OpenReader`/`OpenLax` always observe a bundle-relative `Path` for read-side errors.
+- **(c) Source filesystem path** — for Pack-side errors that fire before any bundle file exists (e.g., `ErrPathUnsafe` raised by `Pack` against a source tree). Pack errors are not subject to the (b)→(a) enrichment requirement: there is no bundle file yet.
+
+The table below describes the post-enrichment contract for read-side errors and the natural origin for Pack-side errors.
+
 | Sentinel | `BundleError.Path` | `BundleError.Detail` | `BundleError.Cause` |
 |---|---|---|---|
 | `ErrUnsupportedFormatVersion` | bundle path | `"got N; supports [1]"` | nil |
