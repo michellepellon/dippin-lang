@@ -582,7 +582,7 @@ status: VALID (3 files, 24831 bytes, format_version 1)
 |---|---|
 | 0 | Success |
 | 1 | User error (missing entry, invalid arguments, validation failure pre-pack) |
-| 2 | Integrity failure (`ErrHashMismatch`, `ErrManifestInvalid`, `ErrZipFeatureForbidden`, `ErrZipTruncated`) |
+| 2 | Integrity failure (`ErrHashMismatch`, `ErrManifestInvalid`, `ErrUnsupportedFormatVersion`, `ErrZipFeatureForbidden`, `ErrZipTruncated`, `ErrFileMissing`, `ErrFileUnexpected`, `ErrEntryNotInManifest`, `ErrRefEscape`, `ErrRefCycle`, `ErrCapExceeded`, `ErrPathUnsafe`) |
 | 3 | I/O error (filesystem failure, write failure, disk full) |
 | 4 | Cancelled (context cancellation, signal) |
 
