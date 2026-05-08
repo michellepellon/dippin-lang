@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -409,5 +410,58 @@ func TestExtract_ForcePreservesDestOnRenameFailure(t *testing.T) {
 	}
 	if !bytes.Equal(got, original) {
 		t.Fatalf("destDir contents corrupted: got %q, want %q", got, original)
+	}
+}
+
+// mustWriteBundleWithRawManifest writes a minimal .dipx file at dst whose
+// only zip entry is manifest.json with the provided body. Used to test
+// manifest-decode error paths. The entry is created with Flags 0x800 (UTF-8
+// filenames) to satisfy the zip reader's strict-UTF8 check.
+func mustWriteBundleWithRawManifest(t *testing.T, dst string, manifestJSON []byte) {
+	t.Helper()
+	f, err := os.Create(dst)
+	if err != nil {
+		t.Fatalf("create %s: %v", dst, err)
+	}
+	defer func() { _ = f.Close() }()
+	zw := zip.NewWriter(f)
+	defer func() { _ = zw.Close() }()
+	h := &zip.FileHeader{Name: "manifest.json", Flags: 0x800}
+	h.SetMode(0644)
+	mw, err := zw.CreateHeader(h)
+	if err != nil {
+		t.Fatalf("create manifest entry: %v", err)
+	}
+	if _, err := mw.Write(manifestJSON); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+}
+
+// TestOpen_ManifestInvalid_PathIsBundlePath asserts that ErrManifestInvalid
+// surfaced through Open carries the bundle path in BundleError.Path —
+// not an empty string, not a JSON field name. Regression test for the
+// Phase 3 manifest-decoder error-context finding (Bundle 5).
+func TestOpen_ManifestInvalid_PathIsBundlePath(t *testing.T) {
+	dir := t.TempDir()
+	bundlePath := filepath.Join(dir, "broken.dipx")
+	// format_version is a string, not a number — triggers ErrManifestInvalid
+	// from the manifest decoder, with original Path="format_version".
+	mustWriteBundleWithRawManifest(t, bundlePath, []byte(`{"format_version":"1","entry":"workflows/a.dip","files":[]}`))
+	_, err := Open(context.Background(), bundlePath)
+	if err == nil {
+		t.Fatal("Open returned nil, want ErrManifestInvalid")
+	}
+	if !errors.Is(err, ErrManifestInvalid) {
+		t.Fatalf("err = %v, want ErrManifestInvalid", err)
+	}
+	var be *BundleError
+	if !errors.As(err, &be) {
+		t.Fatalf("err = %T, want *BundleError", err)
+	}
+	if be.Path != bundlePath {
+		t.Errorf("BundleError.Path = %q, want %q (bundle path)", be.Path, bundlePath)
+	}
+	if !strings.Contains(be.Detail, "format_version") {
+		t.Errorf("BundleError.Detail = %q; expected to contain \"format_version\" (preserved from original Path)", be.Detail)
 	}
 }

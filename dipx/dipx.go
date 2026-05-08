@@ -40,7 +40,12 @@ func Validate(ctx context.Context, path string) error {
 	return err
 }
 
-// openFile opens path on disk and delegates to openFromReader.
+// openFile opens path on disk and delegates to openFromReader. Errors
+// returned by openFromReader are enriched with the bundle path so external
+// callers observe case (a) Path semantics per spec § "Per-sentinel error
+// context": ErrManifestInvalid and ErrUnsupportedFormatVersion errors
+// originating in the manifest decoder (which has no bundle path in scope)
+// are rewritten to carry the bundle path here.
 func openFile(ctx context.Context, path string, mode openMode) (*Bundle, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -51,7 +56,11 @@ func openFile(ctx context.Context, path string, mode openMode) (*Bundle, error) 
 	if err != nil {
 		return nil, newError(ErrManifestMissing, path, "stat failed", err)
 	}
-	return openFromReader(ctx, f, stat.Size(), mode)
+	bundle, err := openFromReader(ctx, f, stat.Size(), mode)
+	if err != nil {
+		return nil, enrichBundlePath(err, path)
+	}
+	return bundle, nil
 }
 
 // openFromReader runs the 9-step Open ordering: zip → manifest read → manifest
