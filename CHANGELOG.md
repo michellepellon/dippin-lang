@@ -10,6 +10,8 @@ All notable changes to dippin-lang are documented here. Versions follow [semver]
 
 - **Cycle detection now covers every manifest-listed workflow.** `dipx.Open` previously DFS'd the ref graph rooted only at `m.Entry`, while `parseAllWorkflows` already parsed every manifest-listed workflow. A cycle in a manifest-listed-but-entry-unreachable workflow could slip through. `walkRefs` now iterates `detectCycles` over `m.Files`. (Bundle 6 / Phase 5 L2/L3.)
 - **`dippin pack`/`unpack`/`inspect` exit code 2 (integrity failure) now matches the spec contract.** `isIntegrityErr` previously routed only 5 sentinels to exit 2; 7 others (`ErrUnsupportedFormatVersion`, `ErrFileMissing`, `ErrFileUnexpected`, `ErrEntryNotInManifest`, `ErrRefEscape`, `ErrRefCycle`, `ErrCapExceeded`, `ErrPathUnsafe`) defaulted to user-error 1. Refactored to a sentinel-slice + loop covering all 12 spec-enumerated sentinels. (Bundle 6 / Phase 8 M1.)
+- **`Open` enriches manifest-decode errors with the bundle path.** `BundleError.Path` for `ErrManifestInvalid` and `ErrUnsupportedFormatVersion` was previously empty or a JSON field name (e.g., `"format_version"`); external callers now always observe the bundle file path. The original Path is preserved in Detail when non-empty. (Bundle 5 / Phase 3 manifest-decoder error-context.)
+- **`Pack` subgraph parse failures attribute to `ErrSubgraphParse`.** Previously every parse failure surfaced as `ErrEntryParse` regardless of which workflow failed; subgraph failures now correctly classify as `ErrSubgraphParse` with the subgraph's filesystem path. (Bundle 5 / P10.9.)
 
 ### Spec
 
