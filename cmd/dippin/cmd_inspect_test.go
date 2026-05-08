@@ -120,6 +120,9 @@ func TestRunInspect_NoVerifyEmitsVerifySkippedTrue(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &parsed); err != nil {
 		t.Fatalf("unmarshal: %v\nstdout: %s", err, stdout.String())
 	}
+	if !parsed.Status.Valid {
+		t.Error("status.valid = false, want true (structural admission passed)")
+	}
 	if !parsed.Status.VerifySkipped {
 		t.Error("status.verify_skipped = false, want true")
 	}
