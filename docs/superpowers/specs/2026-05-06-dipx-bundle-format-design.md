@@ -168,7 +168,7 @@ The following rules apply identically in `Pack`, `Open`, `Source.Workflow`, and 
 A path is in **canonical form** if and only if all of:
 
 1. It is a valid UTF-8 sequence in Unicode Normalization Form C (NFC).
-2. Separators are forward-slash `/` only. Backslash `\` and any other separator MUST be rejected.
+2. Separators are forward-slash `/` only. Backslash `\` MUST be rejected.
 3. There are no leading `./` segments, no `..` segments, no empty path components (`//`), no leading `/`.
 4. It contains no NUL byte (U+0000), no ASCII control characters (< 0x20), no DEL (0x7F).
 5. No path component has leading or trailing whitespace.
