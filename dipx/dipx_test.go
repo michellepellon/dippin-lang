@@ -465,3 +465,57 @@ func TestOpen_ManifestInvalid_PathIsBundlePath(t *testing.T) {
 		t.Errorf("BundleError.Detail = %q; expected to contain \"format_version\" (preserved from original Path)", be.Detail)
 	}
 }
+
+// TestPack_BadSubgraph_ReportsErrSubgraphParse asserts that a parse
+// failure in a transitively-reached subgraph (not the entry) surfaces
+// as ErrSubgraphParse, not ErrEntryParse — and that BundleError.Path
+// is the subgraph's filesystem path. Regression for P10.9.
+func TestPack_BadSubgraph_ReportsErrSubgraphParse(t *testing.T) {
+	dir := t.TempDir()
+	entryPath := filepath.Join(dir, "entry.dip")
+	subPath := filepath.Join(dir, "sub.dip")
+	// Valid entry that refs sub.dip.
+	if err := os.WriteFile(entryPath, []byte(packTestEntryWithRef("sub.dip")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Intentionally invalid subgraph (not parseable): "workflow" alone is an
+	// incomplete declaration that causes the parser to return an error.
+	if err := os.WriteFile(subPath, []byte("workflow"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	_, err := Pack(context.Background(), entryPath, &buf)
+	if err == nil {
+		t.Fatal("Pack returned nil, want ErrSubgraphParse")
+	}
+	if !errors.Is(err, ErrSubgraphParse) {
+		t.Fatalf("err = %v, want ErrSubgraphParse", err)
+	}
+	if errors.Is(err, ErrEntryParse) {
+		t.Fatal("err matched ErrEntryParse, want only ErrSubgraphParse")
+	}
+	var be *BundleError
+	if !errors.As(err, &be) {
+		t.Fatalf("err = %T, want *BundleError", err)
+	}
+	if !strings.HasSuffix(be.Path, "sub.dip") {
+		t.Errorf("BundleError.Path = %q, want suffix \"sub.dip\"", be.Path)
+	}
+}
+
+// packTestEntryWithRef returns the source of a minimal valid .dip workflow
+// whose only subgraph node references refPath. Used by Pack tests that need
+// a transitive subgraph link.
+func packTestEntryWithRef(refPath string) string {
+	return `workflow Entry
+  goal: "test"
+  start: S
+  exit: E
+  subgraph S
+    ref: ` + refPath + `
+  agent E
+    prompt: end
+  edges
+    S -> E
+`
+}

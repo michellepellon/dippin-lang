@@ -296,7 +296,7 @@ func (s *packWalkState) readAndRecord(cur string) (packedFile, *ir.Workflow, err
 	if int64(len(raw)) > maxPerFileBytes {
 		return packedFile{}, nil, newError(ErrCapExceeded, cur, fmt.Sprintf("source file exceeds %d bytes", maxPerFileBytes), nil)
 	}
-	wf, err := parsePackSource(cur, raw)
+	wf, err := parsePackSource(cur, raw, cur == s.entryAbs)
 	if err != nil {
 		return packedFile{}, nil, err
 	}
@@ -341,10 +341,18 @@ func (s *packWalkState) resolveRefOnDisk(cur, ref string) (string, error) {
 // parsePackSource parses raw disk bytes for the Pack pathway. THIRD parser site
 // in dipx (Pack pathway, parallel to parseDipFile in source.go). See note on
 // parseAllWorkflows for the full inventory and justification.
-func parsePackSource(path string, raw []byte) (*ir.Workflow, error) {
+//
+// isEntry distinguishes the parent workflow (ErrEntryParse) from transitively-
+// reached subgraphs (ErrSubgraphParse) so error attribution matches Open's
+// parseAllWorkflows behavior.
+func parsePackSource(path string, raw []byte, isEntry bool) (*ir.Workflow, error) {
 	wf, err := parser.NewParser(string(raw), path).Parse()
 	if err != nil {
-		return nil, newError(ErrEntryParse, path, "", err)
+		sentinel := ErrSubgraphParse
+		if isEntry {
+			sentinel = ErrEntryParse
+		}
+		return nil, newError(sentinel, path, "", err)
 	}
 	return wf, nil
 }
