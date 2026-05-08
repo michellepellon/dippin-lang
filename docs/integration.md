@@ -120,6 +120,32 @@ dot := export.ExportDOT(workflow, export.ExportOptions{
 
 ---
 
+### Loading `.dipx` Bundles
+
+For projects shipping pipelines as content-addressed artifacts, the `dipx` package replaces ad-hoc directory walking with a single integrity-verified entry point:
+
+```go
+import "github.com/2389-research/dippin-lang/dipx"
+
+src, err := dipx.Load(ctx, "pipeline.dipx")  // also accepts pipeline.dip
+if err != nil { return err }
+
+entry := src.Entry()                                          // *ir.Workflow
+child, err := src.Workflow("phases/review.dip", entry.SourceLocation.File)
+```
+
+`Source` is the interface runtimes program against. Both `.dip`-on-disk and `.dipx`-bundle sources satisfy it; the `Workflow(refPath, relativeTo string)` argument order matches `flatten.Resolver.Resolve`. `dipx.Open` returns a `*Bundle` that additionally exposes:
+
+- `Manifest()` — the parsed manifest (format version, entry path, files[])
+- `Identity()` — 32-byte SHA-256 over the manifest bytes-as-stored (a stable content-addressed id)
+- `ReadFile(path)` — raw bytes for any bundle-relative path
+
+`dipx.Pack(ctx, entry, w)` writes a deterministic ZIP from a `.dip` entry; `dipx.Extract(ctx, src, dest, allowOverwrite)` atomically unpacks one. Both refuse symlinks anywhere in the source tree (Pack) or staging tree (Extract) and enforce the spec's per-file (50 MB) and total-bundle (100 MB) caps.
+
+**Note:** `dipx` does not run `validate`/`lint`/`cost` on the bundled workflow — call `validator.Validate(src.Entry())` from your code if needed. `dippin pack` does this at the CLI layer because `dipx` is bound by the loader-tier rule and cannot import `validator`.
+
+---
+
 ## The IR Type System
 
 The `ir.Workflow` is the central type all integration code works with. Understanding it is critical for writing adapters.

@@ -40,13 +40,23 @@ dippin [--format text|json] <command> [args]
 
 ## Exit Codes
 
-All commands use consistent exit codes:
+Analysis commands use the consistent triple:
 
 | Code | Meaning |
 |------|---------|
 | `0` | Success — no issues found, operation completed |
 | `1` | Error — validation failures, parse errors, check-mode drift, parity mismatches |
 | `2` | Usage error — bad flags, missing arguments, unknown command |
+
+Bundle commands (`pack`, `unpack`, `inspect`) use a finer ladder so tooling can distinguish integrity failures from I/O failures:
+
+| Code | Meaning |
+|------|---------|
+| `0` | Ok |
+| `1` | User error (parse failure, invalid input, missing flag arg) |
+| `2` | Bundle integrity failure (`ErrHashMismatch`, `ErrManifestInvalid`, `ErrZipFeatureForbidden`, `ErrZipTruncated`, `ErrUnsupportedFormatVersion`) |
+| `3` | I/O error (write failure during pack, rename failure during unpack) |
+| `4` | Cancelled (`context.Canceled` / `context.DeadlineExceeded`) |
 
 ---
 
@@ -679,6 +689,63 @@ dippin help
 
 ---
 
+### pack
+
+Build a deterministic `.dipx` bundle from a `.dip` entry workflow plus every transitively-reachable subgraph ref.
+
+```bash
+dippin pack [-o <output>] [--dry-run] <entry.dip>
+```
+
+**Flags**:
+
+- `-o <path>` — output path (default: `<entry>.dipx`; `-` writes the bundle to stdout)
+- `--dry-run` — validate and walk refs without writing output
+
+**Behavior**: Runs structural validation (DIP001–DIP009) on the entry first. Walks every transitively-reachable subgraph ref under the entry's directory, computes per-file SHA-256, and writes a deterministic ZIP (fixed mtimes, sorted entries, no platform metadata, UTF-8 filename bit always set). File output is atomic — the bundle is written to a unique temp file alongside `<output>` and renamed on success. Symlinks anywhere between the entry's source root and a leaf `.dip` are refused.
+
+**Exit codes**: bundle ladder (see *Exit Codes* above).
+
+---
+
+### unpack
+
+Extract a `.dipx` bundle into a directory atomically.
+
+```bash
+dippin unpack [-o <destdir>] [--force] <bundle.dipx>
+```
+
+**Flags**:
+
+- `-o <dir>` — destination directory (default: `<bundle>` with the `.dipx` extension stripped)
+- `--force` — overwrite an existing destination
+
+**Atomicity**: writes contents to `<destdir>.tmp`, then swaps into place. With `--force`, the existing destination is renamed to `<destdir>.bak` before the swap; on a rename failure (e.g. cross-device EXDEV) the original is restored from the backup. On any extraction failure the staging directory is removed.
+
+**Exit codes**: bundle ladder.
+
+---
+
+### inspect
+
+Print a `.dipx` bundle's manifest, identity hash, and file list.
+
+```bash
+dippin inspect [--format text|json] [--no-verify] <bundle.dipx>
+```
+
+**Flags**:
+
+- `--format text|json` — output format (default `text`)
+- `--no-verify` — reserved; v1 always integrity-verifies (the flag prints a stderr advisory)
+
+The bundle's `identity` is the SHA-256 of the manifest bytes as stored on disk — a stable content-addressable id suitable for caching and runtime resolution.
+
+**Exit codes**: bundle ladder.
+
+---
+
 ## JSON Output Mode
 
 All commands support `--format json` for machine-readable output. Diagnostics are emitted as a JSON array:
@@ -711,6 +778,7 @@ dippin --format json lint pipeline.dip
 
 The CLI auto-detects input format by file extension:
 - `.dip` — Parsed by the Dippin parser
+- `.dipx` — Loaded via `dipx.Load`: hash-verified ZIP bundle; the entry workflow is parsed and fed to the analyzer. Supported by `validate`, `lint`, `doctor`, `parse`, `cost`, `coverage`, `simulate`, `optimize`, `unused`, `graph`, `diff`, `check`, `explain`, `export-dot`.
 - `.dot` — Parsed by the DOT migration parser
 
-This applies to all commands that accept a file argument (`parse`, `validate`, `lint`, `export-dot`). The `migrate` command always expects a `.dot` input, and `fmt` always expects `.dip`.
+This applies to all commands that accept a file argument. The `migrate` command always expects a `.dot` input, `fmt` always expects `.dip`, and `pack` always expects a `.dip` entry.

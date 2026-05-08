@@ -62,18 +62,15 @@ for f in examples/*.dip; do
 done
 rm -f /tmp/dippin-precommit
 
-# Regenerate changelog.html if CHANGELOG.md is staged.
+# Regenerate site/content/changelog.md (Hugo) if CHANGELOG.md is staged.
+# The legacy gen-changelog-html.sh and sync-nav.sh were removed during the
+# Hugo migration (commit 718894d, "chore: remove original static HTML
+# replaced by Hugo"). The Hugo build picks up site/content/changelog.md
+# automatically, so the hook only needs the markdown regen step.
 if git diff --cached --name-only | grep -q '^CHANGELOG.md$'; then
-  echo "=== pre-commit: regenerate changelog.html ==="
-  ./scripts/gen-changelog-html.sh
-  git add site/changelog.html
-fi
-
-# Sync nav if layout partial or any site HTML changed.
-if git diff --cached --name-only | grep -qE '^site/_layout/|^site/.*\.html$'; then
-  echo "=== pre-commit: sync nav ==="
-  ./scripts/sync-nav.sh
-  git add site/*.html site/blog/*.html 2>/dev/null || true
+  echo "=== pre-commit: regenerate site/content/changelog.md ==="
+  ./scripts/gen-changelog.sh
+  git add site/content/changelog.md
 fi
 
 echo "=== pre-commit: all checks passed ==="

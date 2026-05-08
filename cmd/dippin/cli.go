@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/2389-research/dippin-lang/dipx"
 	"github.com/2389-research/dippin-lang/ir"
 	"github.com/2389-research/dippin-lang/migrate"
 	"github.com/2389-research/dippin-lang/parser"
@@ -70,6 +72,9 @@ func (c *CLI) commandDispatch() map[string]func([]string) ExitCode {
 		"watch":              c.CmdWatch,
 		"lsp":                c.CmdLSP,
 		"spec":               c.CmdSpec,
+		"pack":               c.CmdPack,
+		"unpack":             c.CmdUnpack,
+		"inspect":            c.CmdInspect,
 	}
 }
 
@@ -200,6 +205,12 @@ func printGlobalUsage(w io.Writer) {
 	fmt.Fprintln(w, "  watch <file-or-dir> [...]          Watch .dip files and re-lint on change")
 	fmt.Fprintln(w, "  lsp                               Start LSP server on stdio")
 	fmt.Fprintln(w, "  spec                              Print full language specification")
+	fmt.Fprintln(w, "  pack [-o out] [--dry-run] <entry.dip>")
+	fmt.Fprintln(w, "                                    Build a .dipx bundle from a .dip entry")
+	fmt.Fprintln(w, "  unpack [-o dir] [--force] <bundle.dipx>")
+	fmt.Fprintln(w, "                                    Extract a .dipx bundle to a directory")
+	fmt.Fprintln(w, "  inspect [--format text|json] <bundle.dipx>")
+	fmt.Fprintln(w, "                                    Print manifest, identity, and file list of a .dipx")
 	fmt.Fprintln(w, "  version                           Show version info")
 	fmt.Fprintln(w, "  help                              Show this help")
 }
@@ -220,8 +231,17 @@ func parseSingleFileArg(name, usage string, args []string, stderr io.Writer) (st
 	return fs.Arg(0), ExitCode(-1)
 }
 
-// parseFile reads and parses a .dip file, returning the workflow or an error.
+// parseFile reads and parses a .dip or .dipx file, returning the entry workflow.
+// Unlike loadWorkflow it does not handle .dot — that's only used by the
+// migrate-related commands. .dipx bundles are integrity-verified via dipx.Load.
 func parseFile(path string) (*ir.Workflow, error) {
+	if strings.HasSuffix(strings.ToLower(path), ".dipx") {
+		src, err := dipx.Load(context.Background(), path)
+		if err != nil {
+			return nil, err
+		}
+		return src.Entry(), nil
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -231,8 +251,18 @@ func parseFile(path string) (*ir.Workflow, error) {
 }
 
 // loadWorkflow reads a file and parses it to IR. It auto-detects .dot vs .dip
-// based on the file extension.
+// vs .dipx based on the file extension. .dipx bundles are routed through
+// dipx.Load, which integrity-verifies the manifest and returns the entry
+// workflow; .dip files keep the existing lightweight parse path; .dot files
+// flow through the migrate package.
 func loadWorkflow(path string) (*ir.Workflow, error) {
+	if strings.HasSuffix(strings.ToLower(path), ".dipx") {
+		src, err := dipx.Load(context.Background(), path)
+		if err != nil {
+			return nil, err
+		}
+		return src.Entry(), nil
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err

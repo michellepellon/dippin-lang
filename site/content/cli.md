@@ -1,8 +1,8 @@
 ---
 title: "CLI Reference"
-description: "Complete command reference for the Dippin toolchain: parse, validate, lint, format, simulate, cost, test, and 15 more commands."
+description: "Complete command reference for the Dippin toolchain: parse, validate, lint, format, simulate, cost, test, pack, unpack, inspect, and 19 more commands."
 section_label: "Reference"
-subtitle: "Every command in the dippin toolchain — authoring, export, and analysis."
+subtitle: "Every command in the dippin toolchain — authoring, export, analysis, and bundles."
 ---
 
 ## Global Usage
@@ -19,11 +19,23 @@ dippin [--format text|json] <command> [args]
 
 ### Exit Codes
 
+Analysis commands:
+
 | Code | Meaning |
 |------|---------|
 | `0` | Success — no issues found, operation completed |
 | `1` | Error — validation failures, parse errors, check-mode drift, parity mismatches |
 | `2` | Usage error — bad flags, missing arguments, unknown command |
+
+Bundle commands (`pack`, `unpack`, `inspect`) use a finer ladder so tooling can distinguish integrity failures from I/O failures:
+
+| Code | Meaning |
+|------|---------|
+| `0` | Ok |
+| `1` | User error (parse failure, invalid input) |
+| `2` | Bundle integrity failure (hash mismatch, manifest invalid, forbidden ZIP feature, truncation, unsupported format) |
+| `3` | I/O error (write failure during pack, rename failure during unpack) |
+| `4` | Cancelled (`context.Canceled` / `context.DeadlineExceeded`) |
 
 ## Authoring Commands
 
@@ -133,4 +145,26 @@ dippin [--format text|json] <command> [args]
   <h3>watch</h3>
   <div class="cmd-usage">dippin watch [--lint] [--test] &lt;file.dip&gt;</div>
   <p>Watch a workflow file for changes and re-run validation automatically. Use <code>--lint</code> to include semantic linting on each change, or <code>--test</code> to re-run scenario tests. Debounces rapid saves.</p>
+</div>
+
+## Bundle Commands
+
+<div class="group-badge lavender">Bundles</div>
+
+<div class="cmd-card">
+  <h3>pack</h3>
+  <div class="cmd-usage">dippin pack [-o &lt;out&gt;] [--dry-run] &lt;entry.dip&gt;</div>
+  <p>Build a deterministic <code>.dipx</code> bundle from a <code>.dip</code> entry, walking every transitively-reachable subgraph ref. Runs structural validation (DIP001–DIP009) before packing. <code>-o -</code> writes to stdout; <code>--dry-run</code> validates and walks refs without writing. File output is atomic via <code>os.CreateTemp</code> + rename. Refuses symlinks anywhere in the source tree, including parent components.</p>
+</div>
+
+<div class="cmd-card">
+  <h3>unpack</h3>
+  <div class="cmd-usage">dippin unpack [-o &lt;dir&gt;] [--force] &lt;bundle.dipx&gt;</div>
+  <p>Extract a <code>.dipx</code> bundle into a directory atomically. Uses staging dir + rename. <code>--force</code> overwrites an existing destination via a backup-aside / rename-into-place / remove-aside sequence so the original is preserved if the swap fails (e.g. cross-mount EXDEV).</p>
+</div>
+
+<div class="cmd-card">
+  <h3>inspect</h3>
+  <div class="cmd-usage">dippin inspect [--format text|json] &lt;bundle.dipx&gt;</div>
+  <p>Print a bundle's manifest, identity hash (SHA-256 over the manifest bytes-as-stored), and per-file checksums. Always integrity-verifies in v1.</p>
 </div>

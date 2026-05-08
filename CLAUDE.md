@@ -49,7 +49,7 @@ When a function exceeds complexity: extract helpers, don't add `//nolint` direct
 
 ## Architecture
 
-Everything flows through `ir.Workflow`. Packages import `ir` but not each other (except analysis packages that compose: doctor → validator + coverage + cost, unused → coverage + cost).
+Everything flows through `ir.Workflow`. Packages import `ir` but not each other (except analysis packages that compose: doctor → validator + coverage + cost, unused → coverage + cost). One additional exemption: **`dipx`** is a "loader tier" package and may compose `ir + parser + simulate`. The exemption is bounded — `dipx` MUST NOT import `validator`, `cost`, `formatter`, or any other analysis package. Pack-time structural validation is invoked at the CLI layer (`cmd/dippin/cmd_pack.go`), not inside `dipx`.
 
 Key gotcha: The parser stores edge conditions as `Condition.Raw` (plain text). `Condition.Parsed` (AST) is only populated by `simulate.EnsureConditionsParsed()`. Any code reading `Condition.Parsed` must ensure it's been called first — `Lint()` does this automatically.
 
