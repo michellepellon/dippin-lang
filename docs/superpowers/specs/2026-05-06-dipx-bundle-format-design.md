@@ -675,7 +675,7 @@ Open ordering for v2:
 
 0a. Open zip; read `manifest.json` bytes-as-stored (do not decode yet).
 0b. Read `manifest.sig` bytes; verify signature over `manifest.json` bytes-as-stored against configured trust roots. Failure → `ErrSignatureInvalid`.
-0c. Only after signature verification succeeds, decode the manifest and proceed with v1 ordering steps 3–9.
+0c. Only after signature verification succeeds, decode the manifest and proceed with v1 ordering steps 3–10.
 
 Signature is over the bytes-as-stored of `manifest.json` (which is reproducible because Pack canonicalizes manifest output). Signer identity is in the signature envelope, not the manifest, breaking the chicken-and-egg (you don't trust the manifest until you've verified it; the signature tells you who to trust).
 
