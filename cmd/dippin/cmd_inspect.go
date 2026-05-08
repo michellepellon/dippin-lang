@@ -1,5 +1,6 @@
 // ABOUTME: `dippin inspect` prints a .dipx bundle's manifest, identity, and
-// ABOUTME: file list. Always integrity-verifies in v1; --no-verify is reserved.
+// ABOUTME: file list. --no-verify routes to dipx.OpenManifest (manifest-only,
+// ABOUTME: no hash verification, no parse, no ref walking).
 package main
 
 import (
@@ -20,43 +21,76 @@ func (c *CLI) CmdInspect(args []string) ExitCode {
 
 // runInspect implements `dippin inspect <bundle.dipx> [--no-verify] [--format=text|json]`.
 func runInspect(stdout, stderr io.Writer, args []string) int {
-	path, format, code := parseInspectArgs(stderr, args)
+	opts, code := parseInspectArgs(stderr, args)
 	if code != -1 {
 		return code
 	}
-	bundle, err := dipx.Open(context.Background(), path)
+	if opts.noVerify {
+		return runInspectNoVerify(stdout, stderr, opts)
+	}
+	return runInspectVerify(stdout, stderr, opts)
+}
+
+// runInspectVerify is the default path: full integrity check via dipx.Open.
+func runInspectVerify(stdout, stderr io.Writer, opts inspectOpts) int {
+	bundle, err := dipx.Open(context.Background(), opts.path)
 	if err != nil {
 		return classifyExit(stderr, err)
 	}
-	switch format {
+	switch opts.format {
 	case "text":
 		return printInspectText(stdout, bundle)
 	case "json":
 		return printInspectJSON(stdout, stderr, bundle)
 	default:
-		fmt.Fprintf(stderr, "unknown --format value: %q (expected text or json)\n", format)
+		fmt.Fprintf(stderr, "unknown --format value: %q (expected text or json)\n", opts.format)
 		return exitDipxUserError
 	}
 }
 
-// parseInspectArgs parses inspect flags. On success returns (-1).
-func parseInspectArgs(stderr io.Writer, args []string) (path, format string, code int) {
+// runInspectNoVerify is the --no-verify path: load only the manifest +
+// identity via dipx.OpenManifest; emit the same shape with
+// verify_skipped=true and byte_total=0 (we don't extract bytes here).
+func runInspectNoVerify(stdout, stderr io.Writer, opts inspectOpts) int {
+	manifest, identity, err := dipx.OpenManifest(context.Background(), opts.path)
+	if err != nil {
+		return classifyExit(stderr, err)
+	}
+	status := buildInspectStatus(manifest, 0, true)
+	switch opts.format {
+	case "text":
+		return printManifestText(stdout, manifest, identity, status)
+	case "json":
+		return printManifestJSON(stdout, stderr, manifest, identity, status)
+	default:
+		fmt.Fprintf(stderr, "unknown --format value: %q (expected text or json)\n", opts.format)
+		return exitDipxUserError
+	}
+}
+
+// inspectOpts collects parsed CLI state for runInspect.
+type inspectOpts struct {
+	path     string
+	format   string
+	noVerify bool
+}
+
+// parseInspectArgs parses inspect flags. On success returns (opts, -1);
+// on failure returns (zero, non-zero exit code).
+func parseInspectArgs(stderr io.Writer, args []string) (inspectOpts, int) {
 	fs := flag.NewFlagSet("inspect", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	noVerify := fs.Bool("no-verify", false, "skip hash verification (forensic mode; v1 still verifies)")
-	f := fs.String("format", "text", "output format: text or json")
+	noVerify := fs.Bool("no-verify", false, "skip hash verification (forensic mode)")
+	format := fs.String("format", "text", "output format: text or json")
 	if err := fs.Parse(args); err != nil {
-		return "", "", exitDipxUserError
+		return inspectOpts{}, exitDipxUserError
 	}
 	rest := fs.Args()
 	if len(rest) != 1 {
 		fmt.Fprintln(stderr, "usage: dippin inspect <bundle.dipx> [--no-verify] [--format=text|json]")
-		return "", "", exitDipxUserError
+		return inspectOpts{}, exitDipxUserError
 	}
-	if *noVerify {
-		fmt.Fprintln(stderr, "--no-verify: full integrity check still runs in v1")
-	}
-	return rest[0], *f, -1
+	return inspectOpts{path: rest[0], format: *format, noVerify: *noVerify}, -1
 }
 
 // InspectStatus is the shared shape rendered by both text and JSON

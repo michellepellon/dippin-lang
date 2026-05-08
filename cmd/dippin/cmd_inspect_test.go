@@ -83,15 +83,51 @@ func TestRunInspect_JSON(t *testing.T) {
 	}
 }
 
-func TestRunInspect_NoVerifyWarning(t *testing.T) {
+// TestRunInspect_NoVerify_NoStaleWarning asserts that the v1 advisory
+// "still runs in v1" is no longer emitted — after Bundle 2 the flag is
+// a real option, not a placeholder.
+func TestRunInspect_NoVerify_NoStaleWarning(t *testing.T) {
 	bundle := packForTest(t)
 	var stdout, stderr bytes.Buffer
 	code := runInspect(&stdout, &stderr, []string{"--no-verify", bundle})
 	if code != exitDipxOK {
 		t.Fatalf("exit code = %d; stderr=%s", code, stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "full integrity check still runs") {
-		t.Errorf("expected warning on stderr, got: %s", stderr.String())
+	// After Bundle 2, --no-verify is no longer a no-op; the v1 stale warning
+	// must be gone.
+	if strings.Contains(stderr.String(), "still runs in v1") {
+		t.Errorf("stderr should no longer contain v1 stale warning; got %q", stderr.String())
+	}
+}
+
+func TestRunInspect_NoVerifyEmitsVerifySkippedTrue(t *testing.T) {
+	bundle := packForTest(t)
+	var stdout, stderr bytes.Buffer
+	cli := &CLI{Stdout: &stdout, Stderr: &stderr}
+	exit := cli.CmdInspect([]string{"--no-verify", "--format=json", bundle})
+	if exit != ExitCode(exitDipxOK) {
+		t.Fatalf("exit = %d, want 0; stderr=%s", exit, stderr.String())
+	}
+	var parsed struct {
+		Status struct {
+			Valid         bool  `json:"valid"`
+			VerifySkipped bool  `json:"verify_skipped"`
+			FileCount     int   `json:"file_count"`
+			ByteTotal     int64 `json:"byte_total"`
+			FormatVersion int   `json:"format_version"`
+		} `json:"status"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &parsed); err != nil {
+		t.Fatalf("unmarshal: %v\nstdout: %s", err, stdout.String())
+	}
+	if !parsed.Status.VerifySkipped {
+		t.Error("status.verify_skipped = false, want true")
+	}
+	if parsed.Status.ByteTotal != 0 {
+		t.Errorf("status.byte_total = %d, want 0 (OpenManifest path doesn't extract bytes)", parsed.Status.ByteTotal)
+	}
+	if parsed.Status.FileCount == 0 {
+		t.Error("status.file_count = 0, want > 0 (manifest still loads)")
 	}
 }
 
