@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/2389-research/dippin-lang/dipx"
 )
 
 const minimalDip = `workflow A
@@ -133,5 +135,47 @@ func TestRunPack_RejectsInvalidWorkflow(t *testing.T) {
 	}
 	if _, err := os.Stat(out); err == nil {
 		t.Fatalf("invalid workflow should not produce an output file at %s", out)
+	}
+}
+
+// TestIsIntegrityErr_FullSentinelSet asserts isIntegrityErr matches the
+// full integrity-class set per spec § "CLI exit codes". The 5-sentinel
+// subset (HashMismatch, ManifestInvalid, ZipFeatureForbidden, ZipTruncated,
+// UnsupportedFormatVersion) was the original v1 set; v1.1 Bundle 6
+// adds 7 more sentinels.
+func TestIsIntegrityErr_FullSentinelSet(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+	}{
+		{"HashMismatch", dipx.ErrHashMismatch},
+		{"ManifestInvalid", dipx.ErrManifestInvalid},
+		{"ZipFeatureForbidden", dipx.ErrZipFeatureForbidden},
+		{"ZipTruncated", dipx.ErrZipTruncated},
+		{"UnsupportedFormatVersion", dipx.ErrUnsupportedFormatVersion},
+		{"FileMissing", dipx.ErrFileMissing},
+		{"FileUnexpected", dipx.ErrFileUnexpected},
+		{"EntryNotInManifest", dipx.ErrEntryNotInManifest},
+		{"RefEscape", dipx.ErrRefEscape},
+		{"RefCycle", dipx.ErrRefCycle},
+		{"CapExceeded", dipx.ErrCapExceeded},
+		{"PathUnsafe", dipx.ErrPathUnsafe},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if !isIntegrityErr(tc.err) {
+				t.Fatalf("isIntegrityErr(%v) = false, want true", tc.err)
+			}
+		})
+	}
+}
+
+func TestIsIntegrityErr_RejectsNonIntegrity(t *testing.T) {
+	// EntryParse and SubgraphParse are user-class errors, not integrity.
+	if isIntegrityErr(dipx.ErrEntryParse) {
+		t.Error("isIntegrityErr(ErrEntryParse) = true, want false")
+	}
+	if isIntegrityErr(dipx.ErrSubgraphParse) {
+		t.Error("isIntegrityErr(ErrSubgraphParse) = true, want false")
 	}
 }

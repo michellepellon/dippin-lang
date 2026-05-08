@@ -170,14 +170,34 @@ func isCancelledErr(err error) bool {
 	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
-// isIntegrityErr reports whether err corresponds to a bundle-integrity failure
-// (hash, manifest shape, forbidden zip features, truncation, version).
+// integritySentinels enumerates every error sentinel mapped to exit code 2
+// per spec § "CLI exit codes". Update both this list and the spec table
+// together; a CI test could be added in v1.2 to grep them against each
+// other if drift becomes an issue.
+var integritySentinels = []error{
+	dipx.ErrHashMismatch,
+	dipx.ErrManifestInvalid,
+	dipx.ErrUnsupportedFormatVersion,
+	dipx.ErrZipFeatureForbidden,
+	dipx.ErrZipTruncated,
+	dipx.ErrFileMissing,
+	dipx.ErrFileUnexpected,
+	dipx.ErrEntryNotInManifest,
+	dipx.ErrRefEscape,
+	dipx.ErrRefCycle,
+	dipx.ErrCapExceeded,
+	dipx.ErrPathUnsafe,
+}
+
+// isIntegrityErr reports whether err corresponds to any spec-enumerated
+// integrity-class sentinel.
 func isIntegrityErr(err error) bool {
-	return errors.Is(err, dipx.ErrHashMismatch) ||
-		errors.Is(err, dipx.ErrManifestInvalid) ||
-		errors.Is(err, dipx.ErrZipFeatureForbidden) ||
-		errors.Is(err, dipx.ErrZipTruncated) ||
-		errors.Is(err, dipx.ErrUnsupportedFormatVersion)
+	for _, sentinel := range integritySentinels {
+		if errors.Is(err, sentinel) {
+			return true
+		}
+	}
+	return false
 }
 
 // isIOErr reports whether err is a filesystem I/O failure that should map to
