@@ -281,14 +281,21 @@ func swapWithBackup(destDir, staging, backup string, rename func(string, string)
 }
 
 // checkDestExists returns ErrPathUnsafe when destDir exists and overwrite is
-// disallowed. Any other stat error (including IsNotExist) means the path is
-// safe to use.
+// disallowed. IsNotExist means the path is safe to use. Any other stat error
+// (e.g. permission denied because the parent directory is unreadable) is
+// surfaced to the caller as the underlying *os.PathError so classifyExit's
+// isIOErr can route to the documented I/O exit code (3) — failing later in
+// stageBundle's MkdirAll would produce a less clear diagnostic.
 func checkDestExists(destDir string, allowOverwrite bool) error {
 	if allowOverwrite {
 		return nil
 	}
-	if _, err := os.Stat(destDir); err == nil {
+	_, err := os.Stat(destDir)
+	if err == nil {
 		return newError(ErrPathUnsafe, destDir, "destination exists; use --force", nil)
+	}
+	if !os.IsNotExist(err) {
+		return err
 	}
 	return nil
 }
