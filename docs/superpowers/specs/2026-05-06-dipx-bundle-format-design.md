@@ -723,7 +723,7 @@ After:
 src, err := dipx.Load(ctx, path)        // path may be "foo.dip" OR "foo.dipx"
 wf := src.Entry()
 // ... when hitting a subgraph node:
-child, err := src.Workflow(sub.Ref, parentPath)
+child, err := src.Workflow(ctx, sub.Ref, parentPath)
 ```
 
 `parentPath` semantics:
