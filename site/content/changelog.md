@@ -4,6 +4,36 @@ description: "Version history and release notes for dippin-lang."
 navActive: "changelog"
 layout: "changelog"
 ---
+## [v0.24.0] — 2026-05-08
+
+### Added
+
+- **`.dipx` bundle format** — deterministic, content-addressed ZIP that packages a `.dip` entry workflow plus every transitively-reachable subgraph into a single integrity-verified artifact. Bundles carry a SHA-256-per-file manifest and a workflow-tree identity hash; integrity is verified on every Open. New package `dipx/` exposes `Open`, `OpenLax`, `OpenReader`, `Pack`, `Extract`, `Validate`, and `Load`, plus the `Source` interface (`Entry`, `Workflow`) for runtime consumers like Tracker.
+- **New CLI commands**: `dippin pack <entry.dip>` (build a bundle, with `-o`, `--dry-run`); `dippin unpack <bundle.dipx>` (atomic extract via staging + rename, with `-o`, `--force`); `dippin inspect <bundle.dipx>` (print manifest, identity hash, file list; `--format text|json`).
+- **Existing commands accept `.dipx`** — `validate`, `lint`, `doctor`, `parse`, `cost`, `coverage`, `simulate`, `optimize`, `unused`, `graph`, `diff`, `check`, `explain`, `export-dot` now transparently load a `.dipx` via `dipx.Load`, hash-verify it, and analyze the entry workflow.
+- **Distinct exit codes for bundle commands**: `0` (ok), `1` (user error), `2` (integrity error), `3` (I/O error), `4` (cancelled).
+- **CLAUDE.md loader-tier exemption**: `dipx` may import `ir + parser + simulate` but is forbidden from importing `validator`, `cost`, `formatter`, or any other analysis package. Pack-time structural validation runs at the CLI layer (`cmd/dippin/cmd_pack.go`).
+
+### Fixed
+
+- `Extract --force` no longer destroys the existing destination directory when the staging-into-place rename fails on a cross-device boundary (EXDEV). The new backup-aside / rename-into-place / remove-aside sequence preserves the original on failure.
+- `Pack` rejects symlinked parent directories anywhere between the entry's source root and a leaf `.dip`, closing a host-file exfiltration vector when packing untrusted source trees (CI-runner contributor builds, mono-repo subdirs).
+- `Pack`'s ref-escape check no longer false-positives on legitimate filenames whose component name begins with `..` (e.g., `..foo/bar.dip`). The check now requires the literal `..` component, not a `..` substring.
+- `dippin pack -o foo.dipx` no longer races two parallel invocations against the same temp filename — uses `os.CreateTemp` for a unique staging path.
+
+### Internal
+
+- Upgraded `golang.org/x/text` from v0.3.3 to v0.37.0 (defensive — only `unicode/norm` is consumed; the v0.3.3 CVEs were in `x/text/language`).
+
+## [v0.23.0] — 2026-04-22
+
+### Added
+- **`WorkflowDefaults` tool-safety fields** (tracker#164 / tracker#169): `tool_commands_allow` (glob allowlist for tool-node shell commands) and `tool_denylist_add` (globs appended to tracker's default denylist). Both round-trip through parser → formatter → DOT export → migrate. Values pass through verbatim — tracker owns split and glob semantics. ([#28](https://github.com/2389-research/dippin-lang/issues/28))
+
+### Changed
+- **DOT export header format** — `ExportDOT` now emits graph-level attributes (`rankdir`, tool-safety defaults, workflow vars) as a single `graph [key=val, ...];` block instead of separate bare statements (`rankdir=TB;`). This is the form the migrate DOT parser accepts, enabling true `.dip` → DOT → `.dip` round-trips. The output remains valid DOT; consumers that only render via Graphviz are unaffected.
+- **`tool_commands_allow` / `tool_denylist_add` in `vars:` no longer emitted** — before this release, these keys weren't reserved, so a workflow that smuggled them through `vars:` would have them emitted as graph attributes. They are now reserved in favor of the dedicated `defaults:` fields. Any workflow that previously set either key via `vars:` should move it into `defaults:`; otherwise the value is silently dropped from DOT output (tracker would see no allowlist). This path was never documented — issue #28 filed specifically because `defaults:` rejected the keys — so the affected population is expected to be zero, but calling it out explicitly for anyone who found the workaround.
+
 ## [v0.22.0] — 2026-04-22
 
 ### Added

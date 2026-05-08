@@ -129,6 +129,16 @@ dippin-lang/
 │   ├── completion.go   # Autocomplete suggestions
 │   └── symbols.go      # Document symbol outline
 │
+├── dipx/               # .dipx bundle format (loader tier)
+│   ├── dipx.go         # Open, OpenLax, OpenReader, Pack, Extract, Validate
+│   ├── source.go       # Source interface, dirSource, Load (.dip vs .dipx)
+│   ├── manifest.go     # Manifest decode/encode + shape verification
+│   ├── bundle.go       # Bundle (Workflow, Identity, Manifest, ReadFile)
+│   ├── zipio.go        # Constrained zip reader (rejects forbidden features)
+│   ├── resolve.go      # Path canonicalization, Windows reserved names
+│   ├── helpers.go      # Hash verify, parse-and-link, walkSourceTree
+│   └── errors.go       # BundleError sentinels
+│
 ├── scaffold/           # Template scaffolding for `dippin new`
 │   └── scaffold.go     # Build(template, name) → *ir.Workflow
 │
@@ -153,8 +163,17 @@ dippin-lang/
     ├── cmd_unused.go   # unused command
     ├── cmd_graph.go    # graph command
     ├── cmd_test_runner.go # test command
-    └── cmd_lsp.go      # lsp command
+    ├── cmd_lsp.go      # lsp command
+    ├── cmd_pack.go     # pack command (.dipx producer)
+    ├── cmd_unpack.go   # unpack command (.dipx → directory)
+    └── cmd_inspect.go  # inspect command (.dipx → manifest summary)
 ```
+
+### Loader Tier (dipx)
+
+The `dipx` package is a bounded exception to the "packages only depend on `ir`" rule: it imports `ir + parser + simulate` to materialize a parsed, condition-normalized workflow tree from a `.dipx` bundle (or from a `.dip` on disk via `dirSource`). It MUST NOT import `validator`, `cost`, `formatter`, or any analysis package — that would invert the analysis dependency direction. Pack-time structural validation (DIP001–DIP009) is therefore invoked at the CLI layer in `cmd/dippin/cmd_pack.go` (`validateEntryPrePack`), not inside `dipx` itself.
+
+The package's central type-encoded ordering invariant is `verifiedBytes`: an unexported wrapper produced exclusively by the hash-verification step. The Open pathway's `parser.NewParser(string(verifiedBytes.Bytes()), …)` site cannot be reached without going through hash verification first, making "parse before verify" structurally impossible. Two additional `parser.NewParser` sites exist for the dirSource and Pack pathways (which consume trusted local-disk bytes, not bundle bytes); a CI test (`TestInvariant_ParserNewParserSiteCount`) pins the total to exactly three.
 
 ### Dependency Graph
 

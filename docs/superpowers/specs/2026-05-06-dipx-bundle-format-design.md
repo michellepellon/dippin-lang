@@ -92,9 +92,9 @@ A `.dipx` file is a ZIP archive (PKZIP APPNOTE.TXT). The following ZIP features 
 - Entry filenames MUST be encoded as UTF-8 with general-purpose bit 11 set (APPNOTE.TXT 4.4.4). CP437-encoded filenames MUST be rejected.
 - An entry whose external file attributes encode a symlink (Unix mode bit `S_IFLNK`, `0o120000`) MUST be rejected.
 - An entry whose external file attributes encode a non-regular, non-directory file (device, FIFO, socket) MUST be rejected.
-- The central directory and local file headers MUST agree on filename and uncompressed size; mismatches MUST be rejected (defense against parser-confusion).
+- The central directory and local file headers MUST agree on filename and uncompressed size; mismatches MUST be rejected (defense against parser-confusion). **[Deferred to v1.1 — Phase 4 C2.](../plans/2026-05-07-dipx-followups.md) v1 mitigates by per-file SHA-256: any cross-record disagreement on bytes-as-decompressed will fail the manifest hash.**
 - Duplicate entry names (case-sensitive byte equality of canonical paths) MUST be rejected.
-- Two entries whose canonical paths case-fold to the same value (Unicode case-folding, not just ASCII tolower) MUST be rejected.
+- Two entries whose canonical paths case-fold to the same value (Unicode case-folding, not just ASCII tolower) MUST be rejected. **[Unicode case-folding deferred to v1.1 — Phase 9 P9.2.](../plans/2026-05-07-dipx-followups.md) v1 uses `strings.ToLower` (ASCII-only).**
 - **Directory entries** (entries whose name ends with `/`) MUST be ignored on read in both `Open` and `OpenLax` modes. Pack MUST NOT emit them. Rationale: most ZIP producers emit directory entries by default; rejecting them is a trivial compatibility-DoS lever and adds no security benefit since strict mode is anchored by `files[]` byte-comparison plus hash verification, not by zip-entry inventory.
 - A truncated zip (mid-stream EOF or central-directory missing) MUST be rejected with `ErrZipTruncated` and MUST NOT be silently coerced into `ErrHashMismatch`.
 - Open MUST NOT enforce zip entry ordering. (Reproducibility is producer-side; receivers cannot rely on bundle-byte-equality.)
@@ -231,17 +231,17 @@ The Go reference implementation MUST encode steps 5 and 6 such that step 6 canno
 
 - Step 5 returns `map[string]verifiedBytes` where `verifiedBytes` is an unexported wrapping type.
 - Step 6 takes `map[string]verifiedBytes`. It has no `*zip.Reader` parameter.
-- `parser.NewParser` is invoked from exactly one site within `dipx`, and that site takes its input from `verifiedBytes.Bytes()`.
-- A CI grep check enforces that `parser.NewParser` does not appear elsewhere in package `dipx`.
+- The Open pathway invokes `parser.NewParser` from exactly one site, and that site takes its input from `verifiedBytes.Bytes()`. The `dipx` package as a whole has TWO additional `parser.NewParser` sites that consume trusted local-disk bytes: the dirSource pathway (`parseDipFile` in `source.go`) and the Pack pathway (`parsePackSource` in `helpers.go`). Neither produces nor consumes `verifiedBytes`; the type-encoded invariant binds only the Open pathway, which is the only one where bytes originate from a `.dipx` archive.
+- A CI test (`TestInvariant_ParserNewParserSiteCount`) pins the total to exactly three sites: the Open verifiedBytes site, the dirSource site, and the Pack site. Any drift fails the test.
 
-This makes "parse before verify" or "re-read from zip after verify" a compile-time error, not a documentation invariant.
+This makes "parse before verify" or "re-read from zip after verify" on the Open pathway a compile-time error, not a documentation invariant.
 
 ### Streaming cap enforcement
 
 Caps MUST be enforced via streaming, not by trusting ZIP header `UncompressedSize64` fields and not by post-buffering the full decompressed output. Specifically:
 
 - The per-file uncompressed cap (50 MB) MUST be enforced via `io.LimitReader` wrapping the decompressor. Excess bytes trip the cap before allocation.
-- The per-file compression-ratio cap (1000:1) MUST be checked while reading: track compressed bytes consumed against decompressed bytes produced; abort once the ratio exceeds 1000.
+- The per-file compression-ratio cap (1000:1) MUST be checked while reading: track compressed bytes consumed against decompressed bytes produced; abort once the ratio exceeds 1000. **[Deferred to v1.1 — Phase 4 C3.](../plans/2026-05-07-dipx-followups.md) v1 enforces only the absolute 50 MB per-file uncompressed cap.**
 - The total uncompressed cap (100 MB) MUST be enforced as a running sum across files; abort the moment a step-5 read crosses the threshold, before allocating the offending file's full buffer.
 - The 1 MB manifest cap MUST be enforced before JSON parsing begins.
 
@@ -464,7 +464,7 @@ Two implementations satisfy `Source`:
 
 ### `OpenLax` discipline
 
-`OpenLax` weakens the strict-mode trust boundary. It MUST NOT be invoked on bytes obtained from any non-local source. The function emits a structured warning to the caller-provided logger (when `context.Context` carries one via standard convention) on every invocation.
+`OpenLax` weakens the strict-mode trust boundary. It MUST NOT be invoked on bytes obtained from any non-local source. The function is intended to emit a structured warning to a caller-provided logger (when `context.Context` carries one via standard convention) on every invocation. **[Structured-warning emission deferred to v1.1 — Phase 9 P9.1.](../plans/2026-05-07-dipx-followups.md) v1 OpenLax is silent at the package level; production deployments SHOULD audit invocation sites in source.**
 
 `dipx.OpenLax` does not log to package-level loggers (see *Logging discipline*). Production deployments embedding `dipx` SHOULD audit invocation sites. CLI flags that opt into lax mode (`dippin validate --lax`, etc.) MUST be opt-in only, never default.
 
@@ -738,7 +738,7 @@ Tracker SHOULD log bundle errors at `error` level with a stable structured field
 
 When `Open` fails, operators MAY enable diagnostic tracing via:
 
-- Setting `DIPX_DEBUG=1` in the process environment causes the `dipx` package to emit a structured trace of the 9-step Open ordering to stderr (one JSON object per step). This is the only exception to the no-default-logging rule and is gated on the env var.
+- Setting `DIPX_DEBUG=1` in the process environment causes the `dipx` package to emit a structured trace of the 9-step Open ordering to stderr (one JSON object per step). This is the only exception to the no-default-logging rule and is gated on the env var. **[Deferred to v1.1 — Phase 9 P9.4.](../plans/2026-05-07-dipx-followups.md) v1 emits no diagnostic-mode output regardless of `DIPX_DEBUG`.**
 - Library callers MAY pass a tracer via `context.Context` (post-v1 hook).
 
 ### Bundle equality

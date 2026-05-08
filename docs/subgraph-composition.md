@@ -143,3 +143,15 @@ where the project is today. The file-based approach works with
 standard tooling — editors, git, CI — without inventing a package
 system. When the limitations bite, we'll address them. So far they
 haven't.
+
+## See also: packaging via `.dipx`
+
+Subgraph refs are resolved against the filesystem at runtime, which
+means the runtime needs every referenced file present at the right
+relative path. `dippin pack` collects an entry `.dip` plus every
+transitively-reachable ref into a single deterministic `.dipx`
+bundle so the whole tree ships as one integrity-verified artifact.
+Inside the bundle, refs are resolved against the bundle root with
+the same lexical rules — no symlinks, no escapes from the workflow
+tree, NFC-canonical paths. See `docs/cli.md` (pack/unpack/inspect)
+and the `dipx` package documentation for details.

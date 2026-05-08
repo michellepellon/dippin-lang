@@ -111,6 +111,18 @@ dippin validate-migration pipeline.dot pipeline.dip
 dippin lint pipeline.dip
 ```
 
+### Bundle a Workflow as a `.dipx`
+
+A `.dipx` is a deterministic, content-addressed ZIP that bundles a `.dip` entry workflow plus every transitively-reachable subgraph into one integrity-verified artifact. Tracker and other runtimes can load a `.dipx` as a single SHA-256-verified artifact instead of walking a directory of `.dip` files at deploy time.
+
+```sh
+dippin pack pipeline.dip                # → pipeline.dipx (deterministic bytes)
+dippin inspect pipeline.dipx            # manifest + identity + file list
+dippin unpack pipeline.dipx -o ./out    # atomic extract via staging + rename
+```
+
+Every analysis command (`validate`, `lint`, `doctor`, `parse`, `cost`, `coverage`, `simulate`, `optimize`, `unused`, `graph`, `diff`, `check`, `explain`, `export-dot`) accepts a `.dipx` argument transparently — the bundle is opened, hash-verified, and the entry workflow is fed to the same analyzer.
+
 ## Commands
 
 ### Authoring
@@ -143,6 +155,14 @@ dippin lint pipeline.dip
 | `dippin graph [--compact] <file>` | Render ASCII DAG of the workflow |
 | `dippin test [--verbose] [--coverage] <file>` | Run scenario tests from .test.json |
 
+### Bundles
+
+| Command | Description |
+|---------|-------------|
+| `dippin pack [-o <out>] [--dry-run] <entry.dip>` | Build a deterministic `.dipx` bundle from a `.dip` entry |
+| `dippin unpack [-o <dir>] [--force] <bundle.dipx>` | Atomic extract via staging dir + rename |
+| `dippin inspect [--format text\|json] <bundle.dipx>` | Print manifest, identity hash, and file list |
+
 ### Editor & Tooling
 
 | Command | Description |
@@ -152,7 +172,7 @@ dippin lint pipeline.dip
 | `dippin version` | Show version info |
 | `dippin help` | Show usage |
 
-**Exit codes:** 0 = ok, 1 = errors found, 2 = usage error.
+**Exit codes:** Analysis commands use `0` (ok) / `1` (errors found) / `2` (usage error). Bundle commands (`pack` / `unpack` / `inspect`) use a finer ladder: `0` (ok) / `1` (user/parse error) / `2` (integrity error) / `3` (I/O error) / `4` (cancelled).
 
 **Machine-readable output:** Add `--format json` to any command for JSON diagnostics on stderr.
 

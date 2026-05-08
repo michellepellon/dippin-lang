@@ -85,6 +85,7 @@ dippin-lang/
 ├── graph/              # ASCII DAG rendering
 ├── testrunner/         # Scenario test runner
 ├── lsp/                # Language Server Protocol server
+├── dipx/               # .dipx bundle format (loader tier)
 ├── scaffold/           # Template scaffolding for dippin new
 └── cmd/dippin/         # CLI entry point + command handlers
 ```
@@ -115,6 +116,10 @@ dippin-lang/
   <div class="decision-card">
     <h4>Testable CLI</h4>
     <p>The <code>Run</code> function accepts <code>args []string</code> and <code>io.Writer</code>, making it fully testable without touching <code>os.Args</code> or <code>os.Stdout</code>. All commands are exercised via this interface.</p>
+  </div>
+  <div class="decision-card">
+    <h4>Loader-tier exemption</h4>
+    <p>The <code>dipx</code> package is a bounded exception to the IR-only rule: it may import <code>parser</code> and <code>simulate</code> to materialize a parsed workflow tree from a <code>.dipx</code> bundle, but MUST NOT import <code>validator</code>, <code>cost</code>, <code>formatter</code>, or any analysis package. Pack-time structural validation runs at the CLI layer.</p>
   </div>
 </div>
 

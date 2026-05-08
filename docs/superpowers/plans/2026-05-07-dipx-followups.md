@@ -125,9 +125,11 @@ Spec § "Source implementations" mandates "LRU of 256 entries with singleflight.
 
 Spec § "Soft caps" lists 1000:1 compression-ratio as a producer-side limit. Pack only checks per-file uncompressed size (50MB); ratio is unchecked. Implementing requires either tracking compressed bytes during deflate (manual deflate chain + counter) or post-compression check via writer hooks. **Disposition:** v1.1. Per-file 50MB cap provides absolute DoS protection in the meantime.
 
-### Pack parent-directory symlink check (Phase 7, M1)
+### Pack parent-directory symlink check (Phase 7, M1) — RESOLVED in v1.0
 
-`walkSourceTree` checks Lstat on the leaf file but doesn't walk parent components for directory symlinks. A directory symlink in the path tree silently re-roots `rootDir`. **Disposition:** v1.1. Practical risk is low (developer source trees, not adversarial input). Fix requires per-component Lstat or a helper.
+`walkSourceTree` originally Lstat'd only the leaf file; parent components were silently followed, so a directory symlink in the path tree could silently re-root `rootDir`. **Re-classified as v1-blocking on multi-agent review** (PR #34): two of three external reviewers flagged the original disposition as understating host-file exfiltration risk in CI / contributor-PR / mono-repo build scenarios.
+
+**Resolution:** `readNoFollowSymlinks` now takes `(path, rootDir)` and `assertNoSymlinkAncestor` walks every path component strictly between `rootDir` and the leaf, refusing any symlink along the way. `rootDir` itself is the trust anchor (CLI-supplied, may itself be a user-supplied symlinked working directory) and is not Lstat'd. Regression test: `TestPack_RejectsParentSymlink` in `dipx/dipx_test.go`.
 
 ### Pack O_NOFOLLOW (Phase 7, M2)
 
@@ -203,9 +205,11 @@ Go's `flag` package stops parsing at the first non-flag argument. Users running 
 
 ## Phase 10 final-gate findings (deferred)
 
-### Extract --force EXDEV data-loss vector (Phase 10, P10.1)
+### Extract --force EXDEV data-loss vector (Phase 10, P10.1) — RESOLVED in v1.0
 
-**Strengthening of existing M3/M4 entry.** When `Extract` is called with `--force` and the destination is on a different mount than staging (e.g., destdir on `/home`, tmp on `/tmp`), the sequence is: stage → `os.RemoveAll(destDir)` → `os.Rename(staging, destDir)`. If `Rename` fails with `EXDEV`, the user's original directory has already been deleted, AND the new contents sit at `destDir+".tmp"`. Data loss + confusing recovery. **Disposition:** v1.1 high-priority. Fix: rename-old-aside (move destDir to destDir.bak) → rename-new-into-place → remove-aside.
+**Re-classified as v1-blocking on multi-agent review** (PR #34): the original "v1.1 polish" disposition undersold a real data-loss vector triggered by routine cross-mount staging (TMPDIR on a separate APFS volume / tmpfs / CI work mount). Two of three external reviewers flagged it as v1-blocking.
+
+**Resolution:** `Extract` now uses a `swapDestWithStaging` helper that performs the rename-old-aside / rename-new-into-place / remove-aside sequence. `swapWithBackup` renames `destDir → destDir.bak` first, then `staging → destDir`; on failure it restores `destDir.bak → destDir` so the user's original is preserved. Stale staging is removed via `defer`. Regression test: `TestExtract_ForcePreservesDestOnRenameFailure` in `dipx/dipx_test.go` injects a synthetic EXDEV at the second rename and asserts destDir is intact.
 
 ### Pack lacks mid-write ctx checks (Phase 10, P10.2)
 
@@ -226,3 +230,25 @@ The flag is parsed and prints a stderr warning, but `dipx.Open` is invoked uncon
 ### Pack-side BundleError.Path uses filesystem absolute paths (Phase 10, P10.6)
 
 Spec § "Per-sentinel error context" says Path is "bundle-relative" but Pack errors legitimately can't be bundle-relative (no bundle yet). Defensible interpretation; spec wording should be tightened in v1.1.
+
+## PR #34 review-cycle findings (deferred)
+
+### walkSourceTree lacks ctx checks (Phase 10, P10.7 — extends P10.2)
+
+Phase 10 P10.2 covers `writeBundle`'s zip-writer loop, but `walkSourceTree`'s `visitNext` / `readAndRecord` / `enqueueRefs` also have no ctx checks. A long Pack against a deep source tree cannot be cancelled until the walker finishes. Fix: `case <-ctx.Done()` at the top of `visitNext`. **Disposition:** v1.1, bundled with P10.2.
+
+### Pack reads source files in full before per-file cap check (Phase 10, P10.8)
+
+`readNoFollowSymlinks` calls `os.ReadFile` (full materialization) before `readAndRecord`'s `len(raw) > maxPerFileBytes` check, so an oversized source file fully allocates before being rejected. Producer-side risk only (Pack inputs are local trusted developer source trees, not adversarial bytes). Fix: pre-check `info.Size()` from `os.Lstat`, or switch to bounded read via `io.LimitedReader`. **Disposition:** v1.1.
+
+### parsePackSource always classifies as ErrEntryParse (Phase 10, P10.9)
+
+`parsePackSource` is invoked from `readAndRecord` for both the entry workflow AND every transitively-reachable subgraph. Subgraph parse failures during Pack therefore get `ErrEntryParse` (which structurally implies the entry, not a subgraph). Fix: thread an `isEntry` bool into `parsePackSource`, or check `path == s.entryAbs` at the caller and pick `ErrSubgraphParse` for refs. Cosmetic for Pack-side error attribution. **Disposition:** v1.1.
+
+### verifyAllHashes lacks per-entry ctx (Phase 10, P10.10)
+
+`verifyAllHashes` checks ctx once before starting (via `verifyHashesCtx`), then runs the inner loop without further ctx checks. A bundle with many large entries cannot be cancelled mid-verification. Bundle this with the broader Pack/walker ctx threading work. **Disposition:** v1.1, bundled with P10.2/P10.7.
+
+### Justfile pack-examples uses `mktemp -u` and skips round-trip (Phase 10, P10.11)
+
+The `pack-examples` recipe in `Justfile` uses `mktemp -u` (TOCTOU race) and never cleans up the generated `.dipx` files. The recipe also doesn't actually verify a round-trip — only `dippin pack` runs, no `inspect` or `unpack`. Practical risk is near-zero (CI/dev-loop recipe, parallel pack-races unlikely). **Disposition:** v1.1 polish — `mktemp -d` with cleanup + a `dippin inspect`/`unpack` verification step.
