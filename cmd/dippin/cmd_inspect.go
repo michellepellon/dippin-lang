@@ -59,10 +59,28 @@ func parseInspectArgs(stderr io.Writer, args []string) (path, format string, cod
 	return rest[0], *f, -1
 }
 
-// printInspectText writes a human-readable manifest summary.
+// InspectStatus is the shared shape rendered by both text and JSON
+// inspect output, per spec § "CLI / inspect command" (Bundle 6).
+type InspectStatus struct {
+	Valid         bool  `json:"valid"`
+	VerifySkipped bool  `json:"verify_skipped"`
+	FileCount     int   `json:"file_count"`
+	ByteTotal     int64 `json:"byte_total"`
+	FormatVersion int   `json:"format_version"`
+}
+
+// printInspectText writes a human-readable manifest summary for a fully-
+// opened (hash-verified) bundle.
 func printInspectText(stdout io.Writer, b *dipx.Bundle) int {
 	m := b.Manifest()
 	id := b.Identity()
+	status := buildInspectStatus(m, b.ByteTotal(), false)
+	return printManifestText(stdout, m, id, status)
+}
+
+// printManifestText is the shared text renderer. Used by both Open-side
+// (printInspectText) and OpenManifest-side (--no-verify, Task 4) paths.
+func printManifestText(stdout io.Writer, m dipx.Manifest, id [32]byte, status InspectStatus) int {
 	fmt.Fprintf(stdout, "format: %d\n", m.FormatVersion)
 	fmt.Fprintf(stdout, "entry:  %s\n", m.Entry)
 	fmt.Fprintf(stdout, "identity: sha256:%s\n", hex.EncodeToString(id[:]))
@@ -70,23 +88,35 @@ func printInspectText(stdout io.Writer, b *dipx.Bundle) int {
 	for _, e := range m.Files {
 		fmt.Fprintf(stdout, "  %-50s sha256:%s\n", e.Path, e.SHA256)
 	}
-	fmt.Fprintf(stdout, "status: VALID (%d files, format_version %d)\n", len(m.Files), m.FormatVersion)
+	label := "VALID"
+	if status.VerifySkipped {
+		label = "UNVERIFIED"
+	}
+	fmt.Fprintf(stdout, "status: %s (%d files, %d bytes, format_version %d)\n",
+		label, status.FileCount, status.ByteTotal, status.FormatVersion)
 	return exitDipxOK
 }
 
-// printInspectJSON writes the manifest as indented JSON. Encode failures are
-// surfaced to stderr alongside the I/O exit code so an operator running
-// `dippin inspect --format=json` in a script gets diagnostic context, not a
-// bare non-zero exit.
+// printInspectJSON writes the manifest as indented JSON with the structured
+// status object. Encode failures are surfaced to stderr alongside the I/O
+// exit code so an operator running `dippin inspect --format=json` in a
+// script gets diagnostic context, not a bare non-zero exit.
 func printInspectJSON(stdout, stderr io.Writer, b *dipx.Bundle) int {
 	m := b.Manifest()
 	id := b.Identity()
+	status := buildInspectStatus(m, b.ByteTotal(), false)
+	return printManifestJSON(stdout, stderr, m, id, status)
+}
+
+// printManifestJSON is the shared JSON renderer. Used by both Open-side
+// and OpenManifest-side (--no-verify, Task 4) paths.
+func printManifestJSON(stdout, stderr io.Writer, m dipx.Manifest, id [32]byte, status InspectStatus) int {
 	out := map[string]interface{}{
 		"format_version": m.FormatVersion,
 		"entry":          m.Entry,
 		"identity":       "sha256:" + hex.EncodeToString(id[:]),
 		"files":          m.Files,
-		"status":         "VALID",
+		"status":         status,
 	}
 	enc := json.NewEncoder(stdout)
 	enc.SetIndent("", "  ")
@@ -95,4 +125,19 @@ func printInspectJSON(stdout, stderr io.Writer, b *dipx.Bundle) int {
 		return exitDipxIOError
 	}
 	return exitDipxOK
+}
+
+// buildInspectStatus packages the fields needed by both renderers.
+// byteTotal is 0 when verifySkipped is true (we don't extract bytes
+// in OpenManifest). valid is true unless we have an explicit reason
+// to mark it false; admission-failure cases produce errors before
+// reaching this code.
+func buildInspectStatus(m dipx.Manifest, byteTotal int64, verifySkipped bool) InspectStatus {
+	return InspectStatus{
+		Valid:         true,
+		VerifySkipped: verifySkipped,
+		FileCount:     len(m.Files),
+		ByteTotal:     byteTotal,
+		FormatVersion: m.FormatVersion,
+	}
 }

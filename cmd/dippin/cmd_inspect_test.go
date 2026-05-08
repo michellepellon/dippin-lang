@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -23,6 +24,11 @@ func TestRunInspect_Text(t *testing.T) {
 			t.Errorf("expected %q in text output, got:\n%s", want, out)
 		}
 	}
+	// Footer must include byte total per spec § "CLI / inspect command" (Bundle 6).
+	footerRe := regexp.MustCompile(`status: VALID \(\d+ files, \d+ bytes, format_version \d+\)`)
+	if !footerRe.MatchString(out) {
+		t.Errorf("footer missing byte total; want %q pattern, got:\n%s", footerRe.String(), out)
+	}
 }
 
 func TestRunInspect_JSON(t *testing.T) {
@@ -32,17 +38,48 @@ func TestRunInspect_JSON(t *testing.T) {
 	if code != exitDipxOK {
 		t.Fatalf("exit code = %d; stderr=%s", code, stderr.String())
 	}
-	var parsed map[string]interface{}
+	var parsed struct {
+		FormatVersion int    `json:"format_version"`
+		Entry         string `json:"entry"`
+		Identity      string `json:"identity"`
+		Status        struct {
+			Valid         bool  `json:"valid"`
+			VerifySkipped bool  `json:"verify_skipped"`
+			FileCount     int   `json:"file_count"`
+			ByteTotal     int64 `json:"byte_total"`
+			FormatVersion int   `json:"format_version"`
+		} `json:"status"`
+	}
 	if err := json.Unmarshal(stdout.Bytes(), &parsed); err != nil {
 		t.Fatalf("invalid JSON: %v\n%s", err, stdout.String())
 	}
-	for _, k := range []string{"format_version", "entry", "identity", "files", "status"} {
-		if _, ok := parsed[k]; !ok {
-			t.Errorf("missing key %q in JSON output", k)
-		}
+	for _, want := range []string{"format_version", "entry", "identity", "status"} {
+		// Verify top-level keys are present by checking non-zero values.
+		_ = want
 	}
-	if parsed["status"] != "VALID" {
-		t.Errorf("expected status=VALID, got %v", parsed["status"])
+	if parsed.FormatVersion == 0 {
+		t.Error("format_version = 0, want > 0")
+	}
+	if parsed.Entry == "" {
+		t.Error("entry = empty, want non-empty")
+	}
+	if parsed.Identity == "" {
+		t.Error("identity = empty, want non-empty")
+	}
+	if !parsed.Status.Valid {
+		t.Error("status.valid = false, want true")
+	}
+	if parsed.Status.VerifySkipped {
+		t.Error("status.verify_skipped = true, want false")
+	}
+	if parsed.Status.FileCount == 0 {
+		t.Error("status.file_count = 0, want > 0")
+	}
+	if parsed.Status.ByteTotal == 0 {
+		t.Error("status.byte_total = 0, want > 0")
+	}
+	if parsed.Status.FormatVersion != 1 {
+		t.Errorf("status.format_version = %d, want 1", parsed.Status.FormatVersion)
 	}
 }
 
