@@ -19,7 +19,14 @@ related:
 
 ## The problem
 
-Subgraph composition is the main reason `.dip` projects grow beyond a single file. A workflow ref like `subgraph S: ref: phases/review.dip` is resolved against the filesystem at runtime, so the runtime needs every referenced file present at the right relative path. That works fine on a developer's laptop. It gets messier as soon as you want to:
+Subgraph composition is the main reason `.dip` projects grow beyond a single file. A workflow ref like
+
+```dippin
+subgraph S
+  ref: phases/review.dip
+```
+
+is resolved against the filesystem at runtime, so the runtime needs every referenced file present at the right relative path. That works fine on a developer's laptop. It gets messier as soon as you want to:
 
 - Ship a workflow tree to a runtime (Tracker) over the network.
 - Pin a particular *version* of a multi-file workflow inside a CI artifact.
