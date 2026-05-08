@@ -519,3 +519,83 @@ func packTestEntryWithRef(refPath string) string {
     S -> E
 `
 }
+
+// TestOpenManifest_HappyPath asserts OpenManifest returns the manifest +
+// identity for a valid bundle without performing hash verification or
+// workflow parsing.
+func TestOpenManifest_HappyPath(t *testing.T) {
+	dir := t.TempDir()
+	bundlePath := filepath.Join(dir, "ok.dipx")
+	mustBuildValidBundle(t, bundlePath)
+	m, identity, err := OpenManifest(context.Background(), bundlePath)
+	if err != nil {
+		t.Fatalf("OpenManifest err = %v, want nil", err)
+	}
+	if m.FormatVersion != 1 {
+		t.Errorf("FormatVersion = %d, want 1", m.FormatVersion)
+	}
+	if len(m.Files) == 0 {
+		t.Error("len(m.Files) = 0, want > 0")
+	}
+	if identity == ([32]byte{}) {
+		t.Error("identity is zero; want non-zero (sha256 of manifest bytes)")
+	}
+}
+
+// TestOpenManifest_ManifestInvalid asserts manifest-decode errors are
+// surfaced (and enriched with bundle path per Bundle 5).
+func TestOpenManifest_ManifestInvalid(t *testing.T) {
+	dir := t.TempDir()
+	bundlePath := filepath.Join(dir, "broken.dipx")
+	mustWriteBundleWithRawManifest(t, bundlePath, []byte(`{"format_version":"1","entry":"workflows/a.dip","files":[]}`))
+	_, _, err := OpenManifest(context.Background(), bundlePath)
+	if !errors.Is(err, ErrManifestInvalid) {
+		t.Fatalf("err = %v, want ErrManifestInvalid", err)
+	}
+	var be *BundleError
+	if !errors.As(err, &be) {
+		t.Fatalf("err = %T, want *BundleError", err)
+	}
+	if be.Path != bundlePath {
+		t.Errorf("BundleError.Path = %q, want %q (bundle path enrichment)", be.Path, bundlePath)
+	}
+}
+
+// TestOpenManifest_FileNotReadable asserts a missing bundle file
+// returns ErrManifestMissing.
+func TestOpenManifest_FileNotReadable(t *testing.T) {
+	_, _, err := OpenManifest(context.Background(), "/nonexistent/path/foo.dipx")
+	if !errors.Is(err, ErrManifestMissing) {
+		t.Fatalf("err = %v, want ErrManifestMissing", err)
+	}
+}
+
+// mustBuildValidBundle builds a real, hash-verified .dipx at dst from a
+// minimal stand-alone .dip workflow. Uses the public Pack API.
+func mustBuildValidBundle(t *testing.T, dst string) {
+	t.Helper()
+	srcDir := t.TempDir()
+	entryPath := filepath.Join(srcDir, "entry.dip")
+	if err := os.WriteFile(entryPath, []byte(minimalStandaloneDip()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if _, err := Pack(context.Background(), entryPath, &buf); err != nil {
+		t.Fatalf("Pack: %v", err)
+	}
+	if err := os.WriteFile(dst, buf.Bytes(), 0o644); err != nil {
+		t.Fatalf("write bundle: %v", err)
+	}
+}
+
+// minimalStandaloneDip returns a minimal .dip workflow with no subgraph refs.
+// Used by tests that need a parseable, packable, single-file bundle.
+func minimalStandaloneDip() string {
+	return `workflow Entry
+  goal: "test"
+  start: A
+  exit: A
+  agent A
+    prompt: hello
+`
+}

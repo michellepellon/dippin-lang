@@ -2,6 +2,7 @@ package dipx
 
 import (
 	"context"
+	"crypto/sha256"
 	"io"
 	"os"
 	"path/filepath"
@@ -32,6 +33,33 @@ func OpenLax(ctx context.Context, path string) (*Bundle, error) {
 // OpenReader is Open from any io.ReaderAt of known size.
 func OpenReader(ctx context.Context, r io.ReaderAt, size int64) (*Bundle, error) {
 	return openFromReader(ctx, r, size, modeStrict)
+}
+
+// OpenManifest performs only Open's structural-admission steps (zip open,
+// manifest read, manifest decode, manifest shape verification) and returns
+// the parsed manifest plus the bundle identity hash. Hash verification,
+// extras check, parsing, ref walking, and conditional normalization are
+// all skipped — this is the entry point for forensic-mode `dippin inspect
+// --no-verify` against a bundle whose hashes may not match.
+//
+// Bundle path enrichment (Bundle 5) is applied to manifest-decode errors
+// so external callers observe case (a) Path semantics consistently with
+// Open.
+func OpenManifest(ctx context.Context, path string) (Manifest, [32]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return Manifest{}, [32]byte{}, newError(ErrManifestMissing, path, "file not readable", err)
+	}
+	defer func() { _ = f.Close() }()
+	stat, err := f.Stat()
+	if err != nil {
+		return Manifest{}, [32]byte{}, newError(ErrManifestMissing, path, "stat failed", err)
+	}
+	_, manifest, manifestBytes, err := openAndReadManifest(ctx, f, stat.Size())
+	if err != nil {
+		return Manifest{}, [32]byte{}, enrichBundlePath(err, path)
+	}
+	return manifest, sha256.Sum256(manifestBytes), nil
 }
 
 // Validate is Open-and-discard.
