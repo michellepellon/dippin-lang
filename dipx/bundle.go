@@ -1,6 +1,7 @@
 package dipx
 
 import (
+	"context"
 	"crypto/sha256"
 
 	"github.com/2389-research/dippin-lang/ir"
@@ -83,7 +84,14 @@ func (b *Bundle) Resolve(refPath, relativeTo string) (string, error) {
 
 // Workflow resolves refPath relative to relativeTo and returns the parsed
 // child workflow. Argument order matches flatten.Resolver.Resolve.
-func (b *Bundle) Workflow(refPath, relativeTo string) (*ir.Workflow, error) {
+//
+// ctx is checked at entry to satisfy the Source interface contract; the
+// Bundle's workflows map is already in memory, so no actual I/O happens
+// inside this method. Callers passing context.Background() are fine.
+func (b *Bundle) Workflow(ctx context.Context, refPath, relativeTo string) (*ir.Workflow, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	resolved, err := b.Resolve(refPath, relativeTo)
 	if err != nil {
 		return nil, err

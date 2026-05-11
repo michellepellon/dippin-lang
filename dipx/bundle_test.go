@@ -2,6 +2,7 @@ package dipx
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -100,7 +101,7 @@ func TestBundle_ReadFile_RejectsUnsafePath(t *testing.T) {
 
 func TestBundle_Workflow(t *testing.T) {
 	b := newTestBundle(t)
-	wf, err := b.Workflow("b.dip", "workflows/a.dip")
+	wf, err := b.Workflow(context.Background(), "b.dip", "workflows/a.dip")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +112,7 @@ func TestBundle_Workflow(t *testing.T) {
 
 func TestBundle_Workflow_RefMissing(t *testing.T) {
 	b := newTestBundle(t)
-	_, err := b.Workflow("missing.dip", "workflows/a.dip")
+	_, err := b.Workflow(context.Background(), "missing.dip", "workflows/a.dip")
 	if !errors.Is(err, ErrFileMissing) {
 		t.Fatalf("err = %v, want ErrFileMissing", err)
 	}

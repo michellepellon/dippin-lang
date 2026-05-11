@@ -268,7 +268,7 @@ func TestBundle_ConcurrentReads(t *testing.T) {
 			// concurrency contract actually covers.
 			_, err := b.Lookup(entryPath)
 			record(err)
-			_, err = b.Workflow("hello.dip", entryPath)
+			_, err = b.Workflow(context.Background(), "hello.dip", entryPath)
 			record(err)
 			_, err = b.ReadFile(entryPath)
 			record(err)

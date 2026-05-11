@@ -22,7 +22,7 @@ import (
 // treated as read-only by callers.
 type Source interface {
 	Entry() *ir.Workflow
-	Workflow(refPath, relativeTo string) (*ir.Workflow, error)
+	Workflow(ctx context.Context, refPath, relativeTo string) (*ir.Workflow, error)
 }
 
 // Load opens either a .dip or a .dipx based on filename extension.
@@ -104,7 +104,10 @@ func parseDipFile(path string) (*ir.Workflow, error) {
 
 func (d *dirSource) Entry() *ir.Workflow { return d.entry }
 
-func (d *dirSource) Workflow(refPath, relativeTo string) (*ir.Workflow, error) {
+func (d *dirSource) Workflow(ctx context.Context, refPath, relativeTo string) (*ir.Workflow, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	target, err := d.resolveDir(refPath, relativeTo)
 	if err != nil {
 		return nil, err

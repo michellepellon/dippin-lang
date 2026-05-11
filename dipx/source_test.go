@@ -19,7 +19,7 @@ func TestSource_BundleImplementsInterface(t *testing.T) {
 	if s.Entry() == nil {
 		t.Fatal("Entry returned nil")
 	}
-	wf, err := s.Workflow("b.dip", "workflows/a.dip")
+	wf, err := s.Workflow(context.Background(), "b.dip", "workflows/a.dip")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestDirSource_LoadDip(t *testing.T) {
 	if src.Entry().Name != "P" {
 		t.Fatalf("entry name = %q", src.Entry().Name)
 	}
-	wf, err := src.Workflow("child.dip", filepath.Join(dir, "parent.dip"))
+	wf, err := src.Workflow(context.Background(), "child.dip", filepath.Join(dir, "parent.dip"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,8 +117,34 @@ func TestDirSource_RejectsEscape(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = src.Workflow("../../../etc/passwd", filepath.Join(dir, "parent.dip"))
+	_, err = src.Workflow(context.Background(), "../../../etc/passwd", filepath.Join(dir, "parent.dip"))
 	if !errors.Is(err, ErrPathUnsafe) {
 		t.Fatalf("err = %v, want ErrPathUnsafe", err)
+	}
+}
+
+// TestDirSource_Workflow_HonorsContextCancellation asserts that
+// dirSource.Workflow checks ctx before performing disk I/O. A cancelled
+// ctx must produce context.Canceled, not a parse error or successful read.
+func TestDirSource_Workflow_HonorsContextCancellation(t *testing.T) {
+	dir := t.TempDir()
+	entryPath := filepath.Join(dir, "parent.dip")
+	childPath := filepath.Join(dir, "child.dip")
+	body := minimalStandaloneDip()
+	if err := os.WriteFile(entryPath, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(childPath, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	src, err := loadDirSource(context.Background(), entryPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // pre-cancel
+	_, err = src.Workflow(ctx, "child.dip", entryPath)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
 	}
 }
