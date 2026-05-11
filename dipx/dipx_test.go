@@ -599,3 +599,21 @@ func minimalStandaloneDip() string {
     prompt: hello
 `
 }
+
+// TestPack_HonorsContextCancellation asserts that the Pack source-tree
+// walker checks ctx during visitNext. Pre-cancelling the ctx makes Pack
+// return context.Canceled instead of completing the walk. P10.7.
+func TestPack_HonorsContextCancellation(t *testing.T) {
+	dir := t.TempDir()
+	entryPath := filepath.Join(dir, "entry.dip")
+	if err := os.WriteFile(entryPath, []byte(minimalStandaloneDip()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	var buf bytes.Buffer
+	_, err := Pack(ctx, entryPath, &buf)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Pack err = %v, want context.Canceled", err)
+	}
+}

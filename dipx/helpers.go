@@ -251,7 +251,7 @@ type packedFile struct {
 // walkSourceTree collects the entry workflow plus every transitively-referenced
 // subgraph from disk. Refuses to follow symlinks. Refuses if any ref escapes
 // the entry's source root.
-func walkSourceTree(entryPath string) (packedFile, []packedFile, error) {
+func walkSourceTree(ctx context.Context, entryPath string) (packedFile, []packedFile, error) {
 	entryAbs, err := filepath.Abs(entryPath)
 	if err != nil {
 		return packedFile{}, nil, err
@@ -259,6 +259,9 @@ func walkSourceTree(entryPath string) (packedFile, []packedFile, error) {
 	rootDir := filepath.Dir(entryAbs)
 	st := newPackWalkState(entryAbs, rootDir)
 	for st.hasMore() {
+		if err := ctx.Err(); err != nil {
+			return packedFile{}, nil, err
+		}
 		if err := st.visitNext(); err != nil {
 			return packedFile{}, nil, err
 		}

@@ -247,7 +247,7 @@ func preparePackManifest(ctx context.Context, entryPath string) (Manifest, []pac
 	if err := ctx.Err(); err != nil {
 		return Manifest{}, nil, err
 	}
-	entry, all, err := walkSourceTree(entryPath)
+	entry, all, err := walkSourceTree(ctx, entryPath)
 	if err != nil {
 		return Manifest{}, nil, err
 	}
