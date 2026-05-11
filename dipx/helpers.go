@@ -49,15 +49,14 @@ func readManifestEntry(cz *constrainedZip) ([]byte, error) {
 	return raw, nil
 }
 
-// verifyAllHashes streams each file through SHA-256 verification, enforcing
-// per-file and total-uncompressed caps as bounds during decompression.
-// Returns the verified bytes (keyed by canonical bundle path) and the running
-// total of bytes read. The effective per-file cap is min(maxPerFileBytes,
+// verifyAllHashesCtx streams each file in m.Files through SHA-256 verification,
+// enforcing per-file and total-uncompressed caps as streaming bounds during
+// decompression. Returns the verified bytes (keyed by canonical bundle path)
+// and the running total. The effective per-file cap is min(maxPerFileBytes,
 // totalCap-total), so the running total cap is enforced as a streaming bound
-// rather than after a per-file allocation has already happened.
-// verifyAllHashesCtx is verifyAllHashes with per-entry ctx checks. Most
-// callers should use this; the bare verifyAllHashes form is retained for
-// callers that have no ctx in scope.
+// rather than after a per-file allocation has already happened. Checks ctx at
+// entry and before each entry in the loop (P10.10); most callers should prefer
+// this form over the bare verifyAllHashes wrapper.
 func verifyAllHashesCtx(ctx context.Context, cz *constrainedZip, m Manifest, totalCap int64) (map[string]verifiedBytes, int64, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, 0, err
