@@ -2,9 +2,14 @@
 
 All notable changes to dippin-lang are documented here. Versions follow [semver](https://semver.org/).
 
-## [Unreleased]
+## [v0.25.0] — 2026-05-11
 
-`.dipx` format v1.1 work-in-progress. The spec at `docs/superpowers/specs/2026-05-06-dipx-bundle-format-design.md` is the canonical contract; Bundle 6 closes ambiguities in it and brings two implementation details into line.
+`.dipx` format v1.1. The spec at `docs/superpowers/specs/2026-05-06-dipx-bundle-format-design.md` is the canonical contract; this release closes ambiguities in it (Bundle 6), brings the implementation in line with the documented contract, and adds genuine cancellation through Pack/Open hot paths.
+
+**Breaking changes for downstream consumers (Tracker, etc.):**
+
+- `Source.Workflow` now takes `context.Context` as its first argument. Bump your `dippin-lang` import via `go install ...@v0.25.0` (or `@latest`) and update call sites.
+- `dippin inspect --format=json` `status` field is now an object, not a bare `"VALID"` string. If you parse the JSON in scripts, decode `status` as an object with `valid`, `verify_skipped`, `file_count`, `byte_total`, `format_version`.
 
 ### Fixed
 

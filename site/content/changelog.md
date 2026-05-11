@@ -4,6 +4,38 @@ description: "Version history and release notes for dippin-lang."
 navActive: "changelog"
 layout: "changelog"
 ---
+## [v0.25.0] — 2026-05-11
+
+`.dipx` format v1.1. The spec at `docs/superpowers/specs/2026-05-06-dipx-bundle-format-design.md` is the canonical contract; this release closes ambiguities in it (Bundle 6), brings the implementation in line with the documented contract, and adds genuine cancellation through Pack/Open hot paths.
+
+**Breaking changes for downstream consumers (Tracker, etc.):**
+
+- `Source.Workflow` now takes `context.Context` as its first argument. Bump your `dippin-lang` import via `go install ...@v0.25.0` (or `@latest`) and update call sites.
+- `dippin inspect --format=json` `status` field is now an object, not a bare `"VALID"` string. If you parse the JSON in scripts, decode `status` as an object with `valid`, `verify_skipped`, `file_count`, `byte_total`, `format_version`.
+
+### Fixed
+
+- **Cycle detection now covers every manifest-listed workflow.** `dipx.Open` previously DFS'd the ref graph rooted only at `m.Entry`, while `parseAllWorkflows` already parsed every manifest-listed workflow. A cycle in a manifest-listed-but-entry-unreachable workflow could slip through. `walkRefs` now iterates `detectCycles` over `m.Files`. (Bundle 6 / Phase 5 L2/L3.)
+- **`dippin pack`/`unpack`/`inspect` exit code 2 (integrity failure) now matches the spec contract.** `isIntegrityErr` previously routed only 5 sentinels to exit 2; 7 others (`ErrUnsupportedFormatVersion`, `ErrFileMissing`, `ErrFileUnexpected`, `ErrEntryNotInManifest`, `ErrRefEscape`, `ErrRefCycle`, `ErrCapExceeded`, `ErrPathUnsafe`) defaulted to user-error 1. Refactored to a sentinel-slice + loop covering all 12 spec-enumerated sentinels. (Bundle 6 / Phase 8 M1.)
+- **`Open` enriches manifest-decode errors with the bundle path.** `BundleError.Path` for `ErrManifestInvalid` and `ErrUnsupportedFormatVersion` was previously empty or a JSON field name (e.g., `"format_version"`); external callers now always observe the bundle file path. The original Path is preserved in Detail when non-empty. (Bundle 5 / Phase 3 manifest-decoder error-context.)
+- **`Pack` subgraph parse failures attribute to `ErrSubgraphParse`.** Previously every parse failure surfaced as `ErrEntryParse` regardless of which workflow failed; subgraph failures now correctly classify as `ErrSubgraphParse` with the subgraph's filesystem path. (Bundle 5 / P10.9.)
+- **`dippin inspect` emits a structured `status` object.** JSON output's `status` was previously a bare string `"VALID"`; it is now an object with `valid`, `verify_skipped`, `file_count`, `byte_total`, `format_version` per spec § "CLI / inspect command". Text footer now includes the byte total. **Breaking** for JSON consumers parsing `status` as a string. (Bundle 2 / Phase 8 M4, L1, L2.)
+- **`dippin inspect --no-verify` actually skips hash verification.** Previously a no-op (warning printed, full verification still ran). Now routes through a new `dipx.OpenManifest` API that performs only structural-admission steps; tampered bundles can be inspected without integrity errors firing. (Bundle 2 / Phase 10 P10.4.)
+- **`Source.Workflow` now takes `context.Context` as its first argument.** `dirSource.Workflow` checks ctx before disk I/O; `Bundle.Workflow` checks ctx at entry for interface consistency. **Breaking** for external callers (Tracker) — bump your dippin-lang import to pick up the new signature. (Bundle 1 / Phase 6 L4.)
+- **`Open` and `Pack` are cancellable mid-loop.** `verifyAllHashes`, `walkSourceTree`, and `writeBundle` now check `ctx.Err()` between each entry/iteration. A long Open against a many-entry bundle or a long Pack against a deep source tree can be canceled within one entry's processing time instead of running to completion. (Bundle 1 / Phase 10 P10.2, P10.7, P10.10.)
+
+### Spec
+
+Seven `.dipx` bundle-format spec clarifications (no behavior change beyond the two Fixed items above). Each is described in detail in the per-commit messages on this branch.
+
+- **Path canonicalization rule 2** narrowed to "Backslash `\` MUST be rejected" (was "Backslash `\` and any other separator…"). The implementation already rejects only backslash; the spec wording was over-broad.
+- **Per-sentinel error context preamble** added to disambiguate `BundleError.Path` semantics across three real cases: bundle-relative (read-side, post-Open), JSON field name (manifest decode pre-bundle-context), source filesystem path (Pack-side). Spec now requires `Open` to enrich (b) → (a) before returning.
+- **Open ordering step 5** ("Verify no extra zip entries") inserted as a normative step between manifest-shape validation and hash verification; subsequent steps renumbered. `ErrFileUnexpected` added to the error precedence list at category 4.
+- **Cycle detection scope** documented: spec § "Open ordering" step 8 now specifies "every manifest-listed workflow," matching `parseAllWorkflows`.
+- **Integrity-failure sentinel set** for CLI exit code 2 expanded from 5 to all 12 spec-enumerated sentinels.
+- **`inspect --format=json` status object schema** documented with a concrete JSON example (`valid`, `verify_skipped`, `file_count`, `byte_total`, `format_version`).
+- **Tracker integration migration example** updated: `Source.Workflow(ctx, sub.Ref, parentPath)` (was missing `ctx`). Bundle 1 will land the matching Go signature change.
+
 ## [v0.24.0] — 2026-05-08
 
 ### Added
