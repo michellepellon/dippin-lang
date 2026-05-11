@@ -2,6 +2,7 @@ package dipx
 
 import (
 	"archive/zip"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -54,13 +55,29 @@ func readManifestEntry(cz *constrainedZip) ([]byte, error) {
 // total of bytes read. The effective per-file cap is min(maxPerFileBytes,
 // totalCap-total), so the running total cap is enforced as a streaming bound
 // rather than after a per-file allocation has already happened.
-func verifyAllHashes(cz *constrainedZip, m Manifest, totalCap int64) (map[string]verifiedBytes, int64, error) {
+// verifyAllHashesCtx is verifyAllHashes with per-entry ctx checks. Most
+// callers should use this; the bare verifyAllHashes form is retained for
+// callers that have no ctx in scope.
+func verifyAllHashesCtx(ctx context.Context, cz *constrainedZip, m Manifest, totalCap int64) (map[string]verifiedBytes, int64, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, 0, err
+	}
 	if len(m.Files) > maxFiles {
 		return nil, 0, newError(ErrCapExceeded, "", fmt.Sprintf("files exceeds %d", maxFiles), nil)
 	}
-	verified := make(map[string]verifiedBytes, len(m.Files))
+	return verifyEntriesLoop(ctx, cz, m.Files, totalCap)
+}
+
+// verifyEntriesLoop iterates m.Files, checking ctx before each entry, and
+// accumulates verified bytes up to totalCap. Extracted from verifyAllHashesCtx
+// to keep each function within the project's cyclomatic-complexity cap.
+func verifyEntriesLoop(ctx context.Context, cz *constrainedZip, files []ManifestEntry, totalCap int64) (map[string]verifiedBytes, int64, error) {
+	verified := make(map[string]verifiedBytes, len(files))
 	var total int64
-	for _, e := range m.Files {
+	for _, e := range files {
+		if err := ctx.Err(); err != nil {
+			return nil, total, err
+		}
 		vb, err := verifyEntryWithBudget(cz, e, totalCap, total)
 		if err != nil {
 			return nil, total, err
@@ -69,6 +86,12 @@ func verifyAllHashes(cz *constrainedZip, m Manifest, totalCap int64) (map[string
 		verified[e.Path] = vb
 	}
 	return verified, total, nil
+}
+
+// verifyAllHashes is the no-ctx form, retained for tests that don't need
+// cancellation. Prefer verifyAllHashesCtx in production code.
+func verifyAllHashes(cz *constrainedZip, m Manifest, totalCap int64) (map[string]verifiedBytes, int64, error) {
+	return verifyAllHashesCtx(context.Background(), cz, m, totalCap)
 }
 
 // verifyEntryWithBudget verifies a single manifest entry under an effective

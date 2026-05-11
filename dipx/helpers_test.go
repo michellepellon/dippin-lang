@@ -3,6 +3,7 @@ package dipx
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -209,6 +210,19 @@ func TestNormalizeConditions_PopulatesParsedAST(t *testing.T) {
 	}
 	if wf.Edges[0].Condition.Parsed == nil {
 		t.Fatal("Parsed AST not populated")
+	}
+}
+
+// TestVerifyAllHashesCtx_PreCancelledReturnsContextErr asserts that a
+// pre-cancelled ctx causes verifyAllHashesCtx to return context.Canceled
+// without doing the full pass. P10.10.
+func TestVerifyAllHashesCtx_PreCancelledReturnsContextErr(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	m := Manifest{Files: []ManifestEntry{{Path: "workflows/a.dip"}}}
+	_, _, err := verifyAllHashesCtx(ctx, nil, m, 100<<20)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
 	}
 }
 

@@ -157,12 +157,10 @@ func checkExtraEntriesCtx(ctx context.Context, cz *constrainedZip, m Manifest, m
 	return checkExtraEntries(cz, m, mode)
 }
 
-// verifyHashesCtx checks ctx then verifies every file's SHA-256.
+// verifyHashesCtx verifies every file's SHA-256, with per-entry ctx
+// checks inside the loop (P10.10).
 func verifyHashesCtx(ctx context.Context, cz *constrainedZip, m Manifest) (map[string]verifiedBytes, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	verified, _, err := verifyAllHashes(cz, m, maxTotalUncompBytes)
+	verified, _, err := verifyAllHashesCtx(ctx, cz, m, maxTotalUncompBytes)
 	return verified, err
 }
 
