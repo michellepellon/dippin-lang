@@ -234,7 +234,7 @@ func Pack(ctx context.Context, entryPath string, w io.Writer) (Manifest, error) 
 	if err := ctx.Err(); err != nil {
 		return Manifest{}, err
 	}
-	if err := writeBundle(w, manifest, all); err != nil {
+	if err := writeBundle(ctx, w, manifest, all); err != nil {
 		return Manifest{}, err
 	}
 	return manifest, nil

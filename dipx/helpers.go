@@ -471,7 +471,10 @@ func buildManifestForPack(entry packedFile, all []packedFile) Manifest {
 
 // writeBundle writes a deterministic .dipx to w. manifest.json is always the
 // first entry; payload entries follow in lexicographic order of bundlePath.
-func writeBundle(w io.Writer, m Manifest, files []packedFile) error {
+func writeBundle(ctx context.Context, w io.Writer, m Manifest, files []packedFile) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	zw := zip.NewWriter(w)
 	manifestJSON, err := encodeManifestCanonical(m)
 	if err != nil {
@@ -481,16 +484,20 @@ func writeBundle(w io.Writer, m Manifest, files []packedFile) error {
 		return err
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].bundlePath < files[j].bundlePath })
-	if err := writeAllPackedFiles(zw, files); err != nil {
+	if err := writeAllPackedFiles(ctx, zw, files); err != nil {
 		return err
 	}
 	return zw.Close()
 }
 
 // writeAllPackedFiles writes every packed file as a zip entry in the order
-// supplied (callers sort first).
-func writeAllPackedFiles(zw *zip.Writer, files []packedFile) error {
+// supplied (callers sort first). Checks ctx between entries so a long
+// Pack against many files can be canceled mid-write. P10.2.
+func writeAllPackedFiles(ctx context.Context, zw *zip.Writer, files []packedFile) error {
 	for _, pf := range files {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if err := writeZipEntry(zw, pf.bundlePath, pf.bytes); err != nil {
 			return err
 		}
