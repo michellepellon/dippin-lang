@@ -283,6 +283,32 @@ These can be used in downstream node prompts or edge conditions:
     CheckStatus -> Wait    when ctx.tool_stdout != "ready"
 ```
 
+### Markers and Verbose Output
+
+When a tool's stdout drives routing (via edge conditions on `ctx.tool_stdout`), keep stdout focused on the routing signal. Diagnostic output — test logs, build dumps, stack traces — should go to sibling files, not stdout.
+
+Why: runtimes may impose size limits on captured stdout. If verbose output precedes a routing marker and exceeds the cap, the marker can be dropped silently — the unconditional fallback edge fires (or the pipeline stalls) when no marker is recognized.
+
+**Avoid** (verbose output streams to stdout alongside the marker):
+
+```sh
+pytest 2>&1 | tee .ai/test_output.txt
+code=${PIPESTATUS[0]}
+if [ $code -eq 0 ]; then printf 'tests-pass'
+else printf 'tests-fail'; fi
+```
+
+**Prefer** (verbose output redirected to a file; only the marker reaches stdout):
+
+```sh
+pytest > .ai/test_output.txt 2>&1
+code=$?
+if [ $code -eq 0 ]; then printf 'tests-pass'
+else printf 'tests-fail'; fi
+```
+
+The same pattern applies to any tool whose output drives routing — build commands, linters, type checkers, custom validators.
+
 ---
 
 ## Parallel Nodes
