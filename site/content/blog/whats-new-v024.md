@@ -7,12 +7,12 @@ tagLabel: "RELEASE"
 category: "Releases"
 readTime: "6 min read"
 related:
+  - url: "whats-new-v025.html"
+    title: "What's New in v0.25"
+    summary: ".dipx format v1.1 — real ctx cancellation, an inspect that actually inspects, and exit code 2 that matches the spec."
   - url: "whats-new-v023.html"
     title: "What's New in v0.23"
     summary: "tool_commands_allow / tool_denylist_add defaults plus a cleaner DOT header."
-  - url: "whats-new-v021-v022.html"
-    title: "What's New in v0.21–v0.22"
-    summary: "Human timeouts, budget caps, and the manager_loop node kind."
 ---
 
 You've spent a week stitching together a workflow. It's six `.dip` files: an entry pipeline, three reusable subgraphs, two interview loops your teammate built and you finally got around to wiring in. It runs locally. Now you need to ship it to Tracker.
