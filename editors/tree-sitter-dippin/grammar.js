@@ -36,7 +36,7 @@ module.exports = grammar({
       ),
 
     workflow_field: ($) =>
-      seq(choice("goal", "start", "exit"), ":", $.field_value),
+      seq(choice("goal", "start", "exit", "requires"), ":", $.field_value),
 
     // ── Defaults ──────────────────────────────────────────────
     defaults_section: ($) =>

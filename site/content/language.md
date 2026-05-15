@@ -42,6 +42,7 @@ workflow my_pipeline
 | `goal: <text>` | No | Human-readable objective for this pipeline |
 | `start: <NodeID>` | Yes | Entry point node — execution begins here |
 | `exit: <NodeID>` | Yes | Terminal node — execution ends here |
+| `requires: <id>[, <id>...]` | No | Workflow-level declared prerequisites (advisory; comma-separated identifiers — tools, MCP servers, env vars). Mirrors node-level `reads:` / `writes:` for shape. |
 
 ## Defaults Block
 

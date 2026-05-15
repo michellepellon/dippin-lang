@@ -29,9 +29,10 @@ workflow_body   = { workflow_field | defaults_section | vars_section
                   | node_decl | edges_section
                   | stylesheet_section | NEWLINE } ;
 
-workflow_field  = "goal"  ":" field_value
-                | "start" ":" IDENTIFIER
-                | "exit"  ":" IDENTIFIER ;
+workflow_field  = "goal"     ":" field_value
+                | "start"    ":" IDENTIFIER
+                | "exit"     ":" IDENTIFIER
+                | "requires" ":" identifier_list ;
 
 (* ═══════════════════════════════════════════════════════════ *)
 (* Defaults Section                                           *)
@@ -317,7 +318,7 @@ digit           = "0" | "1" | ... | "9" ;
 (* Canonical Field Ordering (enforced by formatter)           *)
 (* ═══════════════════════════════════════════════════════════ *)
 
-(* Workflow header: goal, start, exit                         *)
+(* Workflow header: goal, start, exit, requires               *)
 (* Defaults: model, provider, retry_policy, max_retries,      *)
 (*   fidelity, max_restarts, restart_target, cache_tools,     *)
 (*   compaction                                               *)

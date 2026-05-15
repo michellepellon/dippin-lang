@@ -121,6 +121,9 @@ func writeWorkflowHeader(wr *writer, w *ir.Workflow) {
 	if w.Goal != "" {
 		wr.line("goal: %s", quoteValue(w.Goal))
 	}
+	if len(w.Requires) > 0 {
+		wr.line("requires: %s", strings.Join(w.Requires, ", "))
+	}
 	wr.line("start: %s", w.Start)
 	wr.line("exit: %s", w.Exit)
 	// We keep the indent at 1 for the rest of the top-level sections

@@ -18,6 +18,21 @@ func splitComma(s string) []string {
 	return res
 }
 
+// splitCommaNoEmpty splits a comma-separated string, trims whitespace,
+// and drops empty entries. Returns nil for an empty or whitespace-only input.
+func splitCommaNoEmpty(s string) []string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	var res []string
+	for _, p := range strings.Split(s, ",") {
+		if t := strings.TrimSpace(p); t != "" {
+			res = append(res, t)
+		}
+	}
+	return res
+}
+
 // splitKeyValue splits "key: value" into (key, value).
 func splitKeyValue(line string) (string, string) {
 	idx := strings.Index(line, ":")
