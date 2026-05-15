@@ -2,11 +2,11 @@
 
 All notable changes to dippin-lang are documented here. Versions follow [semver](https://semver.org/).
 
-## [Unreleased]
+## [v0.26.0] — 2026-05-15
 
 ### Added
 
-- **Workflow header `requires:` keyword.** New optional workflow-header field for declaring workflow-level prerequisites (e.g., tools, MCP servers, env vars) as a comma-separated identifier list. Advisory in v1 — parsed, round-tripped by the formatter, and exposed as `ir.Workflow.Requires []string`, but not yet validated by lint. Mirrors the shape of node-level `reads:` / `writes:`. Documented in `docs/GRAMMAR.ebnf`, `docs/syntax.md`, `docs/llm-reference.md`, `site/content/language.md`, and the hosted skill (`site/static/skill.md`).
+- **Workflow header `requires:` keyword.** New optional workflow-header field for declaring workflow-level prerequisites (e.g., tools, MCP servers, env vars) as a comma-separated identifier list. Advisory in v1 — parsed, round-tripped by the formatter, and exposed as `ir.Workflow.Requires []string`, but not yet validated by lint. Mirrors the shape of node-level `reads:` / `writes:`. Filed from [tracker's git-preflight design](https://github.com/2389-research/tracker/blob/main/docs/superpowers/specs/2026-05-15-tracker-git-preflight-design.md) to unblock the `--git=` preflight mechanism. Canonical formatter order is `goal → requires → start → exit`. Editor support (tree-sitter, VS Code, Zed) and the hosted skill (`site/static/skill.md`) updated.
 
 ## [v0.25.0] — 2026-05-11
 
