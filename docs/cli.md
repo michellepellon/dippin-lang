@@ -260,7 +260,7 @@ dippin fmt [--check] [--write] <file>
 
 **What canonical format means**:
 - 2-space indentation
-- Workflow header fields in standard order (goal, start, exit)
+- Workflow header fields in standard order (goal, requires, start, exit)
 - Defaults block (if present) after header
 - Node definitions ordered by kind
 - Edges section at end

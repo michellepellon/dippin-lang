@@ -318,7 +318,7 @@ digit           = "0" | "1" | ... | "9" ;
 (* Canonical Field Ordering (enforced by formatter)           *)
 (* ═══════════════════════════════════════════════════════════ *)
 
-(* Workflow header: goal, start, exit, requires               *)
+(* Workflow header: goal, requires, start, exit               *)
 (* Defaults: model, provider, retry_policy, max_retries,      *)
 (*   fidelity, max_restarts, restart_target, cache_tools,     *)
 (*   compaction                                               *)

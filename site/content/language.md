@@ -12,7 +12,7 @@ Every `.dip` file contains exactly one workflow. The top-level structure has up 
 <div class="flow-diagram">
   <div class="flow-step">workflow &lt;name&gt;</div>
   <div class="flow-arrow">&rarr;</div>
-  <div class="flow-step">Header<br>goal, start, exit</div>
+  <div class="flow-step">Header<br>goal, requires, start, exit</div>
   <div class="flow-arrow">&rarr;</div>
   <div class="flow-step">Defaults (optional)<br>model, provider, ...</div>
   <div class="flow-arrow">&rarr;</div>
@@ -40,9 +40,9 @@ workflow my_pipeline
 |-------|----------|-------------|
 | `workflow <name>` | Yes | Declares the workflow and its identifier |
 | `goal: <text>` | No | Human-readable objective for this pipeline |
+| `requires: <id>[, <id>...]` | No | Workflow-level declared prerequisites (advisory; comma-separated identifiers — tools, MCP servers, env vars). Mirrors node-level `reads:` / `writes:` for shape. |
 | `start: <NodeID>` | Yes | Entry point node — execution begins here |
 | `exit: <NodeID>` | Yes | Terminal node — execution ends here |
-| `requires: <id>[, <id>...]` | No | Workflow-level declared prerequisites (advisory; comma-separated identifiers — tools, MCP servers, env vars). Mirrors node-level `reads:` / `writes:` for shape. |
 
 ## Defaults Block
 

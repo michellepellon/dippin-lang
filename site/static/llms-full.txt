@@ -11,9 +11,9 @@ Generate from template: `dippin new minimal`, `dippin new parallel`, `dippin new
 ```
 workflow <Name>
   goal: "<text>"
+  [requires: <id1>, <id2>, ...]
   start: <NodeID>
   exit: <NodeID>
-  [requires: <id1>, <id2>, ...]
 
   [defaults
     model: <string>
@@ -172,9 +172,9 @@ Use `valid` to decide whether to retry generation. Use `diagnostics` to feed err
 ```
 workflow <Name>
   goal: "<description>"
+  requires: <id1>, <id2>   # optional, comma-separated prerequisites (tools, MCP servers, env vars)
   start: <NodeID>
   exit: <NodeID>
-  requires: <id1>, <id2>   # optional, comma-separated prerequisites (tools, MCP servers, env vars)
 
   defaults
     model: claude-sonnet-4-6
@@ -186,7 +186,7 @@ workflow <Name>
     <edge declarations>
 ```
 
-Four sections in order: **header** (workflow name, goal, start, exit, optional requires) → **defaults** (optional) → **nodes** (any order) → **edges** (optional). `defaults` and `edges` are bare keywords — no colon after them. `requires:` is advisory metadata, comma-separated identifiers — same shape as node-level `reads:` / `writes:`.
+Four sections in order: **header** (workflow name, goal, optional requires, start, exit) → **defaults** (optional) → **nodes** (any order) → **edges** (optional). `defaults` and `edges` are bare keywords — no colon after them. `requires:` is advisory metadata, comma-separated identifiers — same shape as node-level `reads:` / `writes:`.
 
 Indentation: 2 spaces. Comments: `#` line comments (literal inside multiline blocks).
 

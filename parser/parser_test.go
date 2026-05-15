@@ -2054,3 +2054,16 @@ func TestParseRequiresRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+func TestParseRequiresFromFixture(t *testing.T) {
+	w := parseFixture(t, "workflow_requires.dip")
+	want := []string{"git", "docker", "jq"}
+	if len(w.Requires) != len(want) {
+		t.Fatalf("Requires = %#v, want %#v", w.Requires, want)
+	}
+	for i, v := range want {
+		if w.Requires[i] != v {
+			t.Errorf("Requires[%d] = %q, want %q", i, w.Requires[i], v)
+		}
+	}
+}
