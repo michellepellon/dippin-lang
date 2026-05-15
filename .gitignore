@@ -34,3 +34,8 @@ site/.hugo_build.lock
 
 # Tree-sitter build deps
 editors/tree-sitter-dippin/node_modules/
+
+# Tool-local state (Claude Code agent worktrees + task lockfiles, Serena MCP cache)
+.claude/worktrees/
+.claude/scheduled_tasks.lock
+.serena/
