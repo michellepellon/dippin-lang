@@ -16,6 +16,7 @@ type Workflow struct {
 	Exit       string            // Explicit exit node ID (required)
 	Defaults   WorkflowDefaults  // Graph-level config
 	Vars       map[string]string // User-defined workflow variables
+	Requires   []string          // Environmental dependencies (e.g. ["git", "docker"]); semantics live in consumers
 	Nodes      []*Node           // Ordered for deterministic processing
 	Edges      []*Edge
 	Stylesheet []StylesheetRule // Theme/styling rules

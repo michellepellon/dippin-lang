@@ -67,4 +67,22 @@ func assertWorkflowsEqual(t *testing.T, a, b *ir.Workflow) {
 	if len(a.Edges) != len(b.Edges) {
 		t.Errorf("Edges: %d vs %d", len(a.Edges), len(b.Edges))
 	}
+	assertRequiresEqual(t, a.Requires, b.Requires)
+}
+
+func assertRequiresEqual(t *testing.T, a, b []string) {
+	t.Helper()
+	if (a == nil) != (b == nil) {
+		t.Errorf("Requires nilness: a nil=%t vs b nil=%t", a == nil, b == nil)
+		return
+	}
+	if len(a) != len(b) {
+		t.Errorf("Requires len: %d vs %d (a=%#v b=%#v)", len(a), len(b), a, b)
+		return
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			t.Errorf("Requires[%d]: %q vs %q", i, a[i], b[i])
+		}
+	}
 }

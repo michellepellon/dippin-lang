@@ -1,0 +1,11 @@
+workflow with_requires
+  goal: "Workflow with environmental dependencies."
+  requires: git, docker, jq
+  start: A
+  exit: A
+
+  agent A
+    prompt: Do it.
+
+  edges
+    A -> A

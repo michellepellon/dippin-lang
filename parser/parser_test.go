@@ -1900,3 +1900,170 @@ func TestParseDefaultsToolSafetyRoundTrip(t *testing.T) {
 		t.Errorf("round-trip: tool_denylist_add = %q, want %q", d.ToolDenylistAdd, "rm -rf /,dd *")
 	}
 }
+
+func TestParseRequiresSingle(t *testing.T) {
+	input := `workflow Test
+  goal: "Test"
+  requires: git
+  start: A
+  exit: A
+
+  agent A
+    prompt: "Do it."
+
+  edges
+    A -> A
+`
+	w, err := NewParser(input, "test.dip").Parse()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(w.Requires) != 1 || w.Requires[0] != "git" {
+		t.Errorf("Requires = %#v, want [git]", w.Requires)
+	}
+}
+
+func TestParseRequiresMulti(t *testing.T) {
+	input := `workflow Test
+  goal: "Test"
+  requires: git, docker, jq
+  start: A
+  exit: A
+
+  agent A
+    prompt: "Do it."
+
+  edges
+    A -> A
+`
+	w, err := NewParser(input, "test.dip").Parse()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []string{"git", "docker", "jq"}
+	if len(w.Requires) != len(want) {
+		t.Fatalf("Requires = %#v, want %#v", w.Requires, want)
+	}
+	for i, v := range want {
+		if w.Requires[i] != v {
+			t.Errorf("Requires[%d] = %q, want %q", i, w.Requires[i], v)
+		}
+	}
+}
+
+func TestParseRequiresTrimsAndDropsEmpties(t *testing.T) {
+	input := `workflow Test
+  goal: "Test"
+  requires:   git ,  ,  docker  ,
+  start: A
+  exit: A
+
+  agent A
+    prompt: "Do it."
+
+  edges
+    A -> A
+`
+	w, err := NewParser(input, "test.dip").Parse()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []string{"git", "docker"}
+	if len(w.Requires) != len(want) {
+		t.Fatalf("Requires = %#v, want %#v", w.Requires, want)
+	}
+	for i, v := range want {
+		if w.Requires[i] != v {
+			t.Errorf("Requires[%d] = %q, want %q", i, w.Requires[i], v)
+		}
+	}
+}
+
+func TestParseRequiresMissingIsNil(t *testing.T) {
+	input := `workflow Test
+  goal: "Test"
+  start: A
+  exit: A
+
+  agent A
+    prompt: "Do it."
+
+  edges
+    A -> A
+`
+	w, err := NewParser(input, "test.dip").Parse()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if w.Requires != nil {
+		t.Errorf("Requires = %#v, want nil", w.Requires)
+	}
+}
+
+func TestParseRequiresUnknownEntriesAccepted(t *testing.T) {
+	// Unknown / future dependency names must not produce parser diagnostics.
+	input := `workflow Test
+  goal: "Test"
+  requires: future-thing-9000, quantum-entangler
+  start: A
+  exit: A
+
+  agent A
+    prompt: "Do it."
+
+  edges
+    A -> A
+`
+	w, err := NewParser(input, "test.dip").Parse()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(w.Requires) != 2 {
+		t.Errorf("Requires = %#v, want 2 entries", w.Requires)
+	}
+}
+
+func TestParseRequiresRoundTrip(t *testing.T) {
+	input := `workflow Test
+  goal: "Test"
+  requires: git, docker, jq
+  start: A
+  exit: A
+
+  agent A
+    prompt: "Do it."
+
+  edges
+    A -> A
+`
+	w1, err := NewParser(input, "test.dip").Parse()
+	if err != nil {
+		t.Fatalf("first parse: %v", err)
+	}
+	formatted := formatter.Format(w1)
+	w2, err := NewParser(formatted, "roundtrip").Parse()
+	if err != nil {
+		t.Fatalf("re-parse: %v\nformatted:\n%s", err, formatted)
+	}
+	if len(w1.Requires) != len(w2.Requires) {
+		t.Fatalf("Requires len: %d vs %d", len(w1.Requires), len(w2.Requires))
+	}
+	for i := range w1.Requires {
+		if w1.Requires[i] != w2.Requires[i] {
+			t.Errorf("Requires[%d]: %q vs %q", i, w1.Requires[i], w2.Requires[i])
+		}
+	}
+}
+
+func TestParseRequiresFromFixture(t *testing.T) {
+	w := parseFixture(t, "workflow_requires.dip")
+	want := []string{"git", "docker", "jq"}
+	if len(w.Requires) != len(want) {
+		t.Fatalf("Requires = %#v, want %#v", w.Requires, want)
+	}
+	for i, v := range want {
+		if w.Requires[i] != v {
+			t.Errorf("Requires[%d] = %q, want %q", i, w.Requires[i], v)
+		}
+	}
+}

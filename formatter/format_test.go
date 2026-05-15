@@ -1836,3 +1836,95 @@ func TestFormatManagerLoop_ParsedConditionFallback(t *testing.T) {
 		t.Errorf("expected condition text in output, got:\n%s", out)
 	}
 }
+
+func TestFormatRequiresSingle(t *testing.T) {
+	w := &ir.Workflow{
+		Name:     "req_single",
+		Start:    "A",
+		Exit:     "A",
+		Requires: []string{"git"},
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Do."}},
+		},
+		Edges: []*ir.Edge{{From: "A", To: "A"}},
+	}
+	out := Format(w)
+	assertContains(t, out, "  requires: git")
+	assertIdempotent(t, w)
+}
+
+func TestFormatRequiresMulti(t *testing.T) {
+	w := &ir.Workflow{
+		Name:     "req_multi",
+		Goal:     "Multi-dep workflow",
+		Start:    "A",
+		Exit:     "A",
+		Requires: []string{"git", "docker", "jq"},
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Do."}},
+		},
+		Edges: []*ir.Edge{{From: "A", To: "A"}},
+	}
+	out := Format(w)
+	assertContains(t, out, "  requires: git, docker, jq")
+
+	// requires must sit between goal and start in canonical order.
+	lines := strings.Split(out, "\n")
+	idxGoal, idxReq, idxStart := -1, -1, -1
+	for i, l := range lines {
+		trim := strings.TrimSpace(l)
+		switch {
+		case strings.HasPrefix(trim, "goal:"):
+			idxGoal = i
+		case strings.HasPrefix(trim, "requires:"):
+			idxReq = i
+		case strings.HasPrefix(trim, "start:"):
+			idxStart = i
+		}
+	}
+	if !(idxGoal < idxReq && idxReq < idxStart) {
+		t.Errorf("expected goal < requires < start; got %d, %d, %d", idxGoal, idxReq, idxStart)
+	}
+	assertIdempotent(t, w)
+}
+
+func TestFormatRequiresOmittedWhenNilOrEmpty(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "no_req",
+		Start: "A",
+		Exit:  "A",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Do."}},
+		},
+		Edges: []*ir.Edge{{From: "A", To: "A"}},
+	}
+	assertNotContains(t, Format(w), "requires:")
+	w.Requires = []string{}
+	assertNotContains(t, Format(w), "requires:")
+}
+
+func TestFormatRequiresRoundTrip(t *testing.T) {
+	w1 := &ir.Workflow{
+		Name:     "req_rt",
+		Start:    "A",
+		Exit:     "A",
+		Requires: []string{"git", "docker"},
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "Do."}},
+		},
+		Edges: []*ir.Edge{{From: "A", To: "A"}},
+	}
+	formatted := Format(w1)
+	w2, err := parser.NewParser(formatted, "rt").Parse()
+	if err != nil {
+		t.Fatalf("re-parse: %v\nformatted:\n%s", err, formatted)
+	}
+	if len(w2.Requires) != len(w1.Requires) {
+		t.Fatalf("Requires len: %d vs %d", len(w1.Requires), len(w2.Requires))
+	}
+	for i := range w1.Requires {
+		if w1.Requires[i] != w2.Requires[i] {
+			t.Errorf("Requires[%d]: %q vs %q", i, w1.Requires[i], w2.Requires[i])
+		}
+	}
+}

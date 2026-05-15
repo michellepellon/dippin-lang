@@ -9,6 +9,7 @@ Compact reference for LLMs generating `.dip` workflow files. Paste into system p
 ```
 workflow <Name>
   goal: "<text>"
+  [requires: <dep1>, <dep2>, ...]
   start: <NodeID>
   exit: <NodeID>
 

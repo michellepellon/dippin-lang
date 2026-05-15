@@ -131,7 +131,7 @@
     "field": {
       "patterns": [
         {
-          "match": "^\\s*(goal|start|exit)\\s*(:)",
+          "match": "^\\s*(goal|requires|start|exit)\\s*(:)",
           "captures": {
             "1": { "name": "keyword.other.header-field.dippin" },
             "2": { "name": "punctuation.separator.key-value.dippin" }

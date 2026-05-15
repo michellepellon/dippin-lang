@@ -11,7 +11,7 @@ Every `.dip` file contains exactly one workflow. The top-level structure is:
 ```mermaid
 graph TD
     WF["workflow &lt;name&gt;"]
-    WF --> H["Header<br>goal, start, exit"]
+    WF --> H["Header<br>goal, requires, start, exit"]
     WF --> D["Defaults (optional)<br>model, provider, retry_policy, ..."]
     WF --> N["Node Definitions<br>agent, human, tool, parallel, fan_in, subgraph"]
     WF --> E["Edges Section (optional)<br>A -> B when condition"]
@@ -76,6 +76,7 @@ The workflow declaration is the first line, followed by required and optional he
 ```dippin
 workflow my_pipeline
   goal: "Ask user for a task, implement it, review, ship"
+  requires: git, docker
   start: AskUser
   exit: Done
 ```
@@ -84,6 +85,7 @@ workflow my_pipeline
 |-------|----------|-------------|
 | `workflow <name>` | Yes | Declares the workflow and its identifier |
 | `goal: <text>` | No | Human-readable objective for this pipeline |
+| `requires: <list>` | No | Comma-separated environmental dependencies (e.g. `git, docker, jq`). Surfaced as `Workflow.Requires` in the IR; semantics live in downstream consumers (preflight checks, etc.). Unknown entries are accepted without diagnostic. |
 | `start: <NodeID>` | Yes | Entry point node — execution begins here |
 | `exit: <NodeID>` | Yes | Terminal node — execution ends here |
 

@@ -758,6 +758,10 @@
     "named": true
   },
   {
+    "type": "requires",
+    "named": false
+  },
+  {
     "type": "restart",
     "named": false
   },

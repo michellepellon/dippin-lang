@@ -107,13 +107,15 @@ func dispatchWorkflowSimpleField(p *Parser, t Token) bool {
 	return true
 }
 
-// dispatchWorkflowTailField handles edges, stylesheet. Returns true if handled.
+// dispatchWorkflowTailField handles edges, stylesheet, and requires. Returns true if handled.
 func dispatchWorkflowTailField(p *Parser, t Token) bool {
 	switch t.Value {
 	case "edges":
 		p.parseEdges()
 	case "stylesheet":
 		p.parseStylesheet()
+	case "requires":
+		p.parseWorkflowRequiresField(t)
 	default:
 		return false
 	}
@@ -140,6 +142,16 @@ func (p *Parser) dispatchWorkflowDefault(t Token) {
 	}
 	p.diagnostics = append(p.diagnostics, fmt.Sprintf("unexpected top-level identifier: %s at %d:%d", t.Value, t.Location.Line, t.Location.Column))
 	p.lexer.NextToken()
+}
+
+// parseWorkflowRequiresField parses "requires: a, b, c" into Workflow.Requires.
+// Whitespace is trimmed and empty entries are dropped. A missing or empty list
+// leaves Workflow.Requires nil (matches IR nil-vs-empty conventions).
+func (p *Parser) parseWorkflowRequiresField(t Token) {
+	p.lexer.NextToken() // requires
+	p.expect(TokenColon)
+	val := p.readFieldValue(t.Location.Line)
+	p.workflow.Requires = splitCommaNoEmpty(val)
 }
 
 // parseWorkflowStringField parses a simple "key: value" field on the workflow.

@@ -93,6 +93,10 @@
             {
               "type": "STRING",
               "value": "exit"
+            },
+            {
+              "type": "STRING",
+              "value": "requires"
             }
           ]
         },

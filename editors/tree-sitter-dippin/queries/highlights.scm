@@ -98,6 +98,8 @@
 (workflow_field
   "goal" @keyword)
 (workflow_field
+  "requires" @keyword)
+(workflow_field
   "start" @keyword)
 (workflow_field
   "exit" @keyword)

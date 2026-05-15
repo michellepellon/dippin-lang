@@ -2,6 +2,12 @@
 
 All notable changes to dippin-lang are documented here. Versions follow [semver](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Workflow header `requires:` keyword.** New optional workflow-header field for declaring workflow-level prerequisites (e.g., tools, MCP servers, env vars) as a comma-separated identifier list. Advisory in v1 — parsed, round-tripped by the formatter, and exposed as `ir.Workflow.Requires []string`, but not yet validated by lint. Mirrors the shape of node-level `reads:` / `writes:`. Documented in `docs/GRAMMAR.ebnf`, `docs/syntax.md`, `docs/llm-reference.md`, `site/content/language.md`, and the hosted skill (`site/static/skill.md`).
+
 ## [v0.25.0] — 2026-05-11
 
 `.dipx` format v1.1. The spec at `docs/superpowers/specs/2026-05-06-dipx-bundle-format-design.md` is the canonical contract; this release closes ambiguities in it (Bundle 6), brings the implementation in line with the documented contract, and adds genuine cancellation through Pack/Open hot paths.
