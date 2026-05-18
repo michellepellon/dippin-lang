@@ -7,12 +7,12 @@ tagLabel: "RELEASE"
 category: "Releases"
 readTime: "3 min read"
 related:
+  - url: "whats-new-v027.html"
+    title: "What's New in v0.27"
+    summary: "Model catalog refresh — 11+ new IDs, seven price corrections, and a retirement calendar."
   - url: "whats-new-v025.html"
     title: "What's New in v0.25"
     summary: ".dipx format v1.1 — real ctx cancellation, an inspect that actually inspects, and exit code 2 that matches the spec."
-  - url: "whats-new-v024.html"
-    title: "What's New in v0.24"
-    summary: "The `.dipx` bundle format — pack a workflow tree into one verifiable file you can ship anywhere."
 ---
 
 `v0.26.0` is a small release. One new keyword — `requires:` — in the workflow header. The shape is intentionally simple: a comma-separated list of identifiers the workflow needs in order to run. The motivation is less simple, and it shows up most visibly the first time a workflow crashes 20 minutes in because `git` wasn't on the runtime's PATH.
