@@ -21,6 +21,7 @@ import (
 //	OpenAI:     https://developers.openai.com/api/docs/models/all
 //	DeepSeek:   https://api-docs.deepseek.com/quick_start/pricing
 //	xAI (Grok): https://docs.x.ai/developers/models
+//	            https://docs.x.ai/developers/migration/may-15-retirement
 //	Mistral:    https://docs.mistral.ai/getting-started/models/models_overview/
 //	Cohere:     https://docs.cohere.com/docs/models
 var knownModelProviders = map[string]map[string]bool{
@@ -132,15 +133,20 @@ func geminiModels() map[string]bool {
 // grokModels returns the set of known xAI Grok model IDs.
 //
 // grok-4-1-fast-reasoning and grok-4-1-fast-non-reasoning were retired
-// 2026-05-15; requests are silently redirected to grok-4.3 by xAI, which
-// would change observed behavior — they are removed from the catalog so
-// authors get a DIP108 nudge to update their .dip files explicitly.
+// 2026-05-15 — requests are silently redirected to grok-4.3 by xAI and
+// billed at grok-4.3 rates. They remain in the catalog because they are
+// still functionally callable; surfacing DIP108 ("unknown model") on
+// them would be indistinguishable from a typo. A future, more specific
+// "deprecated alias" diagnostic can replace this comment.
 func grokModels() map[string]bool {
 	return map[string]bool{
 		"grok-4.3":                     true, // Current flagship (Apr 2026).
 		"grok-4.20-0309-reasoning":     true,
 		"grok-4.20-0309-non-reasoning": true,
 		"grok-4.20-multi-agent-0309":   true,
+		// Retired 2026-05-15; xAI redirects to grok-4.3.
+		"grok-4-1-fast-reasoning":     true,
+		"grok-4-1-fast-non-reasoning": true,
 	}
 }
 

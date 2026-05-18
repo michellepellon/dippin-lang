@@ -11,6 +11,7 @@ package cost
 //	OpenAI:     https://developers.openai.com/api/docs/models/all
 //	DeepSeek:   https://api-docs.deepseek.com/quick_start/pricing
 //	xAI (Grok): https://docs.x.ai/developers/models
+//	            https://docs.x.ai/developers/migration/may-15-retirement
 //	Mistral:    https://docs.mistral.ai/getting-started/models/models_overview/
 //	Cohere:     https://docs.cohere.com/docs/models
 //
@@ -40,7 +41,7 @@ func DefaultPricing() PricingTable {
 			"claude-sonnet-4-5": {InputPer1M: 3.00, OutputPer1M: 15.00},
 			"claude-opus-4-5":   {InputPer1M: 5.00, OutputPer1M: 25.00},
 			"claude-opus-4-1":   {InputPer1M: 15.00, OutputPer1M: 75.00},
-			// Deprecated 2026-04-14, retires 2026-06-15.
+			// Both deprecated 2026-04-14, retire 2026-06-15.
 			"claude-sonnet-4-0": {InputPer1M: 3.00, OutputPer1M: 15.00},
 			"claude-opus-4-0":   {InputPer1M: 15.00, OutputPer1M: 75.00},
 			// Retired 2026-02-19 on first-party API; Bedrock/Vertex passthrough rate.
@@ -119,15 +120,19 @@ func DefaultPricing() PricingTable {
 
 // grokPricing returns pricing for xAI Grok models.
 //
-// grok-4-1-fast-* IDs were retired 2026-05-15 and silently redirect to
-// grok-4.3 server-side — they are removed from this table so authors
-// surface DIP108 on .dip files that still reference them.
+// grok-4-1-fast-* IDs were retired 2026-05-15 — xAI silently redirects
+// them to grok-4.3 server-side and bills at grok-4.3 rates. They remain
+// in this table at grok-4.3 prices so cost analysis reflects what the
+// runtime actually bills for workflows that still reference them.
 func grokPricing() map[string]ModelPrice {
 	return map[string]ModelPrice{
 		"grok-4.3":                     {InputPer1M: 1.25, OutputPer1M: 2.50},
 		"grok-4.20-0309-reasoning":     {InputPer1M: 1.25, OutputPer1M: 2.50},
 		"grok-4.20-0309-non-reasoning": {InputPer1M: 1.25, OutputPer1M: 2.50},
 		"grok-4.20-multi-agent-0309":   {InputPer1M: 1.25, OutputPer1M: 2.50},
+		// Retired 2026-05-15; redirected to grok-4.3.
+		"grok-4-1-fast-reasoning":     {InputPer1M: 1.25, OutputPer1M: 2.50},
+		"grok-4-1-fast-non-reasoning": {InputPer1M: 1.25, OutputPer1M: 2.50},
 	}
 }
 

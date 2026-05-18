@@ -54,10 +54,15 @@ Pin this somewhere.
 
 | Date | Model |
 |---|---|
-| 2026-05-15 | `grok-4-1-fast-reasoning`, `grok-4-1-fast-non-reasoning` (xAI now silently redirects to `grok-4.3`) |
 | 2026-04-30 | `mistral-small-3.2` |
 | 2026-03-09 | `gemini-3-pro-preview` |
 | 2026-02-27 | `pixtral-large` |
+
+**Retired but still functionally callable** (kept in the catalog, priced at the rate they're actually billed):
+
+| Date | Model |
+|---|---|
+| 2026-05-15 | `grok-4-1-fast-reasoning`, `grok-4-1-fast-non-reasoning` — xAI silently redirects to `grok-4.3` and bills at grok-4.3 rates ($1.25/$2.50). Requests still execute, so DIP108 would be misleading. Migrate when convenient. |
 
 **Coming up (still in catalog with deprecation comments):**
 
@@ -70,7 +75,7 @@ Pin this somewhere.
 
 The 2026-06-01 Gemini date is the urgent one — that's two weeks out. Workflows still pinned to `gemini-2.0-flash` should plan to migrate to `gemini-2.5-flash-lite` or `gemini-3.1-flash-lite`.
 
-The reason we *remove* retired models from the catalog rather than just commenting them out: when a provider silently redirects (like xAI does for the `grok-4-1-fast-*` family), a workflow that still names the old ID will route to a different model than the author intended. Better to surface a DIP108 warning and let the author pick the replacement explicitly.
+A note on the two categories. Hard-retired models (provider returns an error) come out of the catalog so DIP108 surfaces — calling them is a real bug. Soft-retired models that the provider silently redirects (like xAI's `grok-4-1-fast-*` family) stay in, priced at the rate the redirect target actually bills. Treating them like typos would be wrong twice over: the request still executes, and cost analysis needs the real billed price, not `$0`. A future, more specific "deprecated alias — prefer X" diagnostic can replace the current behavior of staying silent on these.
 
 ## Documented uncertainties
 
