@@ -7,12 +7,12 @@ tagLabel: "RELEASE"
 category: "Releases"
 readTime: "5 min read"
 related:
+  - url: "whats-new-v026.html"
+    title: "What's New in v0.26"
+    summary: "The workflow `requires:` keyword — declare environmental dependencies so runtimes can preflight."
   - url: "whats-new-v024.html"
     title: "What's New in v0.24"
     summary: "The `.dipx` bundle format — pack a workflow tree into one verifiable file you can ship anywhere."
-  - url: "whats-new-v023.html"
-    title: "What's New in v0.23"
-    summary: "tool_commands_allow / tool_denylist_add defaults plus a cleaner DOT header."
 ---
 
 `v0.24.0` introduced `.dipx` — a deterministic, hash-verified bundle format for shipping workflows. The shape was right. The implementation was mostly right. But shipping a format means it leaves your machine and starts getting opened, packed, and inspected by *other* code — Tracker, CI scripts, forensic tools — and that's where the gaps showed up.
