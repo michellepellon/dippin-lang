@@ -12,17 +12,17 @@ import (
 // This is a best-effort catalog — unknown combinations produce a warning,
 // not an error, since new models may be added at any time.
 //
-// Last verified: 2026-04-17
+// Last verified: 2026-05-18
 //
 // Sources:
 //
 //	Anthropic:  https://platform.claude.com/docs/en/docs/about-claude/models
 //	Google:     https://ai.google.dev/gemini-api/docs/models
-//	OpenAI:     https://developers.openai.com/api/docs/pricing
+//	OpenAI:     https://developers.openai.com/api/docs/models/all
 //	DeepSeek:   https://api-docs.deepseek.com/quick_start/pricing
 //	xAI (Grok): https://docs.x.ai/developers/models
-//	Mistral:    https://mistral.ai/pricing
-//	Cohere:     https://cohere.com/pricing
+//	Mistral:    https://docs.mistral.ai/getting-started/models/models_overview/
+//	Cohere:     https://docs.cohere.com/docs/models
 var knownModelProviders = map[string]map[string]bool{
 	"anthropic": {
 		"claude-opus-4-7":   true,
@@ -33,53 +33,81 @@ var knownModelProviders = map[string]map[string]bool{
 		"claude-sonnet-4-5": true,
 		"claude-opus-4-5":   true,
 		"claude-opus-4-1":   true,
+		// Deprecated 2026-04-14, retires 2026-06-15 → claude-sonnet-4-6.
 		"claude-sonnet-4-0": true,
-		"claude-opus-4-0":   true,
-		// Deprecated — retired 2026-02-19.
+		// Deprecated 2026-04-14, retires 2026-06-15 → claude-opus-4-7.
+		"claude-opus-4-0": true,
+		// Retired 2026-02-19 on first-party API; remains on Bedrock/Vertex AI.
 		"claude-haiku-3-5": true,
 	},
 	"google": geminiModels(),
 	"gemini": geminiModels(),
 	"openai": {
-		"gpt-5.4":       true,
-		"gpt-5.4-mini":  true,
-		"gpt-5.4-nano":  true,
+		// Current frontier (May 2026).
+		"gpt-5.5":      true,
+		"gpt-5.5-pro":  true,
+		"gpt-5.4":      true,
+		"gpt-5.4-pro":  true,
+		"gpt-5.4-mini": true,
+		"gpt-5.4-nano": true,
+		// GPT-5 base line.
+		"gpt-5":      true,
+		"gpt-5-pro":  true,
+		"gpt-5-mini": true,
+		"gpt-5-nano": true,
+		// Coding line.
 		"gpt-5.3-codex": true,
-		"gpt-5.2":       true,
-		"gpt-5.1":       true,
-		"gpt-4.1":       true,
-		"gpt-4.1-mini":  true,
-		"gpt-4.1-nano":  true,
-		"gpt-4o":        true,
-		"gpt-4o-mini":   true,
-		"o3":            true,
-		"o3-mini":       true,
-		"o3-pro":        true,
-		"o4-mini":       true,
+		// Previous-generation (still active).
+		"gpt-5.2":      true,
+		"gpt-5.2-pro":  true,
+		"gpt-5.1":      true,
+		"gpt-4.1":      true,
+		"gpt-4.1-mini": true,
+		"gpt-4o-mini":  true,
+		// Reasoning line (still active).
+		"o3":     true,
+		"o3-pro": true,
+		// Deprecated, scheduled retirement 2026-10-23.
+		"gpt-4o":       true,
+		"gpt-4.1-nano": true,
+		"o3-mini":      true,
+		"o4-mini":      true,
 	},
 	"deepseek": {
+		// V4 models (current).
+		"deepseek-v4-flash": true,
+		"deepseek-v4-pro":   true,
+		// Compatibility aliases, scheduled deprecation 2026-07-24 → deepseek-v4-flash.
 		"deepseek-chat":     true,
 		"deepseek-reasoner": true,
 	},
 	"xai":  grokModels(),
 	"grok": grokModels(),
 	"mistral": {
-		"mistral-large-3":    true,
-		"mistral-medium-3":   true,
-		"mistral-small-2603": true, // Mistral Small 4 (March 2026)
-		"mistral-small-3.2":  true,
-		"mistral-small":      true,
-		"ministral-8b":       true,
-		"codestral":          true,
-		"magistral-medium":   true,
-		"mistral-nemo":       true,
-		"pixtral-large":      true,
+		"mistral-large-3":         true,
+		"mistral-medium-3":        true,
+		"mistral-medium-3-1-2508": true, // Mistral Medium 3.1 (Aug 2025)
+		"mistral-medium-3-5-2604": true, // Mistral Medium 3.5, new flagship-class (Apr 2026)
+		"mistral-small-2603":      true, // Mistral Small 4 (March 2026)
+		"mistral-small":           true, // Mistral Small 3.1 (legacy)
+		"ministral-8b":            true,
+		"ministral-3-3b-2512":     true, // Ministral 3 generation (Dec 2025)
+		"ministral-3-8b-2512":     true,
+		"ministral-3-14b-2512":    true,
+		"codestral":               true,
+		"magistral-medium":        true,
+		"mistral-nemo":            true,
 	},
 	"cohere": {
-		"command-a-03-2025": true, // Current flagship
-		"command-r-plus":    true,
-		"command-r":         true,
-		"command-r7b":       true,
+		"command-a-03-2025":      true, // Current flagship
+		"command-r-plus-08-2024": true,
+		"command-r-08-2024":      true,
+		"command-r7b-12-2024":    true,
+		// Bare aliases — Cohere docs list these as resolving to versions deprecated
+		// 2025-09-15. Keep callable for now; prefer the dated IDs above.
+		"command-r-plus": true,
+		"command-r":      true,
+		"command-r7b":    true,
 	},
 }
 
@@ -91,23 +119,27 @@ func geminiModels() map[string]bool {
 		"gemini-3.1-pro-preview-customtools": true,
 		"gemini-3-flash-preview":             true,
 		"gemini-3.1-flash-lite-preview":      true,
-		// Gemini 3 Pro (shut down 2026-03-09, replaced by 3.1)
-		"gemini-3-pro-preview": true,
-		// Gemini 2.x
+		"gemini-3.1-flash-lite":              true, // GA promotion of the preview variant.
+		// Gemini 2.x — gemini-2.5-* are stable/GA.
 		"gemini-2.5-pro":        true,
 		"gemini-2.5-flash":      true,
 		"gemini-2.5-flash-lite": true,
-		"gemini-2.0-flash":      true,
+		// Deprecated, shuts down 2026-06-01.
+		"gemini-2.0-flash": true,
 	}
 }
 
 // grokModels returns the set of known xAI Grok model IDs.
+//
+// grok-4-1-fast-reasoning and grok-4-1-fast-non-reasoning were retired
+// 2026-05-15; requests are silently redirected to grok-4.3 by xAI, which
+// would change observed behavior — they are removed from the catalog so
+// authors get a DIP108 nudge to update their .dip files explicitly.
 func grokModels() map[string]bool {
 	return map[string]bool{
+		"grok-4.3":                     true, // Current flagship (Apr 2026).
 		"grok-4.20-0309-reasoning":     true,
 		"grok-4.20-0309-non-reasoning": true,
-		"grok-4-1-fast-reasoning":      true,
-		"grok-4-1-fast-non-reasoning":  true,
 		"grok-4.20-multi-agent-0309":   true,
 	}
 }
