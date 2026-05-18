@@ -2,6 +2,60 @@
 
 All notable changes to dippin-lang are documented here. Versions follow [semver](https://semver.org/).
 
+## [v0.27.0] — 2026-05-18
+
+Model catalog and pricing verification pass against canonical provider docs. `Last verified: 2026-05-18` in `validator/lint_model.go` and `cost/pricing.go`. No breaking changes to public APIs — but the cost table values move and the catalog accepts new IDs, so downstream tooling that snapshots dippin's data should re-snapshot.
+
+### Added
+
+- **OpenAI:** `gpt-5.5`, `gpt-5.5-pro`, `gpt-5.4-pro`, `gpt-5.2-pro`, `gpt-5`, `gpt-5-pro`, `gpt-5-mini`, `gpt-5-nano`.
+- **xAI:** `grok-4.3` ($1.25/$2.50, current flagship).
+- **DeepSeek:** `deepseek-v4-flash` ($0.14/$0.28), `deepseek-v4-pro` ($1.74/$3.48 list — 75% launch discount through 2026-05-31).
+- **Gemini:** `gemini-3.1-flash-lite` (GA promotion of the preview variant, same price).
+- **Mistral:** `mistral-medium-3-5-2604` ($1.50/$7.50, new flagship-class), `mistral-medium-3-1-2508` ($0.40/$2.00), Ministral 3 generation (`ministral-3-3b-2512` $0.10/$0.10, `ministral-3-8b-2512` $0.15/$0.15, `ministral-3-14b-2512` $0.20/$0.20).
+- **Cohere:** dated IDs `command-r-08-2024`, `command-r-plus-08-2024`, `command-r7b-12-2024` (the canonical recommended form; bare aliases kept callable but flagged as resolving to versions deprecated 2025-09-15).
+
+### Changed
+
+- **OpenAI prices doubled** for three legacy IDs: `gpt-5.2` $0.875/$7 → $1.75/$14, `gpt-5.1` $0.625/$5 → $1.25/$10, `gpt-4.1-mini` $0.20/$0.80 → $0.40/$1.60. Newer mini/nano tiers and the o-series held steady.
+- **xAI fleet-wide price cut**: `grok-4.20-0309-reasoning`, `grok-4.20-0309-non-reasoning`, `grok-4.20-multi-agent-0309` all $2/$6 → $1.25/$2.50, matching grok-4.3's tier.
+- **DeepSeek alias repricing**: `deepseek-chat` and `deepseek-reasoner` are compatibility aliases resolving to V4-Flash; priced at $0.14/$0.28 (down from $0.28/$0.42) to match the redirect target.
+- **Anthropic `claude-haiku-3-5` repriced** to $0.80/$4.00 (Bedrock/Vertex passthrough rate; was $0.25/$1.25 in the catalog). Model was retired on the first-party API 2026-02-19; remains available via Bedrock and Vertex AI.
+
+### Removed
+
+Hard-retired models that the provider returns errors for — calling them is a real bug, DIP108 surfaces:
+
+- **Mistral:** `pixtral-large` (deprecated 2026-02-27), `mistral-small-3.2` (deprecated 2026-04-30, past sunset).
+- **Gemini:** `gemini-3-pro-preview` (shut down 2026-03-09).
+
+Soft-retired models that the provider silently redirects (kept in the catalog, priced at the redirect target so cost analysis stays accurate):
+
+- **xAI:** `grok-4-1-fast-reasoning` and `grok-4-1-fast-non-reasoning` (retired 2026-05-15; xAI redirects to grok-4.3 server-side and bills at grok-4.3 rates).
+
+### Deprecation calendar
+
+Still in the catalog with deprecation comments:
+
+- **2026-06-01**: `gemini-2.0-flash`.
+- **2026-06-15**: `claude-sonnet-4-0`, `claude-opus-4-0`.
+- **2026-07-24**: `deepseek-chat`, `deepseek-reasoner` aliases.
+- **2026-10-23**: `gpt-4o`, `gpt-4.1-nano`, `o3-mini`, `o4-mini`.
+
+### Documented uncertainties
+
+Inline comments in `cost/pricing.go` flag values held pending re-verification:
+
+- Mistral `nemo` and `mistral-small-2603`: official pricing tab is JS-rendered; third-party sources conflict.
+- Cohere `command-a-03-2025` and `command-r7b-12-2024`: per-token pricing removed from the public page.
+- Gemini Pro >200K-tier and OpenAI gpt-5.5 / gpt-5.4 family >272K-tier: modeled at the base tier only.
+
+### Docs
+
+- Blog post `site/content/blog/whats-new-v027.md` covers the refresh.
+- Blog post `site/content/blog/whats-new-v026.md` retrospective on the v0.26 `requires:` keyword.
+- Homepage "Latest" slot and v0.25/v0.26 `related:` cross-references updated.
+
 ## [v0.26.0] — 2026-05-15
 
 ### Added
