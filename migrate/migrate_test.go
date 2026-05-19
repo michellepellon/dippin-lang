@@ -2521,3 +2521,34 @@ func TestMigrate_ManagerLoop_PartialConfigAtStartNode(t *testing.T) {
 		t.Fatalf("Supervise kind = %v, want NodeManagerLoop (partial manager_loop attrs should still resolve)", n)
 	}
 }
+
+func TestBuildToolConfigRoutingAttrs(t *testing.T) {
+	attrs := map[string]string{
+		"tool_command":   "echo hi",
+		"timeout":        "30s",
+		"marker_grep":    "^pass$",
+		"route_required": "true",
+		"output_limit":   "8192",
+	}
+	cfg, err := buildToolConfig(attrs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MarkerGrep != "^pass$" {
+		t.Errorf("MarkerGrep = %q", cfg.MarkerGrep)
+	}
+	if !cfg.RouteRequired {
+		t.Error("RouteRequired = false")
+	}
+	if cfg.OutputLimit != 8192 {
+		t.Errorf("OutputLimit = %d", cfg.OutputLimit)
+	}
+}
+
+func TestBuildToolConfigOutputLimitInvalid(t *testing.T) {
+	attrs := map[string]string{"output_limit": "not_a_number"}
+	_, err := buildToolConfig(attrs)
+	if err == nil {
+		t.Error("expected error for non-numeric output_limit, got nil")
+	}
+}

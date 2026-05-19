@@ -495,17 +495,52 @@ func applyHumanTimeoutAction(cfg *ir.HumanConfig, attrs map[string]string) error
 
 func buildToolConfig(attrs map[string]string) (ir.ToolConfig, error) {
 	cfg := ir.ToolConfig{}
+	applyToolStringAttrs(&cfg, attrs)
+	if err := applyToolTimeoutAttr(&cfg, attrs); err != nil {
+		return cfg, err
+	}
+	if err := applyToolOutputLimitAttr(&cfg, attrs); err != nil {
+		return cfg, err
+	}
+	return cfg, nil
+}
+
+func applyToolStringAttrs(cfg *ir.ToolConfig, attrs map[string]string) {
 	if v, ok := attrs["tool_command"]; ok {
 		cfg.Command = v
 	}
-	if v, ok := attrs["timeout"]; ok {
-		d, err := time.ParseDuration(v)
-		if err != nil {
-			return cfg, fmt.Errorf("invalid timeout %q: %w", v, err)
-		}
-		cfg.Timeout = d
+	if v, ok := attrs["marker_grep"]; ok {
+		cfg.MarkerGrep = v
 	}
-	return cfg, nil
+	if v, ok := attrs["route_required"]; ok {
+		cfg.RouteRequired = (v == "true")
+	}
+}
+
+func applyToolTimeoutAttr(cfg *ir.ToolConfig, attrs map[string]string) error {
+	v, ok := attrs["timeout"]
+	if !ok {
+		return nil
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		return fmt.Errorf("invalid timeout %q: %w", v, err)
+	}
+	cfg.Timeout = d
+	return nil
+}
+
+func applyToolOutputLimitAttr(cfg *ir.ToolConfig, attrs map[string]string) error {
+	v, ok := attrs["output_limit"]
+	if !ok {
+		return nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return fmt.Errorf("invalid output_limit %q: %w", v, err)
+	}
+	cfg.OutputLimit = n
+	return nil
 }
 
 func buildParallelConfig(attrs map[string]string) ir.ParallelConfig {
