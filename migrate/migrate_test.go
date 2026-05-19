@@ -2560,3 +2560,14 @@ func TestBuildToolConfigOutputLimitNegative(t *testing.T) {
 		t.Error("expected error for negative output_limit, got nil")
 	}
 }
+
+func TestBuildToolConfigOutputLimitZero(t *testing.T) {
+	attrs := map[string]string{"tool_command": "echo test", "output_limit": "0"}
+	cfg, err := buildToolConfig(attrs)
+	if err != nil {
+		t.Fatalf("unexpected error for output_limit=0: %v", err)
+	}
+	if cfg.OutputLimit != 0 {
+		t.Errorf("OutputLimit = %d, want 0 (engine default)", cfg.OutputLimit)
+	}
+}
