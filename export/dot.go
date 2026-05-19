@@ -7,6 +7,7 @@ package export
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -300,10 +301,19 @@ func applyAgentRuntimeAttrs(attrs map[string]string, cfg ir.AgentConfig) {
 	}
 }
 
-// applyToolSemanticAttrs adds tool timeout (runtime, always exported).
+// applyToolSemanticAttrs adds tool runtime attrs (always exported).
 func applyToolSemanticAttrs(attrs map[string]string, cfg ir.ToolConfig) {
 	if cfg.Timeout != 0 {
 		attrs["timeout"] = formatDuration(cfg.Timeout)
+	}
+	if cfg.MarkerGrep != "" {
+		attrs["marker_grep"] = cfg.MarkerGrep
+	}
+	if cfg.RouteRequired {
+		attrs["route_required"] = "true"
+	}
+	if cfg.OutputLimit > 0 {
+		attrs["output_limit"] = strconv.Itoa(cfg.OutputLimit)
 	}
 }
 

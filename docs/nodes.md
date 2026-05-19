@@ -263,6 +263,9 @@ Tool nodes execute shell commands and capture their output.
 | `command` | Multiline | — | Shell command(s) to execute. Supports full shell syntax including pipes, conditionals, and multi-line scripts. The command's stdout is captured as `ctx.tool_stdout` and stderr as `ctx.tool_stderr`. |
 | `timeout` | Duration | — | Maximum execution time (e.g., `"30s"`, `"2m"`, `"1m30s"`). If the command exceeds this duration, it is killed. **Recommended** — the linter warns (DIP111) if omitted. |
 | `outputs` | CSV | — | Declared possible stdout values (comma-separated). Used by `dippin coverage` to check whether outgoing edge conditions cover all tool outputs. Advisory — not enforced at runtime. |
+| `marker_grep` | String | — | Regex matched line-by-line against captured stdout. The last match populates `ctx.tool_marker`. Tracker validates and applies the regex at runtime. |
+| `route_required` | Boolean | false | When true, the node fails if the command's stdout contains no `_TRACKER_ROUTE=<value>` sentinel line. The matched value populates `ctx.tool_route`. |
+| `output_limit` | Integer | — | Per-node override for the engine's captured-stdout byte cap. Non-negative integer; 0 (or omitted) uses the engine default. `dippin fmt` omits the field when the value is zero. |
 
 ### Command Output
 
@@ -308,6 +311,19 @@ else printf 'tests-fail'; fi
 ```
 
 The same pattern applies to any tool whose output drives routing — build commands, linters, type checkers, custom validators.
+
+**Best (when the runtime supports typed markers):** declare `marker_grep` and let the runtime parse the routing signal directly, freeing stdout for diagnostic output:
+
+```dippin
+  tool RunTests
+    marker_grep: "^(tests_pass|tests_fail)$"
+    timeout: 60s
+    command:
+      pytest 2>&1
+      [ $? -eq 0 ] && printf 'tests_pass\n' || printf 'tests_fail\n'
+```
+
+When `marker_grep` is declared, the runtime populates `ctx.tool_marker` and routing edges can reference it instead of `ctx.tool_stdout`. `route_required: true` makes the absence of any match a hard failure. `output_limit` overrides the per-node stdout cap when the command genuinely needs a larger window.
 
 ---
 

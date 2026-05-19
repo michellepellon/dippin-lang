@@ -14,6 +14,8 @@ var reservedVarPrefixes = []string{
 	"ctx.status",
 	"ctx.tool_stdout",
 	"ctx.tool_stderr",
+	"ctx.tool_marker",
+	"ctx.tool_route",
 	"ctx.internal.",
 	"graph.",
 	"params.",

@@ -81,10 +81,26 @@ func formatNodeConfig(n *ir.Node, w *ir.Workflow) string {
 	case ir.HumanConfig:
 		return fmt.Sprintf("Mode: %s\n", cfg.Mode)
 	case ir.ToolConfig:
-		return fmt.Sprintf("Command: `%s`\n", truncateStr(cfg.Command, 80))
+		return formatToolHover(cfg)
 	default:
 		return ""
 	}
+}
+
+// formatToolHover formats tool-specific hover info.
+func formatToolHover(cfg ir.ToolConfig) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Command: `%s`\n", truncateStr(cfg.Command, 80))
+	if cfg.MarkerGrep != "" {
+		fmt.Fprintf(&b, "marker_grep: `%s`\n", cfg.MarkerGrep)
+	}
+	if cfg.RouteRequired {
+		b.WriteString("route_required: true\n")
+	}
+	if cfg.OutputLimit > 0 {
+		fmt.Fprintf(&b, "output_limit: %d bytes\n", cfg.OutputLimit)
+	}
+	return b.String()
 }
 
 // formatAgentHover formats agent-specific hover info.

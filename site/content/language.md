@@ -176,15 +176,17 @@ Human nodes pause execution and wait for human input. Two modes: `choice` (prede
 
 Tool nodes execute shell commands. The command's stdout is captured as `ctx.tool_stdout` and stderr as `ctx.tool_stderr`. Always include a `timeout`.
 
-```
+```dippin
   tool RunTests
     label: "Run test suite"
+    outputs: tests_pass, tests_fail
+    marker_grep: "^(tests_pass|tests_fail)$"
     timeout: 60s
     command:
-      #!/bin/sh
-      set -eu
-      pytest --tb=short 2>&1
+      pytest --tb=short
 ```
+
+Declare `marker_grep` for typed routing (populates `ctx.tool_marker`); `route_required: true` makes a missing `_TRACKER_ROUTE=` sentinel fail the node; `output_limit` overrides the captured-stdout byte cap.
 
 ### parallel
 

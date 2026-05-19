@@ -182,6 +182,8 @@ Common variables used in conditions:
 | `ctx.outcome` | Agent (auto_status), engine | `"success"`, `"fail"`, `"retry"` |
 | `ctx.tool_stdout` | Tool nodes | Command's stdout output |
 | `ctx.tool_stderr` | Tool nodes | Command's stderr output |
+| `ctx.tool_marker` | Tool nodes | Tool stdout regex match (when `marker_grep` is declared on the source tool node) |
+| `ctx.tool_route` | Tool nodes | Tool stdout `_TRACKER_ROUTE=<value>` sentinel (when `route_required: true`) |
 | `ctx.human_response` | Human nodes | User's text input |
 | `ctx.last_response` | Agent nodes | LLM's response text |
 | `graph.goal` | Workflow header | The workflow's goal string |

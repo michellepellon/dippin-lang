@@ -259,10 +259,56 @@ func compareToolConfigs(id, path string, ac ir.ToolConfig, bCfg interface{}) []D
 	if !ok {
 		return []Difference{configMismatchDiff(id, path, "ToolConfig", bCfg)}
 	}
+	var diffs []Difference
+	diffs = append(diffs, compareToolScalars(id, ac, bc)...)
+	diffs = append(diffs, compareToolSlices(id, ac, bc)...)
+	return diffs
+}
+
+func compareToolScalars(id string, ac, bc ir.ToolConfig) []Difference {
+	var diffs []Difference
+	diffs = append(diffs, compareToolCommandAndTimeout(id, ac, bc)...)
+	diffs = append(diffs, compareToolMarkerAndRoute(id, ac, bc)...)
+	diffs = append(diffs, compareToolOutputLimit(id, ac, bc)...)
+	return diffs
+}
+
+func compareToolCommandAndTimeout(id string, ac, bc ir.ToolConfig) []Difference {
+	var diffs []Difference
 	if !promptsEqual(ac.Command, bc.Command) {
-		return []Difference{fieldDiff(id, "command", fmt.Sprintf("node %q command differs", id))}
+		diffs = append(diffs, fieldDiff(id, "command", fmt.Sprintf("node %q command differs", id)))
 	}
-	return nil
+	if ac.Timeout != bc.Timeout {
+		diffs = append(diffs, fieldDiff(id, "timeout", fmt.Sprintf("node %q timeout: %s vs %s", id, ac.Timeout, bc.Timeout)))
+	}
+	return diffs
+}
+
+func compareToolMarkerAndRoute(id string, ac, bc ir.ToolConfig) []Difference {
+	var diffs []Difference
+	if ac.MarkerGrep != bc.MarkerGrep {
+		diffs = append(diffs, fieldDiff(id, "marker_grep", fmt.Sprintf("node %q marker_grep: %q vs %q", id, ac.MarkerGrep, bc.MarkerGrep)))
+	}
+	if ac.RouteRequired != bc.RouteRequired {
+		diffs = append(diffs, fieldDiff(id, "route_required", fmt.Sprintf("node %q route_required: %v vs %v", id, ac.RouteRequired, bc.RouteRequired)))
+	}
+	return diffs
+}
+
+func compareToolOutputLimit(id string, ac, bc ir.ToolConfig) []Difference {
+	var diffs []Difference
+	if ac.OutputLimit != bc.OutputLimit {
+		diffs = append(diffs, fieldDiff(id, "output_limit", fmt.Sprintf("node %q output_limit: %d vs %d", id, ac.OutputLimit, bc.OutputLimit)))
+	}
+	return diffs
+}
+
+func compareToolSlices(id string, ac, bc ir.ToolConfig) []Difference {
+	var diffs []Difference
+	if strings.Join(ac.Outputs, ",") != strings.Join(bc.Outputs, ",") {
+		diffs = append(diffs, fieldDiff(id, "outputs", fmt.Sprintf("node %q outputs: %v vs %v", id, ac.Outputs, bc.Outputs)))
+	}
+	return diffs
 }
 
 func compareHumanConfigs(id, path string, ac ir.HumanConfig, bCfg interface{}) []Difference {

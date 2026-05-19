@@ -45,6 +45,15 @@ workflow all_features
 
   fan_in join <- worker_a, worker_b
 
+  tool Check
+    outputs: pass, fail
+    marker_grep: "^(pass|fail)$"
+    route_required: true
+    output_limit: 65536
+    timeout: 30s
+    command:
+      echo pass
+
   agent Done
     prompt: "Finished."
 
@@ -63,4 +72,5 @@ workflow all_features
     Ask -> Review
     Review -> Coder
     Coder -> split
-    join -> Done
+    join -> Check
+    Check -> Done

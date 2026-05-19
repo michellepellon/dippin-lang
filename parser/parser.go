@@ -32,6 +32,11 @@ func (p *Parser) Parse() (*ir.Workflow, error) {
 	return p.workflow, nil
 }
 
+// Diagnostics returns the accumulated diagnostic messages.
+func (p *Parser) Diagnostics() []string {
+	return p.diagnostics
+}
+
 // parseTopLevel consumes top-level tokens looking for workflow declarations.
 func (p *Parser) parseTopLevel() {
 	for p.lexer.PeekToken().Type != TokenEOF {

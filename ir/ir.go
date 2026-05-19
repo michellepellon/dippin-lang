@@ -126,9 +126,12 @@ func (HumanConfig) nodeConfig() {}
 
 // ToolConfig holds configuration for shell command nodes.
 type ToolConfig struct {
-	Command string // Shell command (multiline OK)
-	Timeout time.Duration
-	Outputs []string // Declared possible stdout values for coverage analysis
+	Command       string // Shell command (multiline OK)
+	Timeout       time.Duration
+	Outputs       []string // Declared possible stdout values for coverage analysis
+	MarkerGrep    string   // Regex matched line-by-line against stdout; populates ctx.tool_marker
+	RouteRequired bool     // True → node fails if no _TRACKER_ROUTE= sentinel is emitted
+	OutputLimit   int      // Bytes; > 0 = override engine default
 }
 
 func (ToolConfig) nodeConfig() {}

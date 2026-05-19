@@ -1,6 +1,7 @@
 package lsp
 
 import (
+	"strings"
 	"testing"
 
 	"go.lsp.dev/protocol"
@@ -302,6 +303,24 @@ func TestFormatNodeConfig_Tool(t *testing.T) {
 	}
 }
 
+func TestFormatToolHoverWithRoutingFields(t *testing.T) {
+	node := &ir.Node{
+		Kind: ir.NodeTool,
+		Config: ir.ToolConfig{
+			Command:       "echo hi",
+			MarkerGrep:    "^pass$",
+			RouteRequired: true,
+			OutputLimit:   8192,
+		},
+	}
+	out := formatNodeConfig(node, &ir.Workflow{})
+	for _, want := range []string{"marker_grep", "route_required", "output_limit"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("hover missing %q. Output:\n%s", want, out)
+		}
+	}
+}
+
 func TestBuildSymbols(t *testing.T) {
 	store := newDocumentStore()
 	doc := store.open("file:///test.dip", testDipContent, 1)
@@ -378,6 +397,21 @@ func TestFieldCompletions(t *testing.T) {
 	}
 	if !found {
 		t.Error("expected 'prompt:' in field completions")
+	}
+}
+
+func TestFieldCompletionsIncludesRoutingFields(t *testing.T) {
+	items := fieldCompletions()
+	want := map[string]bool{"marker_grep:": false, "route_required:": false, "output_limit:": false}
+	for _, it := range items {
+		if _, ok := want[it.Label]; ok {
+			want[it.Label] = true
+		}
+	}
+	for label, found := range want {
+		if !found {
+			t.Errorf("missing completion for %q", label)
+		}
 	}
 }
 

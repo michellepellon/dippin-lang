@@ -42,6 +42,8 @@ The primary namespace. Contains handler outputs and reserved keys.
 | `ctx.human_response` | Human nodes | The human's input text |
 | `ctx.tool_stdout` | Tool nodes | Standard output from the shell command |
 | `ctx.tool_stderr` | Tool nodes | Standard error from the shell command |
+| `ctx.tool_marker` | Tool nodes | Tool stdout regex match (when `marker_grep` is declared on the source tool node) |
+| `ctx.tool_route` | Tool nodes | Tool stdout `_TRACKER_ROUTE=<value>` sentinel (when `route_required: true`) |
 
 These reserved keys are **always available** — the validator knows about them at parse time and can flag typos.
 
@@ -193,7 +195,7 @@ The validator treats variables differently based on what it can verify at parse 
 
 | Tier | Variables | Validation |
 |------|-----------|------------|
-| **Always known** | `ctx.outcome`, `ctx.last_response`, `ctx.human_response`, `ctx.tool_stdout`, `ctx.tool_stderr`, `graph.goal` | Error if misspelled |
+| **Always known** | `ctx.outcome`, `ctx.last_response`, `ctx.human_response`, `ctx.tool_stdout`, `ctx.tool_stderr`, `ctx.tool_marker`, `ctx.tool_route`, `graph.goal` | Error if misspelled (`ctx.tool_marker` / `ctx.tool_route` only populated at runtime when `marker_grep` / `route_required: true` are declared on the source tool) |
 | **Declared outputs** | Keys from upstream `writes` declarations | Warning if referenced but not declared (DIP112) |
 | **Dynamic** | Everything else | Warning only — never an error (runtime context is open) |
 

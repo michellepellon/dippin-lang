@@ -404,16 +404,61 @@ func applyHumanInterviewField(cfg *ir.HumanConfig, key, val string) bool {
 
 // applyToolField applies tool-specific configuration fields.
 func (p *Parser) applyToolField(cfg *ir.ToolConfig, key, val string, loc ir.SourceLocation) {
+	if applyToolStringField(cfg, key, val) {
+		return
+	}
+	if applyToolBoolField(cfg, key, val) {
+		return
+	}
+	if p.applyToolParsedField(cfg, key, val, loc) {
+		return
+	}
+	p.emitUnknownFieldHint("tool", key, loc)
+}
+
+// applyToolStringField handles string-valued tool fields. Returns true if handled.
+func applyToolStringField(cfg *ir.ToolConfig, key, val string) bool {
 	switch key {
 	case "command":
 		cfg.Command = val
-	case "timeout":
-		cfg.Timeout = p.parseDuration(val, key, loc)
 	case "outputs":
 		cfg.Outputs = splitComma(val)
+	case "marker_grep":
+		cfg.MarkerGrep = val
 	default:
-		p.emitUnknownFieldHint("tool", key, loc)
+		return false
 	}
+	return true
+}
+
+// applyToolBoolField handles boolean tool fields. Returns true if handled.
+func applyToolBoolField(cfg *ir.ToolConfig, key, val string) bool {
+	switch key {
+	case "route_required":
+		cfg.RouteRequired = (val == "true")
+	default:
+		return false
+	}
+	return true
+}
+
+// applyToolParsedField handles tool fields needing parsing. Returns true if handled.
+func (p *Parser) applyToolParsedField(cfg *ir.ToolConfig, key, val string, loc ir.SourceLocation) bool {
+	switch key {
+	case "timeout":
+		cfg.Timeout = p.parseDuration(val, key, loc)
+	case "output_limit":
+		n := p.parseInt(val, key, loc)
+		if n < 0 {
+			p.diagnostics = append(p.diagnostics, fmt.Sprintf(
+				"invalid output_limit %d at %d:%d (must be non-negative)", n, loc.Line, loc.Column))
+			return true
+		}
+		cfg.OutputLimit = n
+	default:
+		return false
+	}
+	return true
 }
 
 // applySubgraphField applies subgraph-specific configuration fields.
