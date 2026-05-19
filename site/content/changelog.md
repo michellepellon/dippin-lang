@@ -4,6 +4,31 @@ description: "Version history and release notes for dippin-lang."
 navActive: "changelog"
 layout: "changelog"
 ---
+## [v0.28.0] — 2026-05-19
+
+Tool-node routing fields land in the parser and IR. Authors following tracker's `TRK101` recommendation can now declare `marker_grep`, `route_required`, and `output_limit` directly in `.dip` source. Closes [#39](https://github.com/2389-research/dippin-lang/issues/39).
+
+### Added
+
+- `tool.marker_grep` — regex matched line-by-line against captured stdout; populates `ctx.tool_marker` at runtime.
+- `tool.route_required` — boolean; when true, the node fails with `EventToolRouteMissing` if the command emits no `_TRACKER_ROUTE=<value>` sentinel line.
+- `tool.output_limit` — positive integer (bytes) overriding the engine default stdout tail-window for this node.
+- Reserved context variables: `ctx.tool_marker`, `ctx.tool_route`.
+
+### Changed
+
+- `migrate/parity.go compareToolConfigs` now compares all `ToolConfig` fields. Pre-existing `Timeout` / `Outputs` parity gaps backfilled.
+
+### Runtime requirement
+
+These fields pass through DOT export to tracker. Routing semantics require tracker to ship the matching `extractToolAttrs` change; see issue [#39](https://github.com/2389-research/dippin-lang/issues/39) for details.
+
+### Docs
+
+- New blog post: ["What's New in Dippin v0.28"](blog/whats-new-v028.md).
+- `docs/nodes.md` gains a "Best" subsection in Markers and Verbose Output demonstrating `marker_grep`.
+- Hosted skill (`site/static/skill.md`) updated with new context variables and best-practice bullet.
+
 ## [v0.27.0] — 2026-05-18
 
 Model catalog and pricing verification pass against canonical provider docs. `Last verified: 2026-05-18` in `validator/lint_model.go` and `cost/pricing.go`. No breaking changes to public APIs — but the cost table values move and the catalog accepts new IDs, so downstream tooling that snapshots dippin's data should re-snapshot.
