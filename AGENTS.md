@@ -89,4 +89,5 @@ The Netlify build (see [`netlify.toml`](netlify.toml)) additionally compiles the
 - Scorecard: 0.2.0
 - Mode: site
 - Last runs:
+  - 2026-05-19 — 80 (scorecard 0.2.0)
   - 2026-05-19 — 72 (scorecard 0.2.0)
