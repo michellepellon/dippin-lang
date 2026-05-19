@@ -423,6 +423,8 @@ func applyToolStringField(cfg *ir.ToolConfig, key, val string) bool {
 		cfg.Command = val
 	case "outputs":
 		cfg.Outputs = splitComma(val)
+	case "marker_grep":
+		cfg.MarkerGrep = val
 	default:
 		return false
 	}
