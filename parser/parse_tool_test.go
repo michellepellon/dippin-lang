@@ -55,3 +55,23 @@ func TestParseToolMarkerGrepRegexMetachars(t *testing.T) {
 		t.Errorf("MarkerGrep lost metachars: %q", cfg.MarkerGrep)
 	}
 }
+
+func TestParseToolRouteRequired(t *testing.T) {
+	cfg, diags := parseToolFixture(t, "    route_required: true")
+	if len(diags) != 0 {
+		t.Fatalf("unexpected diagnostics: %v", diags)
+	}
+	if !cfg.RouteRequired {
+		t.Error("RouteRequired = false, want true")
+	}
+}
+
+func TestParseToolRouteRequiredExplicitFalse(t *testing.T) {
+	cfg, diags := parseToolFixture(t, "    route_required: false")
+	if len(diags) != 0 {
+		t.Fatalf("unexpected diagnostics: %v", diags)
+	}
+	if cfg.RouteRequired {
+		t.Error("RouteRequired = true, want false")
+	}
+}

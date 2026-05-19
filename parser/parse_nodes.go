@@ -434,10 +434,12 @@ func applyToolStringField(cfg *ir.ToolConfig, key, val string) bool {
 // applyToolBoolField handles boolean tool fields. Returns true if handled.
 func applyToolBoolField(cfg *ir.ToolConfig, key, val string) bool {
 	switch key {
+	case "route_required":
+		cfg.RouteRequired = (val == "true")
 	default:
-		_ = val // no bool fields yet; route_required lands in a follow-on task
 		return false
 	}
+	return true
 }
 
 // applyToolParsedField handles tool fields needing parsing. Returns true if handled.
