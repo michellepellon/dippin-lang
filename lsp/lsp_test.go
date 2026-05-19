@@ -381,6 +381,21 @@ func TestFieldCompletions(t *testing.T) {
 	}
 }
 
+func TestFieldCompletionsIncludesRoutingFields(t *testing.T) {
+	items := fieldCompletions()
+	want := map[string]bool{"marker_grep:": false, "route_required:": false, "output_limit:": false}
+	for _, it := range items {
+		if _, ok := want[it.Label]; ok {
+			want[it.Label] = true
+		}
+	}
+	for label, found := range want {
+		if !found {
+			t.Errorf("missing completion for %q", label)
+		}
+	}
+}
+
 func TestConvertDiagnostic(t *testing.T) {
 	d := validator.Diagnostic{
 		Code:     "DIP001",

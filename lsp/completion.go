@@ -51,6 +51,9 @@ func fieldCompletions() []protocol.CompletionItem {
 		{"goal_gate:", "Fail pipeline if node fails"},
 		{"reasoning_effort:", "Reasoning effort (none|minimal|low|medium|high|xhigh|max)"},
 		{"fidelity:", "Fidelity level"},
+		{"marker_grep:", "Regex matched against tool stdout; sets ctx.tool_marker"},
+		{"route_required:", "Require _TRACKER_ROUTE= sentinel line from tool stdout"},
+		{"output_limit:", "Per-node stdout byte cap (positive int)"},
 	}
 	var items []protocol.CompletionItem
 	for _, f := range fields {
