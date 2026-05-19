@@ -447,6 +447,14 @@ func (p *Parser) applyToolParsedField(cfg *ir.ToolConfig, key, val string, loc i
 	switch key {
 	case "timeout":
 		cfg.Timeout = p.parseDuration(val, key, loc)
+	case "output_limit":
+		n := p.parseInt(val, key, loc)
+		if n < 0 {
+			p.diagnostics = append(p.diagnostics, fmt.Sprintf(
+				"invalid output_limit %d at %d:%d (must be non-negative)", n, loc.Line, loc.Column))
+			return true
+		}
+		cfg.OutputLimit = n
 	default:
 		return false
 	}

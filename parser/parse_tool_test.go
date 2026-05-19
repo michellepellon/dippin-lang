@@ -75,3 +75,50 @@ func TestParseToolRouteRequiredExplicitFalse(t *testing.T) {
 		t.Error("RouteRequired = true, want false")
 	}
 }
+
+func TestParseToolOutputLimit(t *testing.T) {
+	cfg, diags := parseToolFixture(t, "    output_limit: 1048576")
+	if len(diags) != 0 {
+		t.Fatalf("unexpected diagnostics: %v", diags)
+	}
+	if cfg.OutputLimit != 1048576 {
+		t.Errorf("OutputLimit = %d, want 1048576", cfg.OutputLimit)
+	}
+}
+
+func TestParseToolOutputLimitNegative(t *testing.T) {
+	_, diags := parseToolFixture(t, "    output_limit: -1")
+	if len(diags) == 0 {
+		t.Fatal("expected diagnostic for negative output_limit, got none")
+	}
+	found := false
+	for _, d := range diags {
+		if strings.Contains(d, "output_limit") && strings.Contains(d, "non-negative") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected 'non-negative' diagnostic, got: %v", diags)
+	}
+}
+
+func TestParseToolOutputLimitNonNumeric(t *testing.T) {
+	cfg, diags := parseToolFixture(t, "    output_limit: abc")
+	if len(diags) == 0 {
+		t.Fatal("expected diagnostic from parseInt, got none")
+	}
+	if cfg.OutputLimit != 0 {
+		t.Errorf("OutputLimit should default to 0 on parse error, got %d", cfg.OutputLimit)
+	}
+}
+
+func TestParseToolAllRoutingFields(t *testing.T) {
+	body := "    marker_grep: pass\n    route_required: true\n    output_limit: 65536"
+	cfg, diags := parseToolFixture(t, body)
+	if len(diags) != 0 {
+		t.Fatalf("unexpected diagnostics: %v", diags)
+	}
+	if cfg.MarkerGrep != "pass" || !cfg.RouteRequired || cfg.OutputLimit != 65536 {
+		t.Errorf("got %+v", cfg)
+	}
+}
