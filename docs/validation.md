@@ -635,7 +635,7 @@ warning[DIP121]: edge Gate → Pass: condition references "ctx.score" but node "
 
 **What triggers it**: An edge from node A has a condition like `ctx.score = high`, but node A's `IO.Writes` doesn't include `score`. Only fires when the source node has non-empty `writes` declarations.
 
-**Skipped for**: Reserved runtime variables (`ctx.outcome`, `ctx.status`, `ctx.tool_stdout`, `ctx.tool_stderr`, `ctx.internal.*`, `graph.*`, `params.*`).
+**Skipped for**: Reserved runtime variables (`ctx.outcome`, `ctx.status`, `ctx.tool_stdout`, `ctx.tool_stderr`, `ctx.tool_marker`, `ctx.tool_route`, `ctx.internal.*`, `graph.*`, `params.*`).
 
 **How to fix**: Add the variable to the source node's `writes` list, or verify the condition references the correct variable.
 
