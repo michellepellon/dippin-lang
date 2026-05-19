@@ -26,7 +26,7 @@ func parseToolFixture(t *testing.T, body string) (ir.ToolConfig, []string) {
 }
 
 func TestParseToolMarkerGrep(t *testing.T) {
-	cfg, diags := parseToolFixture(t, "    marker_grep: '^(green|red)$'")
+	cfg, diags := parseToolFixture(t, `    marker_grep: "^(green|red)$"`)
 	if len(diags) != 0 {
 		t.Fatalf("unexpected diagnostics: %v", diags)
 	}
@@ -47,7 +47,7 @@ func TestParseToolMarkerGrepUnquoted(t *testing.T) {
 
 func TestParseToolMarkerGrepRegexMetachars(t *testing.T) {
 	// Stored verbatim — dippin does not validate the regex (tracker does).
-	cfg, diags := parseToolFixture(t, `    marker_grep: '^\[(PASS|FAIL)\]\s+\d+$'`)
+	cfg, diags := parseToolFixture(t, `    marker_grep: "^\[(PASS|FAIL)\]\s+\d+$"`)
 	if len(diags) != 0 {
 		t.Fatalf("unexpected diagnostics: %v", diags)
 	}

@@ -232,30 +232,9 @@ func (p *Parser) consumeUntilNewline() {
 
 // unquoteRaw unquotes a double-quoted string, handling basic escape sequences.
 func unquoteRaw(raw string) string {
-	if len(raw) < 2 {
+	if len(raw) < 2 || raw[0] != '"' || raw[len(raw)-1] != '"' {
 		return raw
 	}
-	if isDoubleQuoted(raw) {
-		return unquoteDouble(raw)
-	}
-	if isSingleQuoted(raw) {
-		return raw[1 : len(raw)-1]
-	}
-	return raw
-}
-
-// isDoubleQuoted checks if a string is wrapped in double quotes.
-func isDoubleQuoted(s string) bool {
-	return len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"'
-}
-
-// isSingleQuoted checks if a string is wrapped in single quotes.
-func isSingleQuoted(s string) bool {
-	return len(s) >= 2 && s[0] == '\'' && s[len(s)-1] == '\''
-}
-
-// unquoteDouble removes double quotes and processes escape sequences.
-func unquoteDouble(raw string) string {
 	unquoted := raw[1 : len(raw)-1]
 	unquoted = strings.ReplaceAll(unquoted, `\"`, `"`)
 	unquoted = strings.ReplaceAll(unquoted, `\\`, `\`)
