@@ -1396,3 +1396,63 @@ func TestExportToolSafetyVarsCollision(t *testing.T) {
 		t.Errorf("expected tool_commands_allow from Defaults, got:\n%s", out)
 	}
 }
+
+func TestExportDOTToolRoutingFields(t *testing.T) {
+	wf := &ir.Workflow{
+		Name:  "tool_routing_test",
+		Goal:  "test routing",
+		Start: "T",
+		Exit:  "T",
+		Nodes: []*ir.Node{
+			{
+				ID:   "T",
+				Kind: ir.NodeTool,
+				Config: ir.ToolConfig{
+					Command:       "echo pass",
+					Timeout:       30 * time.Second,
+					MarkerGrep:    "^pass$",
+					RouteRequired: true,
+					OutputLimit:   8192,
+				},
+			},
+		},
+		Edges: []*ir.Edge{},
+	}
+	out := ExportDOT(wf, ExportOptions{})
+	for _, want := range []string{
+		`marker_grep="^pass$"`,
+		`route_required="true"`,
+		`output_limit="8192"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("DOT output missing %q. Full output:\n%s", want, out)
+		}
+	}
+}
+
+func TestExportDOTToolRoutingOmitWhenZero(t *testing.T) {
+	wf := &ir.Workflow{
+		Name:  "tool_omit_test",
+		Goal:  "test omission",
+		Start: "T",
+		Exit:  "T",
+		Nodes: []*ir.Node{
+			{
+				ID:   "T",
+				Kind: ir.NodeTool,
+				Config: ir.ToolConfig{
+					Command: "echo pass",
+					Timeout: 30 * time.Second,
+					// MarkerGrep, RouteRequired, OutputLimit all zero/default
+				},
+			},
+		},
+		Edges: []*ir.Edge{},
+	}
+	out := ExportDOT(wf, ExportOptions{})
+	for _, unwanted := range []string{"marker_grep", "route_required", "output_limit"} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("DOT output unexpectedly contains %q. Full output:\n%s", unwanted, out)
+		}
+	}
+}
