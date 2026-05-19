@@ -1,6 +1,7 @@
 package lsp
 
 import (
+	"strings"
 	"testing"
 
 	"go.lsp.dev/protocol"
@@ -299,6 +300,24 @@ func TestFormatNodeConfig_Tool(t *testing.T) {
 	result := formatNodeConfig(n, nil)
 	if result == "" {
 		t.Error("expected non-empty tool config hover")
+	}
+}
+
+func TestFormatToolHoverWithRoutingFields(t *testing.T) {
+	node := &ir.Node{
+		Kind: ir.NodeTool,
+		Config: ir.ToolConfig{
+			Command:       "echo hi",
+			MarkerGrep:    "^pass$",
+			RouteRequired: true,
+			OutputLimit:   8192,
+		},
+	}
+	out := formatNodeConfig(node, &ir.Workflow{})
+	for _, want := range []string{"marker_grep", "route_required", "output_limit"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("hover missing %q. Output:\n%s", want, out)
+		}
 	}
 }
 
