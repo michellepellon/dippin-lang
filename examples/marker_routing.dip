@@ -1,0 +1,33 @@
+workflow MarkerRouting
+  goal: "Show typed marker-driven routing on tool nodes"
+  start: RunTests
+  exit: Done
+
+  defaults
+    model: claude-sonnet-4-6
+    provider: anthropic
+
+  tool RunTests
+    label: "Run test suite, route by marker"
+    outputs: tests_green, tests_red
+    marker_grep: "^(tests_green|tests_red)$"
+    route_required: true
+    output_limit: 65536
+    timeout: 2m
+    command:
+      #!/bin/sh
+      set -eu
+      if go test ./... > /tmp/test.log 2>&1; then
+        printf 'tests_green\n'
+        printf '_TRACKER_ROUTE=passed\n'
+      else
+        printf 'tests_red\n'
+        printf '_TRACKER_ROUTE=failed\n'
+      fi
+
+  agent Done
+    prompt: "Summarize the routing outcome."
+
+  edges
+    RunTests -> Done when ctx.tool_marker = tests_green
+    RunTests -> Done when ctx.tool_marker = tests_red
