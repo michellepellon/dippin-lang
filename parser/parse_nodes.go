@@ -404,16 +404,49 @@ func applyHumanInterviewField(cfg *ir.HumanConfig, key, val string) bool {
 
 // applyToolField applies tool-specific configuration fields.
 func (p *Parser) applyToolField(cfg *ir.ToolConfig, key, val string, loc ir.SourceLocation) {
+	if applyToolStringField(cfg, key, val) {
+		return
+	}
+	if applyToolBoolField(cfg, key, val) {
+		return
+	}
+	if p.applyToolParsedField(cfg, key, val, loc) {
+		return
+	}
+	p.emitUnknownFieldHint("tool", key, loc)
+}
+
+// applyToolStringField handles string-valued tool fields. Returns true if handled.
+func applyToolStringField(cfg *ir.ToolConfig, key, val string) bool {
 	switch key {
 	case "command":
 		cfg.Command = val
-	case "timeout":
-		cfg.Timeout = p.parseDuration(val, key, loc)
 	case "outputs":
 		cfg.Outputs = splitComma(val)
 	default:
-		p.emitUnknownFieldHint("tool", key, loc)
+		return false
 	}
+	return true
+}
+
+// applyToolBoolField handles boolean tool fields. Returns true if handled.
+func applyToolBoolField(cfg *ir.ToolConfig, key, val string) bool {
+	switch key {
+	default:
+		_ = val // no bool fields yet; route_required lands in a follow-on task
+		return false
+	}
+}
+
+// applyToolParsedField handles tool fields needing parsing. Returns true if handled.
+func (p *Parser) applyToolParsedField(cfg *ir.ToolConfig, key, val string, loc ir.SourceLocation) bool {
+	switch key {
+	case "timeout":
+		cfg.Timeout = p.parseDuration(val, key, loc)
+	default:
+		return false
+	}
+	return true
 }
 
 // applySubgraphField applies subgraph-specific configuration fields.
