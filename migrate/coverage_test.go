@@ -3,6 +3,7 @@ package migrate
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/2389-research/dippin-lang/ir"
 )
@@ -381,6 +382,51 @@ func TestCompareToolConfigs_DifferentCommand(t *testing.T) {
 	diffs := compareToolConfigs("T", "node:T", tc1, tc2)
 	if len(diffs) != 1 {
 		t.Fatalf("expected 1 diff, got %d", len(diffs))
+	}
+}
+
+func TestCompareToolConfigsDifferentMarkerGrep(t *testing.T) {
+	a := ir.ToolConfig{MarkerGrep: "^pass$"}
+	b := ir.ToolConfig{MarkerGrep: "^fail$"}
+	diffs := compareToolConfigs("T", "", a, b)
+	if len(diffs) == 0 {
+		t.Error("expected difference for MarkerGrep, got none")
+	}
+}
+
+func TestCompareToolConfigsDifferentRouteRequired(t *testing.T) {
+	a := ir.ToolConfig{RouteRequired: true}
+	b := ir.ToolConfig{RouteRequired: false}
+	diffs := compareToolConfigs("T", "", a, b)
+	if len(diffs) == 0 {
+		t.Error("expected difference for RouteRequired, got none")
+	}
+}
+
+func TestCompareToolConfigsDifferentOutputLimit(t *testing.T) {
+	a := ir.ToolConfig{OutputLimit: 1024}
+	b := ir.ToolConfig{OutputLimit: 2048}
+	diffs := compareToolConfigs("T", "", a, b)
+	if len(diffs) == 0 {
+		t.Error("expected difference for OutputLimit, got none")
+	}
+}
+
+func TestCompareToolConfigsDifferentTimeout(t *testing.T) {
+	a := ir.ToolConfig{Timeout: 30 * time.Second}
+	b := ir.ToolConfig{Timeout: 60 * time.Second}
+	diffs := compareToolConfigs("T", "", a, b)
+	if len(diffs) == 0 {
+		t.Error("expected difference for Timeout, got none")
+	}
+}
+
+func TestCompareToolConfigsDifferentOutputs(t *testing.T) {
+	a := ir.ToolConfig{Outputs: []string{"pass", "fail"}}
+	b := ir.ToolConfig{Outputs: []string{"green", "red"}}
+	diffs := compareToolConfigs("T", "", a, b)
+	if len(diffs) == 0 {
+		t.Error("expected difference for Outputs, got none")
 	}
 }
 
