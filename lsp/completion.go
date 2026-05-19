@@ -53,7 +53,7 @@ func fieldCompletions() []protocol.CompletionItem {
 		{"fidelity:", "Fidelity level"},
 		{"marker_grep:", "Regex matched against tool stdout; sets ctx.tool_marker"},
 		{"route_required:", "Require _TRACKER_ROUTE= sentinel line from tool stdout"},
-		{"output_limit:", "Per-node stdout byte cap (positive int)"},
+		{"output_limit:", "Per-node stdout byte cap (non-negative int; 0 = engine default)"},
 	}
 	var items []protocol.CompletionItem
 	for _, f := range fields {

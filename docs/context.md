@@ -195,7 +195,7 @@ The validator treats variables differently based on what it can verify at parse 
 
 | Tier | Variables | Validation |
 |------|-----------|------------|
-| **Always known** | `ctx.outcome`, `ctx.last_response`, `ctx.human_response`, `ctx.tool_stdout`, `ctx.tool_stderr`, `graph.goal` | Error if misspelled |
+| **Always known** | `ctx.outcome`, `ctx.last_response`, `ctx.human_response`, `ctx.tool_stdout`, `ctx.tool_stderr`, `ctx.tool_marker`, `ctx.tool_route`, `graph.goal` | Error if misspelled (`ctx.tool_marker` / `ctx.tool_route` only populated at runtime when `marker_grep` / `route_required: true` are declared on the source tool) |
 | **Declared outputs** | Keys from upstream `writes` declarations | Warning if referenced but not declared (DIP112) |
 | **Dynamic** | Everything else | Warning only — never an error (runtime context is open) |
 

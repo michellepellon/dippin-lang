@@ -294,7 +294,7 @@ Indentation: 2 spaces. Comments: `#` line comments (literal inside multiline blo
 | `outputs` | CSV | Possible stdout values for condition checks |
 | `marker_grep` | string | Regex matched against stdout; sets `ctx.tool_marker`. Tracker validates at runtime. |
 | `route_required` | bool | When true, fails the node if no `_TRACKER_ROUTE=<value>` sentinel line is emitted. |
-| `output_limit` | int | Per-node stdout byte cap (positive integer); omit to use engine default. |
+| `output_limit` | int | Per-node stdout byte cap (non-negative integer); 0 (or omitted) uses the engine default. |
 | `reads` | CSV | Context keys read |
 | `writes` | CSV | Context keys written |
 

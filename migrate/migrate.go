@@ -539,6 +539,9 @@ func applyToolOutputLimitAttr(cfg *ir.ToolConfig, attrs map[string]string) error
 	if err != nil {
 		return fmt.Errorf("invalid output_limit %q: %w", v, err)
 	}
+	if n < 0 {
+		return fmt.Errorf("invalid output_limit %d: must be non-negative", n)
+	}
 	cfg.OutputLimit = n
 	return nil
 }

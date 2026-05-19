@@ -2552,3 +2552,11 @@ func TestBuildToolConfigOutputLimitInvalid(t *testing.T) {
 		t.Error("expected error for non-numeric output_limit, got nil")
 	}
 }
+
+func TestBuildToolConfigOutputLimitNegative(t *testing.T) {
+	attrs := map[string]string{"output_limit": "-1"}
+	_, err := buildToolConfig(attrs)
+	if err == nil {
+		t.Error("expected error for negative output_limit, got nil")
+	}
+}
