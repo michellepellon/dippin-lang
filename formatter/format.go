@@ -485,11 +485,24 @@ func writeHumanTimeoutFields(wr *writer, cfg ir.HumanConfig) {
 	}
 }
 
+func writeToolRoutingFields(wr *writer, cfg ir.ToolConfig) {
+	if cfg.MarkerGrep != "" {
+		wr.line("marker_grep: %s", quoteValue(cfg.MarkerGrep))
+	}
+	if cfg.RouteRequired {
+		wr.line("route_required: true")
+	}
+	if cfg.OutputLimit > 0 {
+		wr.line("output_limit: %d", cfg.OutputLimit)
+	}
+}
+
 func writeToolFields(wr *writer, n *ir.Node, cfg ir.ToolConfig) {
 	writeCommonNodeFields(wr, n)
 	if len(cfg.Outputs) > 0 {
 		wr.line("outputs: %s", strings.Join(cfg.Outputs, ", "))
 	}
+	writeToolRoutingFields(wr, cfg)
 	if cfg.Timeout != 0 {
 		wr.line("timeout: %s", formatDuration(cfg.Timeout))
 	}
