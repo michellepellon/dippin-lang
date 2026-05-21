@@ -1,0 +1,16 @@
+workflow with_spec
+  goal: "Workflow with a spec reference and per-node satisfies."
+  spec: acai features/example/features.yaml
+  start: ImplementAuth
+  exit: Done
+
+  agent ImplementAuth
+    label: ImplementAuth
+    satisfies: example.AUTH.1, example.AUTH.2, example.AUTH.[3-5]
+    prompt: Implement the AUTH requirements from the spec.
+
+  agent Done
+    label: Done
+
+  edges
+    ImplementAuth -> Done

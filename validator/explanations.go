@@ -254,7 +254,43 @@ func advancedExplanations() map[string]Explanation {
 	for k, v := range nodeValidationExplanations() {
 		m[k] = v
 	}
+	for k, v := range satisfiesExplanations() {
+		m[k] = v
+	}
 	return m
+}
+
+func satisfiesExplanations() map[string]Explanation {
+	return map[string]Explanation{
+		DIP139: {
+			Code:    DIP139,
+			Summary: "malformed ACID reference in satisfies list",
+			Trigger: "An entry in a node's satisfies list does not match the ACID shape `name(.COMPONENT)+\\.(number|number-number|*|[N-M])`. Component names must be UPPERCASE; the feature name must be lowercase; the requirement segment must be a number, a sub-numbered pair, a wildcard, or a range.",
+			Fix:     "Correct the malformed entry. Examples of valid forms: `my-feature.AUTH.1`, `my-feature.AUTH.1-2`, `my-feature.AUTH.*`, `my-feature.AUTH.[1-3]`.",
+			Example: "agent ImplementAuth\n  satisfies: my-feature.auth.1   // lowercase component → invalid",
+		},
+		DIP140: {
+			Code:    DIP140,
+			Summary: "satisfies declared on a node but workflow has no spec",
+			Trigger: "A node declares satisfies but the enclosing workflow has no spec: header. Without a spec, the runtime has nothing to resolve the ACIDs against — the satisfies declaration is dead metadata.",
+			Fix:     "Add a `spec: <loader> <path>` line to the workflow header, or remove the satisfies field from the node.",
+			Example: "workflow X\n  goal: \"t\"\n  start: A\n  exit: A\n\n  agent A\n    satisfies: foo.BAR.1   // workflow has no spec",
+		},
+		DIP141: {
+			Code:    DIP141,
+			Summary: "workflow declares spec but no node has satisfies",
+			Trigger: "The workflow has a spec: header but no node declares any satisfies. The spec is attached but unused — the runtime will load it for nothing.",
+			Fix:     "Add satisfies on at least one node, or remove the spec: header.",
+			Example: "workflow X\n  spec: acai features/x/features.yaml\n  // no node has satisfies",
+		},
+		DIP142: {
+			Code:    DIP142,
+			Summary: "duplicate ACID across satisfies lists",
+			Trigger: "The same ACID literal appears in two different satisfies lists (either on different nodes or twice within one node). Each requirement should have a single owning node so the runtime knows which node's success means the ACID is satisfied.",
+			Fix:     "Remove the duplicate, or split the requirement into sub-requirements if two nodes legitimately contribute to it.",
+			Example: "agent A\n  satisfies: foo.BAR.1\nagent B\n  satisfies: foo.BAR.1   // duplicate",
+		},
+	}
 }
 
 func conditionExplanations() map[string]Explanation {

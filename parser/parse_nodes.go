@@ -183,17 +183,36 @@ func applyCommonStringField(n *ir.Node, key, val string) bool {
 	return applyCommonRetryField(n, key, val)
 }
 
-// applyCommonPlainField handles label, class, reads, writes.
+// applyCommonPlainField handles fields that are common to every node kind.
 func applyCommonPlainField(n *ir.Node, key, val string) bool {
+	if applyCommonNamingField(n, key, val) {
+		return true
+	}
+	return applyCommonIOField(n, key, val)
+}
+
+// applyCommonNamingField handles human-facing labels and classes.
+func applyCommonNamingField(n *ir.Node, key, val string) bool {
 	switch key {
 	case "label":
 		n.Label = val
 	case "class":
 		n.Classes = splitComma(val)
+	default:
+		return false
+	}
+	return true
+}
+
+// applyCommonIOField handles context-IO declarations and spec-satisfies.
+func applyCommonIOField(n *ir.Node, key, val string) bool {
+	switch key {
 	case "reads":
 		n.IO.Reads = splitComma(val)
 	case "writes":
 		n.IO.Writes = splitComma(val)
+	case "satisfies":
+		n.Satisfies = splitCommaNoEmpty(val)
 	default:
 		return false
 	}

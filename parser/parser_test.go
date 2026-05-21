@@ -2067,3 +2067,299 @@ func TestParseRequiresFromFixture(t *testing.T) {
 		}
 	}
 }
+
+func TestParseWorkflowSpec_Basic(t *testing.T) {
+	input := `workflow Test
+  goal: "Test"
+  spec: acai features/test/features.yaml
+  start: A
+  exit: A
+
+  agent A
+    prompt: "Do it."
+
+  edges
+    A -> A
+`
+	w, err := NewParser(input, "test.dip").Parse()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if w.Spec == nil {
+		t.Fatalf("expected Spec to be set")
+	}
+	if w.Spec.Loader != "acai" {
+		t.Errorf("Loader = %q, want acai", w.Spec.Loader)
+	}
+	if w.Spec.Path != "features/test/features.yaml" {
+		t.Errorf("Path = %q, want features/test/features.yaml", w.Spec.Path)
+	}
+}
+
+func TestParseWorkflowSpec_AbsentLeavesNil(t *testing.T) {
+	input := `workflow Test
+  goal: "Test"
+  start: A
+  exit: A
+
+  agent A
+    prompt: "Do it."
+
+  edges
+    A -> A
+`
+	w, err := NewParser(input, "test.dip").Parse()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if w.Spec != nil {
+		t.Errorf("Spec = %#v, want nil", w.Spec)
+	}
+}
+
+func TestParseWorkflowSpec_MissingPathErrors(t *testing.T) {
+	input := `workflow Test
+  goal: "Test"
+  spec: acai
+  start: A
+  exit: A
+
+  agent A
+    prompt: "Do it."
+
+  edges
+    A -> A
+`
+	_, err := NewParser(input, "test.dip").Parse()
+	if err == nil {
+		t.Fatalf("expected parse error for spec with no path")
+	}
+}
+
+func TestParseWorkflowSpec_EmptyValueErrors(t *testing.T) {
+	input := `workflow Test
+  goal: "Test"
+  spec:
+  start: A
+  exit: A
+
+  agent A
+    prompt: "Do it."
+
+  edges
+    A -> A
+`
+	_, err := NewParser(input, "test.dip").Parse()
+	if err == nil {
+		t.Fatalf("expected parse error for empty spec")
+	}
+}
+
+func TestParseWorkflowSpec_PathWithSpaces(t *testing.T) {
+	// Path is everything after the first whitespace run; embedded spaces preserved.
+	input := `workflow Test
+  goal: "Test"
+  spec: acai path with spaces/features.yaml
+  start: A
+  exit: A
+
+  agent A
+    prompt: "Do it."
+
+  edges
+    A -> A
+`
+	w, err := NewParser(input, "test.dip").Parse()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if w.Spec == nil || w.Spec.Path != "path with spaces/features.yaml" {
+		t.Errorf("Path = %#v, want path with spaces/features.yaml", w.Spec)
+	}
+}
+
+func TestParseNodeSatisfies_Basic(t *testing.T) {
+	input := `workflow Test
+  goal: "Test"
+  spec: acai features/test/features.yaml
+  start: A
+  exit: A
+
+  agent A
+    label: A
+    satisfies: foo.BAR.1, foo.BAR.2-1, foo.BAR.[1-3], foo.BAR.*
+    prompt: "Do it."
+
+  edges
+    A -> A
+`
+	w, err := NewParser(input, "test.dip").Parse()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got := w.Nodes[0].Satisfies
+	want := []string{"foo.BAR.1", "foo.BAR.2-1", "foo.BAR.[1-3]", "foo.BAR.*"}
+	if len(got) != len(want) {
+		t.Fatalf("Satisfies = %#v, want %#v", got, want)
+	}
+	for i, v := range want {
+		if got[i] != v {
+			t.Errorf("Satisfies[%d] = %q, want %q", i, got[i], v)
+		}
+	}
+}
+
+func TestParseNodeSatisfies_AbsentLeavesNil(t *testing.T) {
+	input := `workflow Test
+  goal: "Test"
+  start: A
+  exit: A
+
+  agent A
+    label: A
+    prompt: "Do it."
+
+  edges
+    A -> A
+`
+	w, err := NewParser(input, "test.dip").Parse()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if w.Nodes[0].Satisfies != nil {
+		t.Errorf("Satisfies = %#v, want nil", w.Nodes[0].Satisfies)
+	}
+}
+
+func TestParseNodeSatisfies_TrimsAndDropsEmpties(t *testing.T) {
+	input := `workflow Test
+  goal: "Test"
+  spec: acai f.yaml
+  start: A
+  exit: A
+
+  agent A
+    label: A
+    satisfies:   foo.BAR.1 ,  ,  foo.BAR.2  ,
+
+  edges
+    A -> A
+`
+	w, err := NewParser(input, "test.dip").Parse()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []string{"foo.BAR.1", "foo.BAR.2"}
+	got := w.Nodes[0].Satisfies
+	if len(got) != len(want) {
+		t.Fatalf("Satisfies = %#v, want %#v", got, want)
+	}
+	for i, v := range want {
+		if got[i] != v {
+			t.Errorf("Satisfies[%d] = %q, want %q", i, got[i], v)
+		}
+	}
+}
+
+func TestParseNodeSatisfies_OnEveryKind(t *testing.T) {
+	// satisfies is a common field — every node kind that has a body should accept it.
+	cases := []struct {
+		kind  string
+		extra string
+	}{
+		{"agent", "    prompt: \"x\"\n"},
+		{"human", "    mode: freeform\n"},
+		{"tool", "    command: echo x\n"},
+		{"subgraph", "    ref: child.dip\n"},
+		{"conditional", ""},
+		{"manager_loop", "    subgraph_ref: child.dip\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.kind, func(t *testing.T) {
+			input := "workflow Test\n" +
+				"  goal: \"t\"\n" +
+				"  spec: acai f.yaml\n" +
+				"  start: A\n" +
+				"  exit: A\n\n" +
+				"  " + tc.kind + " A\n" +
+				"    label: A\n" +
+				"    satisfies: foo.BAR.1\n" +
+				tc.extra +
+				"\n  edges\n    A -> A\n"
+			w, err := NewParser(input, "test.dip").Parse()
+			if err != nil {
+				t.Fatalf("parse failed for kind %s: %v", tc.kind, err)
+			}
+			if len(w.Nodes) == 0 {
+				t.Fatalf("no nodes parsed for kind %s", tc.kind)
+			}
+			if len(w.Nodes[0].Satisfies) != 1 || w.Nodes[0].Satisfies[0] != "foo.BAR.1" {
+				t.Errorf("kind %s: Satisfies = %#v, want [foo.BAR.1]", tc.kind, w.Nodes[0].Satisfies)
+			}
+		})
+	}
+}
+
+func TestParseNodeSatisfies_RoundTrip(t *testing.T) {
+	input := `workflow Test
+  goal: "Test"
+  spec: acai f.yaml
+  start: A
+  exit: A
+
+  agent A
+    label: A
+    satisfies: foo.BAR.1, foo.BAR.2
+    prompt: "Do it."
+
+  edges
+    A -> A
+`
+	w1, err := NewParser(input, "test.dip").Parse()
+	if err != nil {
+		t.Fatalf("first parse: %v", err)
+	}
+	formatted := formatter.Format(w1)
+	w2, err := NewParser(formatted, "roundtrip").Parse()
+	if err != nil {
+		t.Fatalf("re-parse: %v\nformatted:\n%s", err, formatted)
+	}
+	if len(w2.Nodes) == 0 || len(w2.Nodes[0].Satisfies) != 2 {
+		t.Fatalf("Satisfies dropped on round-trip; formatted:\n%s", formatted)
+	}
+	for i, v := range w1.Nodes[0].Satisfies {
+		if w2.Nodes[0].Satisfies[i] != v {
+			t.Errorf("Satisfies[%d]: %q vs %q", i, v, w2.Nodes[0].Satisfies[i])
+		}
+	}
+}
+
+func TestParseWorkflowSpec_RoundTrip(t *testing.T) {
+	input := `workflow Test
+  goal: "Test"
+  spec: acai features/test/features.yaml
+  start: A
+  exit: A
+
+  agent A
+    prompt: "Do it."
+
+  edges
+    A -> A
+`
+	w1, err := NewParser(input, "test.dip").Parse()
+	if err != nil {
+		t.Fatalf("first parse: %v", err)
+	}
+	formatted := formatter.Format(w1)
+	w2, err := NewParser(formatted, "roundtrip").Parse()
+	if err != nil {
+		t.Fatalf("re-parse: %v\nformatted:\n%s", err, formatted)
+	}
+	if w2.Spec == nil {
+		t.Fatalf("Spec dropped on round-trip; formatted output:\n%s", formatted)
+	}
+	if w1.Spec.Loader != w2.Spec.Loader || w1.Spec.Path != w2.Spec.Path {
+		t.Errorf("Spec: %#v vs %#v", w1.Spec, w2.Spec)
+	}
+}

@@ -40,6 +40,10 @@ const (
 	DIP136 = "DIP136" // manager_loop control field has invalid value (poll_interval or max_cycles)
 	DIP137 = "DIP137" // unbounded manager_loop: no stop_condition and no max_cycles
 	DIP138 = "DIP138" // tool node routes on stdout but declares no marker_grep / outputs (reserved)
+	DIP139 = "DIP139" // malformed ACID reference in satisfies list
+	DIP140 = "DIP140" // satisfies declared on a node but workflow has no spec
+	DIP141 = "DIP141" // workflow declares spec but no node has satisfies
+	DIP142 = "DIP142" // duplicate ACID across satisfies lists
 )
 
 func init() {
@@ -82,4 +86,8 @@ func init() {
 	CodeDescription[DIP136] = "manager_loop control field has invalid value (poll_interval or max_cycles)"
 	CodeDescription[DIP137] = "unbounded manager_loop: no stop_condition and no max_cycles"
 	CodeDescription[DIP138] = "tool node routes on stdout but declares no marker_grep / outputs"
+	CodeDescription[DIP139] = "malformed ACID reference in satisfies list"
+	CodeDescription[DIP140] = "satisfies declared on a node but workflow has no spec"
+	CodeDescription[DIP141] = "workflow declares spec but no node has satisfies"
+	CodeDescription[DIP142] = "duplicate ACID across satisfies lists"
 }

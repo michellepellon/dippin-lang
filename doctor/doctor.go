@@ -21,7 +21,20 @@ type Report struct {
 	Lint        LintSummary  `json:"lint"`
 	Coverage    CovSummary   `json:"coverage"`
 	Cost        CostSummary  `json:"cost"`
+	Spec        SpecSummary  `json:"spec"`
 	Suggestions []Suggestion `json:"suggestions"`
+}
+
+// SpecSummary describes the workflow's spec attachment and satisfies coverage.
+// It is informational only — Diagnose does not adjust the score based on it
+// because spec-first authoring is opt-in.
+type SpecSummary struct {
+	Present        bool   `json:"present"`
+	Loader         string `json:"loader,omitempty"`
+	Path           string `json:"path,omitempty"`
+	SatisfiesNodes int    `json:"satisfies_nodes"`
+	TotalNodes     int    `json:"total_nodes"`
+	TotalACIDs     int    `json:"total_acids"`
 }
 
 // LintSummary summarizes validation and lint results.
@@ -62,10 +75,28 @@ func Diagnose(w *ir.Workflow, pricing cost.PricingTable) *Report {
 	r.Lint = buildLintSummary(valResult, lintResult)
 	r.Coverage = buildCovSummary(covReport)
 	r.Cost = CostSummary{Total: costReport.Total}
+	r.Spec = buildSpecSummary(w)
 	r.Score = computeScore(r)
 	r.Grade = scoreToGrade(r.Score)
 	r.Suggestions = buildSuggestions(r, covReport)
 	return r
+}
+
+// buildSpecSummary describes the workflow's spec attachment and satisfies coverage.
+func buildSpecSummary(w *ir.Workflow) SpecSummary {
+	s := SpecSummary{TotalNodes: len(w.Nodes)}
+	if w.Spec != nil {
+		s.Present = true
+		s.Loader = w.Spec.Loader
+		s.Path = w.Spec.Path
+	}
+	for _, n := range w.Nodes {
+		if len(n.Satisfies) > 0 {
+			s.SatisfiesNodes++
+			s.TotalACIDs += len(n.Satisfies)
+		}
+	}
+	return s
 }
 
 // buildLintSummary counts errors, warnings, and hints from both passes.

@@ -17,6 +17,7 @@ type Workflow struct {
 	Defaults   WorkflowDefaults  // Graph-level config
 	Vars       map[string]string // User-defined workflow variables
 	Requires   []string          // Environmental dependencies (e.g. ["git", "docker"]); semantics live in consumers
+	Spec       *SpecRef          // Optional external-spec reference; nil = no spec attached
 	Nodes      []*Node           // Ordered for deterministic processing
 	Edges      []*Edge
 	Stylesheet []StylesheetRule // Theme/styling rules
@@ -57,14 +58,15 @@ type WorkflowDefaults struct {
 
 // Node represents a single step in the workflow.
 type Node struct {
-	ID      string
-	Kind    NodeKind
-	Label   string     // Human-readable display name
-	Classes []string   // For stylesheet matching (post-v1)
-	Config  NodeConfig // Kind-specific configuration
-	Retry   RetryConfig
-	IO      NodeIO // Declared inputs/outputs (advisory in v1)
-	Source  SourceLocation
+	ID        string
+	Kind      NodeKind
+	Label     string     // Human-readable display name
+	Classes   []string   // For stylesheet matching (post-v1)
+	Config    NodeConfig // Kind-specific configuration
+	Retry     RetryConfig
+	IO        NodeIO   // Declared inputs/outputs (advisory in v1)
+	Satisfies []string // Optional spec requirement refs this node satisfies; nil = none
+	Source    SourceLocation
 }
 
 // NodeKind enumerates node types explicitly.

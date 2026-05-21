@@ -184,11 +184,14 @@ func writeNodeDOT(b *strings.Builder, n *ir.Node, w *ir.Workflow, opts ExportOpt
 	fmt.Fprintf(b, "  %s %s;\n", dotID(n.ID), formatDOTAttrs(attrs))
 }
 
-// buildBaseNodeAttrs creates the base attributes for a node (shape, label, execution order).
+// buildBaseNodeAttrs creates the base attributes for a node (shape, label, execution order, satisfies).
 func buildBaseNodeAttrs(n *ir.Node, w *ir.Workflow, order map[string][]int) map[string]string {
 	attrs := make(map[string]string)
 	attrs["shape"] = resolveNodeShape(n, w)
 	attrs["label"] = resolveNodeLabel(n, order, attrs)
+	if len(n.Satisfies) > 0 {
+		attrs["satisfies"] = strings.Join(n.Satisfies, ",")
+	}
 	return attrs
 }
 

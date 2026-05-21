@@ -121,6 +121,9 @@ func writeWorkflowHeader(wr *writer, w *ir.Workflow) {
 	if w.Goal != "" {
 		wr.line("goal: %s", quoteValue(w.Goal))
 	}
+	if w.Spec != nil {
+		wr.line("spec: %s %s", w.Spec.Loader, w.Spec.Path)
+	}
 	if len(w.Requires) > 0 {
 		wr.line("requires: %s", strings.Join(w.Requires, ", "))
 	}
@@ -336,13 +339,16 @@ func writeAgentFields(wr *writer, n *ir.Node, cfg ir.AgentConfig) {
 	}
 }
 
-// writeCommonNodeFields writes label and class fields common to all node types.
+// writeCommonNodeFields writes label, class, and satisfies fields common to all node types.
 func writeCommonNodeFields(wr *writer, n *ir.Node) {
 	if n.Label != "" {
 		wr.line("label: %s", quoteValue(n.Label))
 	}
 	if len(n.Classes) > 0 {
 		wr.line("class: %s", strings.Join(n.Classes, ", "))
+	}
+	if len(n.Satisfies) > 0 {
+		wr.line("satisfies: %s", strings.Join(n.Satisfies, ", "))
 	}
 }
 

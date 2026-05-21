@@ -1,0 +1,29 @@
+workflow SpecLoaderDemo
+  goal: "Demonstrate spec: and satisfies: for spec-first authoring"
+  spec: acai features/example/features.yaml
+  start: ImplementAuth
+  exit: Done
+
+  defaults
+    model: claude-sonnet-4-6
+    provider: anthropic
+
+  agent ImplementAuth
+    label: "Implement AUTH requirements"
+    satisfies: example.AUTH.1, example.AUTH.2, example.AUTH.[3-5]
+    prompt:
+      Implement every AUTH requirement from the workflow's spec.
+      Reference each ACID in a comment near the code that satisfies it.
+
+  agent ImplementClient
+    label: "Implement CLIENT requirements"
+    satisfies: example.CLIENT.*
+    prompt:
+      Implement every CLIENT requirement from the workflow's spec.
+
+  agent Done
+    label: Done
+
+  edges
+    ImplementAuth -> ImplementClient
+    ImplementClient -> Done

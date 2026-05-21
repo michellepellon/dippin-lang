@@ -32,7 +32,12 @@ workflow_body   = { workflow_field | defaults_section | vars_section
 workflow_field  = "goal"     ":" field_value
                 | "start"    ":" IDENTIFIER
                 | "exit"     ":" IDENTIFIER
-                | "requires" ":" identifier_list ;
+                | "requires" ":" identifier_list
+                | "spec"     ":" IDENTIFIER WHITESPACE path ;
+
+(* spec attaches an external spec document to the workflow. *)
+(* The loader name resolves at runtime; dippin only carries the reference. *)
+(* path is any non-whitespace run after the loader name.    *)
 
 (* ═══════════════════════════════════════════════════════════ *)
 (* Defaults Section                                           *)
@@ -170,11 +175,18 @@ common_field    = "label"           ":" field_value
                 | "class"           ":" identifier_list
                 | "reads"           ":" identifier_list
                 | "writes"          ":" identifier_list
+                | "satisfies"       ":" acid_ref_list
                 | "retry_policy"    ":" field_value
                 | "max_retries"     ":" INTEGER
                 | "base_delay"      ":" DURATION
                 | "retry_target"    ":" IDENTIFIER
                 | "fallback_target" ":" IDENTIFIER ;
+
+acid_ref_list   = acid_ref { "," acid_ref } ;
+
+(* An ACID reference: spec.COMPONENT(.COMPONENT)*.requirement   *)
+(* requirement = digits | digits "-" digits | "*" | "[" digits "-" digits "]" *)
+acid_ref        = (* see DIP139 for the exact syntactic shape *) ;
 
 (* ═══════════════════════════════════════════════════════════ *)
 (* Edges Section                                              *)

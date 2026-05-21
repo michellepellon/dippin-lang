@@ -68,6 +68,8 @@ func assertWorkflowsEqual(t *testing.T, a, b *ir.Workflow) {
 		t.Errorf("Edges: %d vs %d", len(a.Edges), len(b.Edges))
 	}
 	assertRequiresEqual(t, a.Requires, b.Requires)
+	assertSpecEqual(t, a.Spec, b.Spec)
+	assertNodeSatisfiesEqual(t, a.Nodes, b.Nodes)
 }
 
 func assertRequiresEqual(t *testing.T, a, b []string) {
@@ -83,6 +85,42 @@ func assertRequiresEqual(t *testing.T, a, b []string) {
 	for i := range a {
 		if a[i] != b[i] {
 			t.Errorf("Requires[%d]: %q vs %q", i, a[i], b[i])
+		}
+	}
+}
+
+func assertSpecEqual(t *testing.T, a, b *ir.SpecRef) {
+	t.Helper()
+	if (a == nil) != (b == nil) {
+		t.Errorf("Spec nilness: a nil=%t vs b nil=%t", a == nil, b == nil)
+		return
+	}
+	if a == nil {
+		return
+	}
+	if a.Loader != b.Loader || a.Path != b.Path {
+		t.Errorf("Spec: %#v vs %#v", a, b)
+	}
+}
+
+func assertNodeSatisfiesEqual(t *testing.T, a, b []*ir.Node) {
+	t.Helper()
+	if len(a) != len(b) {
+		return // a separate assertion already reports the mismatched count
+	}
+	for i := range a {
+		if (a[i].Satisfies == nil) != (b[i].Satisfies == nil) {
+			t.Errorf("Nodes[%d].Satisfies nilness: %t vs %t", i, a[i].Satisfies == nil, b[i].Satisfies == nil)
+			continue
+		}
+		if len(a[i].Satisfies) != len(b[i].Satisfies) {
+			t.Errorf("Nodes[%d].Satisfies len: %d vs %d", i, len(a[i].Satisfies), len(b[i].Satisfies))
+			continue
+		}
+		for j := range a[i].Satisfies {
+			if a[i].Satisfies[j] != b[i].Satisfies[j] {
+				t.Errorf("Nodes[%d].Satisfies[%d]: %q vs %q", i, j, a[i].Satisfies[j], b[i].Satisfies[j])
+			}
 		}
 	}
 }

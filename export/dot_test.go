@@ -1430,6 +1430,51 @@ func TestExportDOTToolRoutingFields(t *testing.T) {
 	}
 }
 
+func TestExportDOTNodeSatisfies(t *testing.T) {
+	wf := &ir.Workflow{
+		Name:  "sat_test",
+		Start: "A",
+		Exit:  "B",
+		Nodes: []*ir.Node{
+			{
+				ID: "A", Kind: ir.NodeAgent,
+				Satisfies: []string{"foo.BAR.1", "foo.BAR.2"},
+				Config:    ir.AgentConfig{Prompt: "go."},
+			},
+			{ID: "B", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done."}},
+		},
+		Edges: []*ir.Edge{{From: "A", To: "B"}},
+	}
+	out := ExportDOT(wf, ExportOptions{})
+	assertContains(t, out, `satisfies="foo.BAR.1,foo.BAR.2"`)
+	if strings.Contains(out, `B [`) && strings.Contains(out, "satisfies") {
+		// satisfies should appear on A only — verify it's not bleeding onto B.
+		bLine := ""
+		for _, line := range strings.Split(out, "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), "B [") {
+				bLine = line
+				break
+			}
+		}
+		if strings.Contains(bLine, "satisfies") {
+			t.Errorf("B should not carry satisfies; line: %s", bLine)
+		}
+	}
+}
+
+func TestExportDOTNodeSatisfies_OmittedWhenAbsent(t *testing.T) {
+	wf := &ir.Workflow{
+		Name:  "sat_absent",
+		Start: "A",
+		Exit:  "A",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go."}},
+		},
+	}
+	out := ExportDOT(wf, ExportOptions{})
+	assertNotContains(t, out, "satisfies")
+}
+
 func TestExportDOTToolRoutingOmitWhenZero(t *testing.T) {
 	wf := &ir.Workflow{
 		Name:  "tool_omit_test",

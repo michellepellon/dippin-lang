@@ -314,6 +314,52 @@ func TestDiagnose_GradeCDWorkflow(t *testing.T) {
 	}
 }
 
+func TestDiagnose_SpecAbsent(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "no_spec",
+		Start: "A",
+		Exit:  "A",
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "go."}},
+		},
+	}
+	r := doctor.Diagnose(w, cost.DefaultPricing())
+	if r.Spec.Present {
+		t.Errorf("Spec.Present = true, want false")
+	}
+	if r.Spec.Loader != "" || r.Spec.Path != "" {
+		t.Errorf("Spec loader/path should be empty, got %+v", r.Spec)
+	}
+}
+
+func TestDiagnose_SpecPresentWithSatisfiesCoverage(t *testing.T) {
+	w := &ir.Workflow{
+		Name:  "with_spec",
+		Start: "A",
+		Exit:  "C",
+		Spec:  &ir.SpecRef{Loader: "acai", Path: "f.yaml"},
+		Nodes: []*ir.Node{
+			{ID: "A", Kind: ir.NodeAgent, Satisfies: []string{"foo.BAR.1", "foo.BAR.2"}, Config: ir.AgentConfig{Prompt: "go."}},
+			{ID: "B", Kind: ir.NodeAgent, Satisfies: []string{"foo.BAR.3"}, Config: ir.AgentConfig{Prompt: "go."}},
+			{ID: "C", Kind: ir.NodeAgent, Config: ir.AgentConfig{Prompt: "done."}},
+		},
+		Edges: []*ir.Edge{{From: "A", To: "B"}, {From: "B", To: "C"}},
+	}
+	r := doctor.Diagnose(w, cost.DefaultPricing())
+	if !r.Spec.Present {
+		t.Fatalf("Spec.Present = false, want true")
+	}
+	if r.Spec.Loader != "acai" || r.Spec.Path != "f.yaml" {
+		t.Errorf("Spec loader/path mismatch: %+v", r.Spec)
+	}
+	if r.Spec.SatisfiesNodes != 2 || r.Spec.TotalNodes != 3 {
+		t.Errorf("SatisfiesNodes=%d TotalNodes=%d, want 2/3", r.Spec.SatisfiesNodes, r.Spec.TotalNodes)
+	}
+	if r.Spec.TotalACIDs != 3 {
+		t.Errorf("TotalACIDs=%d, want 3", r.Spec.TotalACIDs)
+	}
+}
+
 func TestDiagnose_GradeDWithManyIssues(t *testing.T) {
 	w := &ir.Workflow{
 		Name:  "test",

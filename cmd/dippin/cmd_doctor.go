@@ -47,7 +47,23 @@ func renderDoctorText(w io.Writer, r *doctor.Report) {
 	renderDoctorLint(w, r)
 	renderDoctorCoverage(w, r)
 	renderDoctorCost(w, r)
+	renderDoctorSpec(w, r)
 	renderDoctorSuggestions(w, r)
+}
+
+func renderDoctorSpec(w io.Writer, r *doctor.Report) {
+	if !r.Spec.Present && r.Spec.SatisfiesNodes == 0 {
+		return
+	}
+	fmt.Fprintln(w, "─── Spec ──────────────────────────────────────────────────")
+	if r.Spec.Present {
+		fmt.Fprintf(w, "  Spec: %s %s\n", r.Spec.Loader, r.Spec.Path)
+	} else {
+		fmt.Fprintln(w, "  Spec: (none)")
+	}
+	fmt.Fprintf(w, "  Satisfies coverage: %d of %d node(s); %d ACID reference(s)\n",
+		r.Spec.SatisfiesNodes, r.Spec.TotalNodes, r.Spec.TotalACIDs)
+	fmt.Fprintln(w)
 }
 
 func renderDoctorLint(w io.Writer, r *doctor.Report) {
