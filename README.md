@@ -364,6 +364,25 @@ Comments are not stripped inside multiline blocks — a `#` inside a prompt or c
 | `fallback_target` | all | Fallback if retries exhausted |
 | `reads` | all | Context keys read (advisory, comma-separated) |
 | `writes` | all | Context keys written (advisory, comma-separated) |
+| `satisfies` | all | Spec requirement refs (ACIDs) this node satisfies (comma-separated). Requires workflow `spec:` header. See [spec-loader design](docs/superpowers/specs/2026-05-21-spec-loader-grammar-design.md). |
+
+### Spec-First Authoring (Optional)
+
+A workflow may attach an external spec via a header attribute, and individual nodes may declare which requirements they satisfy:
+
+```
+workflow ImplementAuth
+  goal: "Ship the auth module per spec"
+  spec: acai features/auth/features.yaml
+  start: Implement
+  exit: Done
+
+  agent Implement
+    satisfies: auth.SESSION.[1-4], auth.TOKEN.*
+    prompt: Implement every SESSION and TOKEN requirement from the spec.
+```
+
+The loader name (`acai`, in the example) resolves at runtime via a plugin registry in the consumer (tracker). Dippin only carries the reference and the ACID list — it never opens the spec file or interprets the loader. See the [spec-loader grammar design](docs/superpowers/specs/2026-05-21-spec-loader-grammar-design.md) for the full motivation and supported ACID shapes.
 
 ## Diagnostics
 

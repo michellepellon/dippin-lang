@@ -2,6 +2,32 @@
 
 All notable changes to dippin-lang are documented here. Versions follow [semver](https://semver.org/).
 
+## [Unreleased]
+
+Grammar-level support for spec-first workflow authoring. Adds an optional `spec:` workflow header attribute and a `satisfies:` common node attribute that carries spec requirement references (ACIDs). Backwards-compatible — both fields are optional and existing `.dip` files parse identically.
+
+The runtime semantics (loading specs, verifying ACID coverage, reporting status to a spec server) live in the consumer (tracker); dippin only carries the IR through. See `docs/superpowers/specs/2026-05-21-spec-loader-grammar-design.md` for the full design and motivation, including how this fits with acai's [specsmaxxing](https://acai.sh/blog/specsmaxxing) workflow.
+
+### Added
+
+- `spec: <loader-name> <path>` workflow header attribute. The loader name is a key into a runtime-side plugin registry (e.g. `acai`); the path is resolved relative to the `.dip` file's directory.
+- `satisfies: <acid-list>` common node attribute. Accepts comma-separated ACIDs in bare (`foo.BAR.1`), sub-requirement (`foo.BAR.1-1`), wildcard (`foo.BAR.*`), or range (`foo.BAR.[1-3]`) form. Available on every node kind.
+- `ir.SpecRef` type with `Loader` and `Path`; `ir.Workflow.Spec` and `ir.Node.Satisfies` fields.
+- Four new lint codes:
+  - `DIP139` — malformed ACID in `satisfies:` list (error severity).
+  - `DIP140` — `satisfies:` declared on a node but workflow has no `spec:` (warning).
+  - `DIP141` — workflow declares `spec:` but no node has `satisfies:` (warning).
+  - `DIP142` — duplicate ACID literal across `satisfies:` lists (warning).
+- `dippin doctor` now reports spec presence and satisfies coverage (informational; does not affect grade).
+- `dippin export-dot` emits `satisfies="..."` as a structural DOT attribute on nodes that declare it.
+- `dippin fmt` canonicalizes placement: `spec:` after `goal:` in the workflow header; `satisfies:` after `label:`/`class:` in node bodies.
+- Tree-sitter grammar updated to recognize `spec` as a workflow header keyword (corpus test added). `satisfies` already parsed as a generic node field.
+- New example `examples/spec_loader.dip` exercising both fields.
+
+### Runtime requirement
+
+None for dippin itself. Tracker integration (`SpecLoader` interface, `acai` loader, bidirectional reporter, `verify_acid:` primitive) is tracked separately.
+
 ## [v0.30.0] — 2026-05-21
 
 Coverage extractor now respects shell redirection. Closes [#40](https://github.com/2389-research/dippin-lang/issues/40).

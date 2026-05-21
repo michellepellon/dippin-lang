@@ -687,7 +687,8 @@
   },
   {
     "type": "comment",
-    "named": true
+    "named": true,
+    "extra": true
   },
   {
     "type": "conditional",
@@ -763,6 +764,10 @@
   },
   {
     "type": "restart",
+    "named": false
+  },
+  {
+    "type": "spec",
     "named": false
   },
   {

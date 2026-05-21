@@ -112,7 +112,7 @@ func dispatchWorkflowSimpleField(p *Parser, t Token) bool {
 	return true
 }
 
-// dispatchWorkflowTailField handles edges, stylesheet, and requires. Returns true if handled.
+// dispatchWorkflowTailField handles edges, stylesheet, requires, and spec. Returns true if handled.
 func dispatchWorkflowTailField(p *Parser, t Token) bool {
 	switch t.Value {
 	case "edges":
@@ -121,6 +121,8 @@ func dispatchWorkflowTailField(p *Parser, t Token) bool {
 		p.parseStylesheet()
 	case "requires":
 		p.parseWorkflowRequiresField(t)
+	case "spec":
+		p.parseWorkflowSpecField(t)
 	default:
 		return false
 	}
@@ -157,6 +159,42 @@ func (p *Parser) parseWorkflowRequiresField(t Token) {
 	p.expect(TokenColon)
 	val := p.readFieldValue(t.Location.Line)
 	p.workflow.Requires = splitCommaNoEmpty(val)
+}
+
+// parseWorkflowSpecField parses "spec: <loader> <path>" into Workflow.Spec.
+// Both loader and path are required. A missing path leaves Workflow.Spec nil
+// and emits a diagnostic.
+func (p *Parser) parseWorkflowSpecField(t Token) {
+	p.lexer.NextToken() // spec
+	p.expect(TokenColon)
+	val := p.readFieldValue(t.Location.Line)
+	loader, path, ok := splitSpecValue(val)
+	if !ok {
+		p.diagnostics = append(p.diagnostics, fmt.Sprintf(
+			"spec: requires both a loader name and a path at %d:%d (got %q)",
+			t.Location.Line, t.Location.Column, val))
+		return
+	}
+	p.workflow.Spec = &ir.SpecRef{Loader: loader, Path: path}
+}
+
+// splitSpecValue splits "loader path" on the first whitespace run.
+// Returns ok=false if either side is empty.
+func splitSpecValue(val string) (loader, path string, ok bool) {
+	val = strings.TrimSpace(val)
+	if val == "" {
+		return "", "", false
+	}
+	idx := strings.IndexAny(val, " \t")
+	if idx < 0 {
+		return "", "", false
+	}
+	loader = strings.TrimSpace(val[:idx])
+	path = strings.TrimSpace(val[idx+1:])
+	if loader == "" || path == "" {
+		return "", "", false
+	}
+	return loader, path, true
 }
 
 // parseWorkflowStringField parses a simple "key: value" field on the workflow.

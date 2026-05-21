@@ -97,6 +97,8 @@
 (workflow_field
   "requires" @keyword)
 (workflow_field
+  "spec" @keyword)
+(workflow_field
   "start" @keyword)
 (workflow_field
   "exit" @keyword)

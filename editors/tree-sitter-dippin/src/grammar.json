@@ -97,6 +97,10 @@
             {
               "type": "STRING",
               "value": "requires"
+            },
+            {
+              "type": "STRING",
+              "value": "spec"
             }
           ]
         },
@@ -1080,5 +1084,6 @@
     }
   ],
   "inline": [],
-  "supertypes": []
+  "supertypes": [],
+  "reserved": {}
 }
