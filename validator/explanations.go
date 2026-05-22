@@ -290,6 +290,20 @@ func satisfiesExplanations() map[string]Explanation {
 			Fix:     "Remove the duplicate, or split the requirement into sub-requirements if two nodes legitimately contribute to it.",
 			Example: "agent A\n  satisfies: foo.BAR.1\nagent B\n  satisfies: foo.BAR.1   // duplicate",
 		},
+		DIP143: {
+			Code:    DIP143,
+			Summary: "malformed ACID reference in verify_acid list",
+			Trigger: "An entry in a tool node's verify_acid list does not match the ACID shape (see DIP139). Component names must be UPPERCASE; the feature name must be lowercase; the requirement segment must be a number, a sub-numbered pair, a wildcard, or a range.",
+			Fix:     "Correct the malformed entry. Same syntactic rules as satisfies; see DIP139.",
+			Example: "tool VerifyAuth\n  verify_acid: my-feature.auth.1   // lowercase component → invalid",
+		},
+		DIP144: {
+			Code:    DIP144,
+			Summary: "verify_acid declared on a tool node but workflow has no spec",
+			Trigger: "A tool node declares verify_acid but the enclosing workflow has no spec: header. Without a spec, the runtime has nothing to resolve the ACIDs against — the verify_acid declaration is dead metadata.",
+			Fix:     "Add a `spec: <loader> <path>` line to the workflow header, or remove the verify_acid field from the tool node.",
+			Example: "workflow X\n  start: T\n  exit: T\n\n  tool T\n    verify_acid: foo.BAR.1   // workflow has no spec",
+		},
 	}
 }
 

@@ -444,6 +444,8 @@ func applyToolStringField(cfg *ir.ToolConfig, key, val string) bool {
 		cfg.Outputs = splitComma(val)
 	case "marker_grep":
 		cfg.MarkerGrep = val
+	case "verify_acid":
+		cfg.VerifyACID = splitCommaNoEmpty(val)
 	default:
 		return false
 	}

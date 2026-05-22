@@ -365,6 +365,7 @@ Comments are not stripped inside multiline blocks — a `#` inside a prompt or c
 | `reads` | all | Context keys read (advisory, comma-separated) |
 | `writes` | all | Context keys written (advisory, comma-separated) |
 | `satisfies` | all | Spec requirement refs (ACIDs) this node satisfies (comma-separated). Requires workflow `spec:` header. See [spec-loader design](docs/superpowers/specs/2026-05-21-spec-loader-grammar-design.md). |
+| `verify_acid` | tool | Spec requirement refs (ACIDs) the runtime should verify by greppable presence after this tool runs. Same ACID syntax as `satisfies`. Requires workflow `spec:` header. |
 
 ### Spec-First Authoring (Optional)
 

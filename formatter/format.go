@@ -501,6 +501,9 @@ func writeToolRoutingFields(wr *writer, cfg ir.ToolConfig) {
 	if cfg.OutputLimit > 0 {
 		wr.line("output_limit: %d", cfg.OutputLimit)
 	}
+	if len(cfg.VerifyACID) > 0 {
+		wr.line("verify_acid: %s", strings.Join(cfg.VerifyACID, ", "))
+	}
 }
 
 func writeToolFields(wr *writer, n *ir.Node, cfg ir.ToolConfig) {

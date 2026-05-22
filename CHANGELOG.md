@@ -28,6 +28,12 @@ The runtime semantics (loading specs, verifying ACID coverage, reporting status 
 
 None for dippin itself. Tracker integration (`SpecLoader` interface, `acai` loader, bidirectional reporter, `verify_acid:` primitive) is tracked separately.
 
+### Added (verify_acid)
+
+- **`verify_acid:` tool-node attribute** for declaring which spec requirements a tool should verify by greppable presence. Accepts the same ACID patterns as `satisfies:` (bare, sub, wildcard, range). Stored as `[]string` on `ir.ToolConfig.VerifyACID`, round-trips through the formatter, available on every `tool` node. Runtime semantics (greping the working tree, populating `spec.coverage.<acid>`) live in tracker — dippin only carries the IR.
+- **DIP143** — malformed ACID reference in `verify_acid` list (error severity, same shape as DIP139 for `satisfies:`).
+- **DIP144** — `verify_acid:` declared on a tool node but workflow has no `spec:` (warning severity).
+
 ## [v0.30.0] — 2026-05-21
 
 Coverage extractor now respects shell redirection. Closes [#40](https://github.com/2389-research/dippin-lang/issues/40).

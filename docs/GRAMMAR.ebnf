@@ -110,9 +110,13 @@ human_field     = "mode"    ":" field_value       (* "freeform" | "choice" *)
 tool_node       = "tool" IDENTIFIER NEWLINE
                   INDENT { tool_field | common_field } OUTDENT ;
 
-tool_field      = "command" ":" field_value
-                | "timeout" ":" DURATION
-                | "outputs" ":" identifier_list ;
+tool_field      = "command"       ":" field_value
+                | "timeout"       ":" DURATION
+                | "outputs"       ":" identifier_list
+                | "marker_grep"   ":" field_value
+                | "route_required" ":" BOOLEAN
+                | "output_limit"  ":" INTEGER
+                | "verify_acid"   ":" acid_ref_list ;
 
 (* --- Subgraph Node ---------------------------------------- *)
 

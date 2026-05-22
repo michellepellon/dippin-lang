@@ -122,3 +122,40 @@ func TestParseToolAllRoutingFields(t *testing.T) {
 		t.Errorf("got %+v", cfg)
 	}
 }
+
+func TestParseToolVerifyACID(t *testing.T) {
+	cfg, diags := parseToolFixture(t, "    verify_acid: foo.BAR.1, foo.BAR.2-1, foo.BAR.[1-3], foo.BAR.*")
+	if len(diags) != 0 {
+		t.Fatalf("unexpected diagnostics: %v", diags)
+	}
+	want := []string{"foo.BAR.1", "foo.BAR.2-1", "foo.BAR.[1-3]", "foo.BAR.*"}
+	if len(cfg.VerifyACID) != len(want) {
+		t.Fatalf("VerifyACID = %#v, want %#v", cfg.VerifyACID, want)
+	}
+	for i, v := range want {
+		if cfg.VerifyACID[i] != v {
+			t.Errorf("VerifyACID[%d] = %q, want %q", i, cfg.VerifyACID[i], v)
+		}
+	}
+}
+
+func TestParseToolVerifyACID_AbsentLeavesNil(t *testing.T) {
+	cfg, diags := parseToolFixture(t, "    command: echo hi")
+	if len(diags) != 0 {
+		t.Fatalf("unexpected diagnostics: %v", diags)
+	}
+	if cfg.VerifyACID != nil {
+		t.Errorf("VerifyACID = %#v, want nil", cfg.VerifyACID)
+	}
+}
+
+func TestParseToolVerifyACID_TrimsAndDropsEmpties(t *testing.T) {
+	cfg, diags := parseToolFixture(t, "    verify_acid:   foo.BAR.1 ,  ,  foo.BAR.2  ,")
+	if len(diags) != 0 {
+		t.Fatalf("unexpected diagnostics: %v", diags)
+	}
+	want := []string{"foo.BAR.1", "foo.BAR.2"}
+	if len(cfg.VerifyACID) != len(want) {
+		t.Fatalf("VerifyACID = %#v, want %#v", cfg.VerifyACID, want)
+	}
+}

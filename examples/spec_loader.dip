@@ -1,5 +1,5 @@
 workflow SpecLoaderDemo
-  goal: "Demonstrate spec: and satisfies: for spec-first authoring"
+  goal: "Demonstrate spec:, satisfies:, and verify_acid: for spec-first authoring"
   spec: acai features/example/features.yaml
   start: ImplementAuth
   exit: Done
@@ -15,6 +15,12 @@ workflow SpecLoaderDemo
       Implement every AUTH requirement from the workflow's spec.
       Reference each ACID in a comment near the code that satisfies it.
 
+  tool VerifyAuth
+    label: "Verify AUTH ACIDs appear in code"
+    command: grep -r example.AUTH src/ tests/
+    timeout: 30s
+    verify_acid: example.AUTH.[1-5]
+
   agent ImplementClient
     label: "Implement CLIENT requirements"
     satisfies: example.CLIENT.*
@@ -25,5 +31,6 @@ workflow SpecLoaderDemo
     label: Done
 
   edges
-    ImplementAuth -> ImplementClient
+    ImplementAuth -> VerifyAuth
+    VerifyAuth -> ImplementClient
     ImplementClient -> Done
