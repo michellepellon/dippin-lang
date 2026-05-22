@@ -134,6 +134,7 @@ type ToolConfig struct {
 	MarkerGrep    string   // Regex matched line-by-line against stdout; populates ctx.tool_marker
 	RouteRequired bool     // True → node fails if no _TRACKER_ROUTE= sentinel is emitted
 	OutputLimit   int      // Bytes; > 0 = override engine default
+	VerifyACID    []string // Spec requirement refs (ACIDs) the runtime should verify after the tool runs
 }
 
 func (ToolConfig) nodeConfig() {}

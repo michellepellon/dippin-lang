@@ -143,3 +143,54 @@ func TestLint_DIP142_QuietWhenAllUnique(t *testing.T) {
 	res := Lint(w)
 	assertNoCode(t, res, DIP142)
 }
+
+// --- DIP143: malformed ACID in verify_acid ---
+
+func TestLint_DIP143_RejectsMalformed(t *testing.T) {
+	w := cleanMinimalWorkflow()
+	w.Spec = &ir.SpecRef{Loader: "acai", Path: "f.yaml"}
+	w.Nodes[0].Kind = ir.NodeTool
+	w.Nodes[0].Config = ir.ToolConfig{
+		Command:    "echo hi",
+		VerifyACID: []string{"foo.bar.1"}, // lowercase component → invalid
+	}
+	res := Lint(w)
+	assertHasCode(t, res, DIP143)
+}
+
+func TestLint_DIP143_AcceptsValid(t *testing.T) {
+	w := cleanMinimalWorkflow()
+	w.Spec = &ir.SpecRef{Loader: "acai", Path: "f.yaml"}
+	w.Nodes[0].Kind = ir.NodeTool
+	w.Nodes[0].Config = ir.ToolConfig{
+		Command:    "echo hi",
+		VerifyACID: []string{"foo.BAR.1", "foo.BAR.[1-3]", "foo.BAR.*"},
+	}
+	res := Lint(w)
+	assertNoCode(t, res, DIP143)
+}
+
+// --- DIP144: verify_acid without spec ---
+
+func TestLint_DIP144_FiresWhenSpecAbsent(t *testing.T) {
+	w := cleanMinimalWorkflow()
+	w.Nodes[0].Kind = ir.NodeTool
+	w.Nodes[0].Config = ir.ToolConfig{
+		Command:    "echo hi",
+		VerifyACID: []string{"foo.BAR.1"},
+	}
+	res := Lint(w)
+	assertHasCode(t, res, DIP144)
+}
+
+func TestLint_DIP144_QuietWhenSpecPresent(t *testing.T) {
+	w := cleanMinimalWorkflow()
+	w.Spec = &ir.SpecRef{Loader: "acai", Path: "f.yaml"}
+	w.Nodes[0].Kind = ir.NodeTool
+	w.Nodes[0].Config = ir.ToolConfig{
+		Command:    "echo hi",
+		VerifyACID: []string{"foo.BAR.1"},
+	}
+	res := Lint(w)
+	assertNoCode(t, res, DIP144)
+}

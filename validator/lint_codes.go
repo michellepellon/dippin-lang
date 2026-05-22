@@ -44,6 +44,8 @@ const (
 	DIP140 = "DIP140" // satisfies declared on a node but workflow has no spec
 	DIP141 = "DIP141" // workflow declares spec but no node has satisfies
 	DIP142 = "DIP142" // duplicate ACID across satisfies lists
+	DIP143 = "DIP143" // malformed ACID reference in verify_acid list
+	DIP144 = "DIP144" // verify_acid declared on a tool node but workflow has no spec
 )
 
 func init() {
@@ -90,4 +92,6 @@ func init() {
 	CodeDescription[DIP140] = "satisfies declared on a node but workflow has no spec"
 	CodeDescription[DIP141] = "workflow declares spec but no node has satisfies"
 	CodeDescription[DIP142] = "duplicate ACID across satisfies lists"
+	CodeDescription[DIP143] = "malformed ACID reference in verify_acid list"
+	CodeDescription[DIP144] = "verify_acid declared on a tool node but workflow has no spec"
 }

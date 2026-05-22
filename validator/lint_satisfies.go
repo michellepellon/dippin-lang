@@ -79,6 +79,57 @@ func lintSpecWithoutSatisfies(w *ir.Workflow) []Diagnostic {
 	}}
 }
 
+func lintMalformedVerifyACIDs(w *ir.Workflow) []Diagnostic {
+	var out []Diagnostic
+	for _, n := range w.Nodes {
+		out = append(out, malformedVerifyACIDsForNode(n)...)
+	}
+	return out
+}
+
+func malformedVerifyACIDsForNode(n *ir.Node) []Diagnostic {
+	cfg, ok := n.Config.(ir.ToolConfig)
+	if !ok {
+		return nil
+	}
+	var out []Diagnostic
+	for _, ref := range cfg.VerifyACID {
+		if acidPattern.MatchString(ref) {
+			continue
+		}
+		out = append(out, Diagnostic{
+			Code:     DIP143,
+			Severity: SeverityError,
+			Message:  "malformed ACID reference " + quoteACID(ref) + " in verify_acid on node " + n.ID,
+			Location: n.Source,
+		})
+	}
+	return out
+}
+
+func lintVerifyACIDWithoutSpec(w *ir.Workflow) []Diagnostic {
+	if w.Spec != nil {
+		return nil
+	}
+	var out []Diagnostic
+	for _, n := range w.Nodes {
+		cfg, ok := n.Config.(ir.ToolConfig)
+		if !ok {
+			continue
+		}
+		if len(cfg.VerifyACID) == 0 {
+			continue
+		}
+		out = append(out, Diagnostic{
+			Code:     DIP144,
+			Severity: SeverityWarning,
+			Message:  "tool node " + n.ID + " declares verify_acid but workflow has no spec",
+			Location: n.Source,
+		})
+	}
+	return out
+}
+
 func lintDuplicateACIDs(w *ir.Workflow) []Diagnostic {
 	seen := make(map[string]string) // acid -> first node ID
 	var out []Diagnostic
